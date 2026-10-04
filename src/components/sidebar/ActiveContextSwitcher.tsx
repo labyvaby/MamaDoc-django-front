@@ -24,6 +24,8 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 
 import { usePermissions } from "../../hooks/usePermissions";
+import { useT } from "../../i18n/VerticalProvider";
+import { useScribeBusy } from "../../scribe/ScribeRecorderProvider";
 import type { RbacBranch, RbacMembership } from "../../api/auth";
 import { activeBranchesOf, isSwitcherInteractive, showsOrgWideItem } from "./contextMenuModel";
 
@@ -62,6 +64,11 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
 
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [error, setError] = React.useState<string | null>(null);
+  // Идёт ИИ-запись приёма или её досылка — переключение заблокировано:
+  // хвост записи и «Стоп» должны уйти в том же контексте.
+  const scribeBusy = useScribeBusy();
+  const { t: ts } = useT("scribe");
+  const scribeBusyHint = scribeBusy ? ts("busy.switch") : "";
 
   // Nothing to render at all — user has no orgs/branches assigned.
   if (memberships.length === 0) return null;
@@ -73,7 +80,7 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
   const isInteractive = isSwitcherInteractive(memberships, activeBranch?.id);
 
   const handleOpen = (e: React.MouseEvent<HTMLElement>) => {
-    if (!isInteractive || switching) return;
+    if (!isInteractive || switching || scribeBusy) return;
     setAnchorEl(e.currentTarget);
   };
 
@@ -109,7 +116,9 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
   // ── Collapsed (desktop, narrow) view ───────────────────────────────────
   if (collapsed) {
     // Название филиала главнее названия организации.
-    const tooltipTitle = activeOrganization
+    const tooltipTitle = scribeBusy
+      ? scribeBusyHint
+      : activeOrganization
       ? activeBranch
         ? `${activeBranch.name} — ${activeOrganization.name}`
         : activeOrganization.name
@@ -122,7 +131,7 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
             <IconButton
               size="small"
               onClick={handleOpen}
-              disabled={switching || !isInteractive}
+              disabled={switching || !isInteractive || scribeBusy}
               aria-label="Активная организация и филиал"
             >
               {switching ? (
@@ -177,11 +186,11 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
         border: "1px solid",
         borderColor: "divider",
         borderRadius: 1,
-        cursor: isInteractive && !switching ? "pointer" : "default",
+        cursor: isInteractive && !switching && !scribeBusy ? "pointer" : "default",
         bgcolor: "background.default",
         transition: "border-color 150ms, background-color 150ms",
         "&:hover":
-          isInteractive && !switching
+          isInteractive && !switching && !scribeBusy
             ? { borderColor: "primary.main" }
             : undefined,
         opacity: switching ? 0.7 : 1,
@@ -280,7 +289,8 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
 
   return (
     <Box sx={{ px: 1, pb: 1 }}>
-      {chipBody}
+      {/* Пустой title — подсказки нет; при записи объясняем, почему не нажимается. */}
+      <Tooltip title={scribeBusyHint}>{chipBody}</Tooltip>
       <ContextMenu
         anchorEl={anchorEl}
         onClose={handleClose}

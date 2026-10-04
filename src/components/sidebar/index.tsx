@@ -19,6 +19,8 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  Alert,
+  CircularProgress,
 } from "@mui/material";
 import Backdrop from "@mui/material/Backdrop";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -82,6 +84,7 @@ import { Link as RouterLink, useLocation } from "react-router";
 import { useMobileSidebar } from "./mobile-context";
 import { ThemeCustomizerButton } from "../theme/ThemeCustomizer";
 import { ActiveContextSwitcher } from "./ActiveContextSwitcher";
+import { useScribeBusy, useScribeRecorder } from "../../scribe/ScribeRecorderProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { useCanChecker } from "../../hooks/useCan";
@@ -1347,12 +1350,26 @@ const SidebarFooter: React.FC = () => {
 
   const [logoutOpen, setLogoutOpen] = React.useState(false);
   const appVersion = useAppVersion();
+  // ИИ-запись приёма: перед выходом её надо остановить и дослать — после
+  // выхода сессии нет, и хвост звука на сервер уже не уйдёт.
+  const scribe = useScribeRecorder();
+  const scribeBusy = useScribeBusy();
+  const { t: ts } = useT("scribe");
+  const [scribeFlushing, setScribeFlushing] = React.useState(false);
 
   const handleLogoutClick = () => {
     setLogoutOpen(true);
   };
 
   const handleConfirmLogout = async () => {
+    if (scribe && scribeBusy) {
+      setScribeFlushing(true);
+      try {
+        await scribe.flush();
+      } finally {
+        setScribeFlushing(false);
+      }
+    }
     try {
       await djangoLogout();
       window.location.href = '/login';
@@ -1425,12 +1442,24 @@ const SidebarFooter: React.FC = () => {
           <DialogContentText id="logout-dialog-description">
             Вы действительно хотите выйти из аккаунта?
           </DialogContentText>
+          {(scribeBusy || scribeFlushing) && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              {scribeFlushing ? ts("busy.flushing") : ts("busy.logout")}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setLogoutOpen(false)} color="inherit">
             Отмена
           </Button>
-          <Button onClick={handleConfirmLogout} color="error" variant="contained" autoFocus>
+          <Button
+            onClick={handleConfirmLogout}
+            color="error"
+            variant="contained"
+            autoFocus
+            disabled={scribeFlushing}
+            startIcon={scribeFlushing ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
             Выйти
           </Button>
         </DialogActions>

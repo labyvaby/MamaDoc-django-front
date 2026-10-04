@@ -500,10 +500,21 @@ function App() {
                       },
                     }}
                   >
-                    {/* ИИ-запись приёма живёт над маршрутами: окно заключения
-                        закрыли или ушли на другую страницу — звук пишется. */}
-                    <ScribeRecorderProvider>
                     <Routes>
+                      {/* ИИ-запись приёма живёт над рабочими макетами (касса и
+                          основной): окно заключения закрыли или ушли на другую
+                          страницу — звук пишется. Только для вошедших: на
+                          публичных страницах (/book, /site, /review, /r) права
+                          и сокет не нужны — там нет сессии сотрудника. */}
+                      <Route
+                        element={
+                          <RequireAuth>
+                            <ScribeRecorderProvider>
+                              <Outlet />
+                            </ScribeRecorderProvider>
+                          </RequireAuth>
+                        }
+                      >
                       {/* Касса (POS): та же авторизация и сайдбар, но без общей
                           шапки и без отступов — модуль занимает всю рабочую
                           область и держит свой каркас (макет Monogram). */}
@@ -1339,6 +1350,7 @@ function App() {
                           }
                         />
                       </Route>
+                      </Route>
                       <Route
                         path="print/conclusion/:id"
                         element={
@@ -1475,7 +1487,6 @@ function App() {
                         />
                       </Route>
                     </Routes>
-                    </ScribeRecorderProvider>
 
                     <DjangoQueryCacheReset />
                     <RateLimitDialog />
