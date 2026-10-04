@@ -696,6 +696,10 @@ export interface LifeAnamnesisSocial {
   consanguinityNote: string;
   infantDeathInFamily: boolean | null;
   infantDeathNote: string;
+  /** Отметки «Операций / травм / переливаний крови не было»: false — не было, null — не отмечено. */
+  hadOperations: boolean | null;
+  hadInjuries: boolean | null;
+  hadTransfusions: boolean | null;
   assessedOn: string | null;
   informant: SocialInformant;
   /** Уровень шкалы или "" — считать автоматически; причина обязательна при уровне. */

@@ -1,9 +1,11 @@
 import React from "react";
-import { Box, Link, Stack, Typography } from "@mui/material";
-import { useQuery } from "@tanstack/react-query";
+import { Box, Chip, Link, Stack, Typography } from "@mui/material";
+import CheckOutlined from "@mui/icons-material/CheckOutlined";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
+import { useSnackbar } from "notistack";
 
-import { getMedications } from "../../../api/health";
+import { getMedications, updateLifeSocial, type LifeSocialUpdate } from "../../../api/health";
 import { DJANGO_LIST_STALE_TIME_MS, djangoQueryKeys } from "../../../api/queryKeys";
 import { useHealthScope } from "../useHealth";
 import type { AnamnesisActions, AnamnesisModel } from "./anamnesisModel";
@@ -11,6 +13,7 @@ import { HOUSEHOLD_INFECTIONS, TB_PLACES } from "./anamnesisTypes";
 import { Panel } from "./anamnesisUi";
 import { SensitiveCard } from "./SensitiveCard";
 import { dateText, lowerFirst } from "./russian";
+import { useApplyLifeAnamnesis } from "./useAnamnesis";
 
 const SectionLink: React.FC<{ actions: AnamnesisActions; type: string; title: string }> = ({ actions, type, title }) =>
   actions.openSection && actions.hasSection?.(type) ? (
@@ -33,6 +36,61 @@ const Lines: React.FC<{ lines: string[]; empty: string }> = ({ lines, empty }) =
       {empty}
     </Typography>
   );
+
+type SurgeryMark = "hadOperations" | "hadInjuries" | "hadTransfusions";
+
+const SURGERY_MARKS: Array<{ key: SurgeryMark; kind: "operation" | "injury" | "transfusion"; label: string }> = [
+  { key: "hadOperations", kind: "operation", label: "Операций не было" },
+  { key: "hadInjuries", kind: "injury", label: "Травм не было" },
+  { key: "hadTransfusions", kind: "transfusion", label: "Переливаний крови не было" },
+];
+
+/**
+ * Отметки «…не было» для абзаца: только у видов без записей в «Операциях и
+ * травмах». Хранятся в «Семье и быте» анамнеза; нажатие снимает отметку.
+ */
+const SurgeryNoneMarks: React.FC<{
+  patientId: number;
+  surgeries: NonNullable<AnamnesisModel["input"]["surgeries"]>;
+  canManage: boolean;
+}> = ({ patientId, surgeries, canManage }) => {
+  const { scope } = useHealthScope();
+  const apply = useApplyLifeAnamnesis(patientId);
+  const { enqueueSnackbar } = useSnackbar();
+  const marked: Record<SurgeryMark, boolean> = {
+    hadOperations: surgeries.noneOperations,
+    hadInjuries: surgeries.noneInjuries,
+    hadTransfusions: surgeries.noneTransfusions,
+  };
+  const mutation = useMutation({
+    mutationFn: (payload: LifeSocialUpdate) => updateLifeSocial(scope, patientId, payload),
+    onSuccess: (data) => apply(data),
+    onError: () => enqueueSnackbar("Не удалось сохранить отметку", { variant: "error" }),
+  });
+  const items = surgeries.items.filter((item) => item.status !== "refuted");
+  const free = SURGERY_MARKS.filter((mark) => !items.some((item) => item.kind === mark.kind));
+  if (!free.length || (!canManage && !free.some((mark) => marked[mark.key]))) return null;
+  return (
+    <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ mt: 1 }}>
+      {free.map((mark) =>
+        canManage ? (
+          <Chip
+            key={mark.key}
+            size="small"
+            label={mark.label}
+            icon={marked[mark.key] ? <CheckOutlined /> : undefined}
+            color={marked[mark.key] ? "success" : "default"}
+            variant={marked[mark.key] ? "filled" : "outlined"}
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate({ [mark.key]: marked[mark.key] ? null : false })}
+          />
+        ) : marked[mark.key] ? (
+          <Chip key={mark.key} size="small" label={mark.label} variant="outlined" />
+        ) : null,
+      )}
+    </Stack>
+  );
+};
 
 /**
  * Вкладка «Болезни и аллергии» (ТЗ §4.3): только чтение со ссылками на разделы;
@@ -63,15 +121,18 @@ export const IllnessTab: React.FC<{ model: AnamnesisModel; actions: AnamnesisAct
         <Panel title="Аллергии" action={<SectionLink actions={actions} type="allergies" title="Аллергии" />}>
           <Lines lines={allergies} empty={input.profile?.noKnownAllergies ? "Аллергий нет (подтверждено врачом)" : "Аллергии не уточнены"} />
         </Panel>
-        <Panel title="Болезни" action={<SectionLink actions={actions} type="conditions" title="Диагнозы" />}>
+        <Panel title="Болезни" action={<SectionLink actions={actions} type="conditions" title="История болезней" />}>
           <Lines lines={conditions} empty="Диагнозов в медкарте нет" />
         </Panel>
-        <Panel title="Операции, травмы, переливания крови">
+        <Panel title="Операции, травмы, переливания крови" action={<SectionLink actions={actions} type="surgeries" title="Операции и травмы" />}>
           {surgeries ? (
-            <Lines
-              lines={surgeries.items.filter((item) => item.status !== "refuted").map((item) => `${dateText(item.performedOn)} · ${item.title}`)}
-              empty={[surgeries.noneOperations && "операций", surgeries.noneInjuries && "травм", surgeries.noneTransfusions && "переливаний"].filter(Boolean).length ? "Не было" : "Не внесено"}
-            />
+            <>
+              <Lines
+                lines={surgeries.items.filter((item) => item.status !== "refuted").map((item) => `${dateText(item.performedOn)} · ${item.title}`)}
+                empty={[surgeries.noneOperations && "операций", surgeries.noneInjuries && "травм", surgeries.noneTransfusions && "переливаний"].filter(Boolean).length ? "Не было" : "Не внесено"}
+              />
+              <SurgeryNoneMarks patientId={patientId} surgeries={surgeries} canManage={actions.canManage} />
+            </>
           ) : (
             <Typography variant="body2" color="text.secondary">
               Ведутся в разделе «Операции и травмы»; в абзац попадут, когда раздел появится в книжке.

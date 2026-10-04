@@ -2,7 +2,7 @@
  * Соседние разделы книжки → вход анамнеза (ТЗ §2.12): «История болезней» и
  * «Операции и травмы». Чистые функции, без запросов.
  */
-import type { Condition, Hospitalization, IllnessHistory, Surgery } from "../../../api/health";
+import type { Condition, Hospitalization, IllnessHistory, LifeAnamnesisSocial, Surgery } from "../../../api/health";
 import type { AnamnesisInput, SurgeriesInput } from "./anamnesisTypes";
 
 type IllnessEntry = AnamnesisInput["conditions"][number];
@@ -71,10 +71,13 @@ function stayCondition(stay: Pick<Hospitalization, "conditionId" | "admittedOn">
 
 /**
  * «Операции и травмы»: записи как есть (ошибочно внесённые абзац отбрасывает
- * сам). Отметок «операций / травм / переливаний не было» в разделе нет —
- * отрицание не печатается (ТЗ §2.12).
+ * сам). Отметки «операций / травм / переливаний крови не было» хранятся в
+ * «Семье и быте» анамнеза: отрицание печатается только при отметке (ТЗ §2.12).
  */
-export function surgeriesInput(rows: ReadonlyArray<Surgery>): SurgeriesInput {
+export function surgeriesInput(
+  rows: ReadonlyArray<Surgery>,
+  marks?: Pick<LifeAnamnesisSocial, "hadOperations" | "hadInjuries" | "hadTransfusions"> | null,
+): SurgeriesInput {
   return {
     items: rows.map((row) => ({
       kind: row.kind,
@@ -83,8 +86,8 @@ export function surgeriesInput(rows: ReadonlyArray<Surgery>): SurgeriesInput {
       transfusionProduct: row.transfusionProduct || undefined,
       status: row.status,
     })),
-    noneOperations: false,
-    noneInjuries: false,
-    noneTransfusions: false,
+    noneOperations: marks?.hadOperations === false,
+    noneInjuries: marks?.hadInjuries === false,
+    noneTransfusions: marks?.hadTransfusions === false,
   };
 }
