@@ -47,14 +47,14 @@ import LocalFireDepartmentOutlined from "@mui/icons-material/LocalFireDepartment
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
 import dayjs, { type Dayjs } from "dayjs";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, Navigate, useNavigate } from "react-router";
 import { useSnackbar } from "notistack";
 
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useCan } from "../hooks/useCan";
 import { CustomDatePicker } from "../components/ui";
-import { listPricingRules, listRoomTypes, type HotelCityEvent, type HotelCityEventCategory, type HotelCityEventDemand, type HotelPricingRule } from "../api/hotel";
+import { createEventPriceDraft, confirmPricingRule, listPricingRules, listRoomTypes, type HotelCityEvent, type HotelCityEventCategory, type HotelCityEventDemand, type HotelPricingRule } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
@@ -146,6 +146,11 @@ function untilLabel(e: HotelCityEvent): string {
 }
 
 /** Действующее правило цены на даты события (любое активное с наценкой, пересекающее даты). */
+/** Черновик правила от события — выключен и ждёт подтверждения (r4 §18). */
+function draftForEvent(e: HotelCityEvent, rules: HotelPricingRule[]): HotelPricingRule | null {
+  return rules.find((r) => r.isDraft && (r.sourceEvent === e.id || (e.priceRuleId != null && r.id === e.priceRuleId))) ?? null;
+}
+
 function ruleForEvent(e: HotelCityEvent, rules: HotelPricingRule[]): HotelPricingRule | null {
   return (
     rules.find((r) => {
@@ -428,6 +433,8 @@ const EventCard: React.FC<{ event: HotelCityEvent; rule: HotelPricingRule | null
         <Stack direction="row" alignItems="center" gap={1} sx={{ mt: 1 }} flexWrap="wrap">
           {rule ? (
             <StatusPill color={theme.palette.success.main} label={`Цены подняты · ${rule.adjustmentType === "percent" ? `+${Number(rule.adjustmentValue)}%` : `+${Number(rule.adjustmentValue)} сом`}`} />
+          ) : event.priceRuleStatus === "draft" ? (
+            <StatusPill color={theme.palette.warning.main} label={`Черновик цены · ждёт подтверждения`} />
           ) : (
             <StatusPill color={demandColor(event.demand, theme)} label={`Рекомендуем +${event.suggestedMarkupPercent}%`} />
           )}
@@ -442,12 +449,49 @@ const EventCard: React.FC<{ event: HotelCityEvent; rule: HotelPricingRule | null
 const EventDrawer: React.FC<{
   event: HotelCityEvent | null;
   rule: HotelPricingRule | null;
+  draft: HotelPricingRule | null;
+  propertyId: number | undefined;
   canManageRates: boolean;
   onClose: () => void;
-}> = ({ event, rule, canManageRates, onClose }) => {
+}> = ({ event, rule, draft, propertyId, canManageRates, onClose }) => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
   const [opening, setOpening] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  // Сервер с черновиками цен (r4) отдаёт priceRuleStatus у события — без него остаётся только форма правила.
+  const draftsSupported = event != null && "priceRuleStatus" in event;
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "pricingRules"] });
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "cityEvents"] });
+  };
+  const oneClick = async () => {
+    if (!event || propertyId == null) return;
+    setBusy(true);
+    try {
+      await createEventPriceDraft({ propertyId, eventId: event.id });
+      refresh();
+      enqueueSnackbar("Черновик правила готов — проверьте наценку и включите", { variant: "success" });
+    } catch (err) {
+      enqueueSnackbar(getErrorMessage(err, "Не удалось подготовить цену"), { variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirmDraft = async () => {
+    if (!draft) return;
+    setBusy(true);
+    try {
+      await confirmPricingRule(draft.id);
+      refresh();
+      enqueueSnackbar(`Цены на даты «${event?.title ?? draft.name}» подняты`, { variant: "success" });
+    } catch (err) {
+      enqueueSnackbar(getErrorMessage(err, "Не удалось включить правило"), { variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const raisePrices = async () => {
     if (!event) return;
@@ -528,10 +572,26 @@ const EventDrawer: React.FC<{
                     Открыть правило
                   </Box>
                 </Alert>
+              ) : draft ? (
+                <Alert
+                  severity="warning"
+                  variant="outlined"
+                  action={
+                    <Button component={RouterLink} to={`/pricing-rules/${draft.id}`} color="inherit" size="small">
+                      Изменить
+                    </Button>
+                  }
+                >
+                  Черновик «{draft.name}»: {Number(draft.adjustmentValue) > 0 ? "+" : ""}
+                  {Number(draft.adjustmentValue)}
+                  {draft.adjustmentType === "percent" ? "%" : " сом"} на даты события — ждёт подтверждения. Пока не включён, цены не меняются.
+                </Alert>
               ) : (
                 <Typography variant="body2" color="text.secondary">
-                  Правила цены на эти даты ещё нет. Кнопка ниже откроет форму правила с датами события и наценкой +
-                  {event.suggestedMarkupPercent}% — проверьте и сохраните.
+                  Правила цены на эти даты ещё нет.{" "}
+                  {draftsSupported
+                    ? `«Цена в один клик» подготовит правило +${event.suggestedMarkupPercent}% на даты события — останется включить.`
+                    : `Кнопка ниже откроет форму правила с датами события и наценкой +${event.suggestedMarkupPercent}% — проверьте и сохраните.`}
                 </Typography>
               )}
             </DrawerSection>
@@ -542,13 +602,28 @@ const EventDrawer: React.FC<{
           </DrawerBody>
           <DrawerFooter>
             <Button onClick={onClose}>Закрыть</Button>
-            {!rule && (
+            {!rule && draft && (
               <DisabledReason reason={canManageRates ? null : "Менять цены может сотрудник с правом «Тарифы и цены»"}>
-                <Button variant="contained" disableElevation startIcon={<TrendingUpOutlined />} disabled={!canManageRates || opening}
-                  onClick={() => void raisePrices()}
+                <Button variant="contained" disableElevation startIcon={<TrendingUpOutlined />} disabled={!canManageRates || busy}
+                  onClick={() => void confirmDraft()}
                   sx={{ px: 2.5, borderRadius: "10px", fontWeight: 700 }}
                 >
-                  {opening ? "Открываем форму…" : "Поднять цены на эти даты"}
+                  {busy ? "Включаем…" : "Включить наценку"}
+                </Button>
+              </DisabledReason>
+            )}
+            {!rule && !draft && draftsSupported && (
+              <Button disabled={!canManageRates || opening} onClick={() => void raisePrices()}>
+                {opening ? "Открываем…" : "Настроить вручную"}
+              </Button>
+            )}
+            {!rule && !draft && (
+              <DisabledReason reason={canManageRates ? null : "Менять цены может сотрудник с правом «Тарифы и цены»"}>
+                <Button variant="contained" disableElevation startIcon={<TrendingUpOutlined />} disabled={!canManageRates || opening || busy}
+                  onClick={() => void (draftsSupported ? oneClick() : raisePrices())}
+                  sx={{ px: 2.5, borderRadius: "10px", fontWeight: 700 }}
+                >
+                  {draftsSupported ? (busy ? "Готовим…" : "Цена в один клик") : opening ? "Открываем форму…" : "Поднять цены на эти даты"}
                 </Button>
               </DisabledReason>
             )}
@@ -917,7 +992,14 @@ export const HotelEventsPage: React.FC = () => {
         </>
       )}
 
-      <EventDrawer event={openEvent} rule={openEvent ? ruleForEvent(openEvent, rules) : null} canManageRates={canManageRates} onClose={() => setOpenEvent(null)} />
+      <EventDrawer
+        event={openEvent}
+        rule={openEvent ? ruleForEvent(openEvent, rules) : null}
+        draft={openEvent ? draftForEvent(openEvent, rules) : null}
+        propertyId={property?.id}
+        canManageRates={canManageRates}
+        onClose={() => setOpenEvent(null)}
+      />
       {property && (
         <AddEventDrawer
           open={addOpen}
