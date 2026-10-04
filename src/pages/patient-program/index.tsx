@@ -29,6 +29,7 @@ import FitnessCenterOutlined from "@mui/icons-material/FitnessCenterOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import MonitorHeartOutlined from "@mui/icons-material/MonitorHeartOutlined";
+import PsychologyOutlined from "@mui/icons-material/PsychologyOutlined";
 import RemoveRedEyeOutlined from "@mui/icons-material/RemoveRedEyeOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
@@ -61,6 +62,8 @@ import { InteractionHistory } from "./InteractionHistory";
 import { LinkedSection } from "./linkedSections";
 import { isLinkedModule, systemType } from "./linkedSectionTypes";
 import { ModuleRecords } from "./ModuleRecords";
+import { isNeurologyModule } from "./neurology/neuroData";
+import { NeurologyModule } from "./neurology/NeurologyModule";
 import { isOrthoModule } from "./ortho/orthoData";
 import { OrthoModule } from "./ortho/OrthoModule";
 import { isVisionModule } from "./vision/visionData";
@@ -108,6 +111,7 @@ function moduleIcon(module: Pick<EffectiveProgramModule, "code" | "moduleType">)
   if (key.includes("vacc")) return <VaccinesOutlined />;
   if (key.includes("eye") || key.includes("ophthalm")) return <RemoveRedEyeOutlined />;
   if (key.includes("bone") || key.includes("ortho")) return <StraightenOutlined />;
+  if (key.includes("neuro")) return <PsychologyOutlined />;
   if (key.includes("growth") || key.includes("measure")) return <MonitorHeartOutlined />;
   if (key.includes("lab") || key.includes("analysis")) return <ScienceOutlined />;
   if (key.includes("fitness") || key.includes("training")) return <FitnessCenterOutlined />;
@@ -215,6 +219,7 @@ const PatientProgramPage: React.FC = () => {
   const canManageTasks = canAccess("tasks.manage");
   const canNotifyClients = canAccess("notifications.manage");
   const canViewAppointments = canAccess("appointments.view");
+  const canViewHealth = canAccess("medical.health.view");
 
   usePageTitle("Книжка клиента");
 
@@ -262,6 +267,8 @@ const PatientProgramPage: React.FC = () => {
   const selectedModule = view.startsWith("module:")
     ? modules.find((module) => module.id === Number(view.slice(7))) ?? null
     : null;
+  // «Внести замер» из неврологии ведёт в «Рост», если он есть в программе.
+  const growthModule = modules.find((module) => systemType(module) === "growth") ?? null;
 
   if (loading) {
     return (
@@ -579,6 +586,19 @@ const PatientProgramPage: React.FC = () => {
                   canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
                   icon={moduleIcon(selectedModule)}
                   birthDate={patient.birthDate ?? null}
+                />
+              ) : isNeurologyModule(selectedModule) ? (
+                <NeurologyModule
+                  enrollmentId={selectedEnrollment.id}
+                  module={selectedModule}
+                  scope={scope}
+                  canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
+                  icon={moduleIcon(selectedModule)}
+                  birthDate={patient.birthDate ?? null}
+                  patientId={patient.id}
+                  gender={patient.gender ?? null}
+                  canViewHealth={canViewHealth}
+                  onOpenGrowth={growthModule ? () => setView(`module:${growthModule.id}`) : undefined}
                 />
               ) : isOrthoModule(selectedModule) ? (
                 <OrthoModule
