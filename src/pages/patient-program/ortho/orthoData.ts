@@ -314,6 +314,19 @@ export function readDiagnosis(record: ProgramModuleRecord): OrthoDiagnosis {
 
 const time = (record: ProgramModuleRecord): number => dayjs(record.occurredAt).valueOf();
 
+/** Дата проведённого осмотра позже сегодняшнего дня — ошибка ввода. */
+export const isFutureExam = (record: ProgramModuleRecord, now = dayjs()): boolean => time(record) > now.endOf("day").valueOf();
+
+/**
+ * Проведённые осмотры по сегодняшний день: запись с датой в будущем не
+ * становится «последним осмотром» и не закрывает сроки. Если других нет —
+ * показываем, что есть.
+ */
+export function conductedByToday(exams: ReadonlyArray<OrthoExam>, now = dayjs()): OrthoExam[] {
+  const past = exams.filter((exam) => !isFutureExam(exam.record, now));
+  return past.length ? past : [...exams];
+}
+
 export function classifyOrthoRecords(records: ReadonlyArray<ProgramModuleRecord>): OrthoRecords {
   const exams: OrthoExam[] = [];
   const diagnoses: OrthoDiagnosis[] = [];

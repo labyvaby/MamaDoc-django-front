@@ -2,6 +2,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import type {
   AgeBand,
+  AttachmentKind,
   ChildhoodInfectionCode,
   ChildhoodInfectionInput,
   ChronicStat,
@@ -367,6 +368,9 @@ export function stayDocsCaption(attachments: ReadonlyArray<Pick<HealthAttachment
   if (attachments.some((item) => item.kind === "discharge")) return "выписка приложена";
   return attachments.length ? `документы (${attachments.length})` : "";
 }
+
+/** Вид документа записи — подпись в миниатюре и в окне просмотра. */
+export const ATTACHMENT_KIND_LABELS: Record<AttachmentKind, string> = { discharge: "Выписка", image: "Снимок", other: "Другое" };
 
 /** PDF или снимок — по имени или ссылке. */
 export function isPdfAttachment(attachment: Pick<HealthAttachment, "url" | "name">): boolean {

@@ -18,6 +18,8 @@ export interface ArtColors {
   tissue: string;
   /** Контур мягких тканей (--tissue-line). */
   tissueLine: string;
+  /** Тень по краю мягких тканей — объём ноги (--shade). */
+  shade: string;
   /** Заливка позвонков и черепа (--bone). */
   bone: string;
   /** Поверхность карточки (--surface). */
@@ -52,6 +54,7 @@ export function useArtColors(): ArtColors {
       muted: theme.palette.text.secondary,
       tissue: alpha(text, theme.palette.mode === "dark" ? 0.1 : 0.07),
       tissueLine: alpha(text, 0.3),
+      shade: theme.palette.mode === "dark" ? alpha("#000", 0.5) : alpha(text, 0.13),
       bone: theme.palette.background.paper,
       surface: theme.palette.background.paper,
       sunk: alpha(text, 0.03),

@@ -53,16 +53,24 @@ export const StatusChip: React.FC<{ status: OrthoStatus; label: string }> = ({ s
   );
 };
 
+/** Панели с рисунками раскладываются по ширине карточки, а не экрана. */
+const PANELS = "ortho-panels";
+const whenTwoColumns = `@container ${PANELS} (min-width: 520px)`;
+
 const Panel: React.FC<{
   title: string;
   caption?: string;
   status: OrthoStatus;
-  children: React.ReactNode;
+  /** Рисунок: занимает свободную высоту панели, подписи прижаты к низу. */
+  art?: React.ReactNode;
+  children?: React.ReactNode;
   /** Во всю ширину ряда. */
   wide?: boolean;
-  /** Две колонки на широком экране — снимкам УЗИ нужно место. */
+  /** Две колонки — снимкам УЗИ нужно место. */
   double?: boolean;
-}> = ({ title, caption, status, children, wide = false, double = false }) => {
+  /** Последняя панель без пары: на всю строку, рисунок слева, подписи справа. */
+  fill?: boolean;
+}> = ({ title, caption, status, art, children, wide = false, double = false, fill = false }) => {
   const theme = useTheme();
   const color = orthoColor(theme, status);
   return (
@@ -75,7 +83,8 @@ const Panel: React.FC<{
         flexDirection: "column",
         gap: 1,
         minWidth: 0,
-        gridColumn: wide ? "1 / -1" : double ? { xs: "auto", md: "span 2" } : undefined,
+        gridColumn: wide ? "1 / -1" : undefined,
+        ...(double || fill ? { [whenTwoColumns]: { gridColumn: "span 2" } } : {}),
       }}
     >
       <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={1}>
@@ -88,7 +97,34 @@ const Panel: React.FC<{
           </Typography>
         )}
       </Stack>
-      {children}
+      <Box
+        sx={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          gap: 1,
+          ...(fill ? { [whenTwoColumns]: { flexDirection: "row", alignItems: "center", gap: 3 } } : {}),
+        }}
+      >
+        {art && (
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              ...(fill ? { [whenTwoColumns]: { flex: "0 1 300px" } } : {}),
+            }}
+          >
+            {art}
+          </Box>
+        )}
+        {children && (
+          <Stack gap={1} sx={{ minWidth: 0, ...(fill ? { [whenTwoColumns]: { flex: 1 } } : {}) }}>
+            {children}
+          </Stack>
+        )}
+      </Box>
     </Box>
   );
 };
@@ -158,15 +194,14 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
   const olderThan7 = months != null && months >= 84;
   const legsMonths = legsAge.months;
 
-  return (
-    <Stack gap={1.75}>
-      <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={1} flexWrap="wrap">
-        <Typography variant="subtitle2">Последний осмотр</Typography>
-        <Typography variant="caption" color="text.secondary">
-          {latest.record.title}
-        </Typography>
-      </Stack>
+  // панели без пары: последняя одиночная растягивается на всю строку
+  const singles = [hasArch && "feet", hasHeel && "heels", hasLegs && "legs", hasBack && "back"].filter(Boolean);
+  const fillKey = singles.length % 2 === 1 ? singles[singles.length - 1] : null;
+  const hasLegacy = Boolean(latest.legacyPosture || latest.legacyFeet);
 
+  // «Последний осмотр» и дата — в шапке раздела; здесь сразу сводка
+  return (
+    <Stack gap={1.75} sx={{ containerType: "inline-size", containerName: PANELS }}>
       {summary.length > 0 && (
         <Stack direction="row" gap={0.75} flexWrap="wrap">
           {summary.map((item, index) => (
@@ -175,24 +210,62 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
         </Stack>
       )}
 
-      {(latest.legacyPosture || latest.legacyFeet) && (
-        <Typography variant="body2" color="text.secondary">
-          {[latest.legacyPosture && `Осанка: ${latest.legacyPosture}`, latest.legacyFeet && `Стопы: ${latest.legacyFeet}`]
-            .filter(Boolean)
-            .join(" · ")}
-        </Typography>
+      {hasLegacy && (
+        <Box
+          sx={(theme) => ({
+            p: 1.5,
+            borderRadius: "12px",
+            bgcolor: alpha(theme.palette.text.primary, 0.035),
+            display: "grid",
+            gridTemplateColumns: "auto minmax(0, 1fr)",
+            columnGap: 2,
+            rowGap: 0.5,
+          })}
+        >
+          {latest.legacyPosture && (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                Осанка
+              </Typography>
+              <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
+                {latest.legacyPosture}
+              </Typography>
+            </>
+          )}
+          {latest.legacyFeet && (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                Стопы
+              </Typography>
+              <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
+                {latest.legacyFeet}
+              </Typography>
+            </>
+          )}
+          <Typography variant="caption" color="text.secondary" sx={{ gridColumn: "1 / -1", mt: 0.5 }}>
+            Запись в прежнем виде — текстом, без рисунков. Рисунки строятся по осмотрам, внесённым кнопками «Осмотр ортопеда»
+            и «Скрининг педиатра».
+          </Typography>
+        </Box>
       )}
 
       {(hasUs || hasArch || hasHeel || hasLegs || hasBack) && (
-        <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+        <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: "minmax(0, 1fr)", [whenTwoColumns]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } }}>
           {hasUs && hips && (
-            <Panel title="Тазобедренные суставы" caption={`УЗИ по Графу${since(hipsExam)}`} status={hipsStatus(hips, hipsAge)} double>
-              <Art maxWidth={460}>
-                <HipUltrasound
-                  left={{ alpha: usSides[0].alpha, beta: usSides[0].beta, status: usSides[0].status, type: usSides[0].typeLabel || null }}
-                  right={{ alpha: usSides[1].alpha, beta: usSides[1].beta, status: usSides[1].status, type: usSides[1].typeLabel || null }}
-                />
-              </Art>
+            <Panel
+              title="Тазобедренные суставы"
+              caption={`УЗИ по Графу${since(hipsExam)}`}
+              status={hipsStatus(hips, hipsAge)}
+              double
+              art={
+                <Art maxWidth={460}>
+                  <HipUltrasound
+                    left={{ alpha: usSides[0].alpha, beta: usSides[0].beta, status: usSides[0].status, type: usSides[0].typeLabel || null }}
+                    right={{ alpha: usSides[1].alpha, beta: usSides[1].beta, status: usSides[1].status, type: usSides[1].typeLabel || null }}
+                  />
+                </Art>
+              }
+            >
               <Stack direction="row" gap={0.5} flexWrap="wrap">
                 {usSides
                   .filter((side) => side.alpha != null || side.typeLabel)
@@ -215,13 +288,20 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
           )}
 
           {hasArch && foot && (
-            <Panel title="Стопы" caption={`отпечаток стоя${since(footExam)}`} status={footArchStatus(foot, footAge)}>
-              <Art maxWidth={240}>
-                <FootPrints
-                  left={{ arch: foot.arch.left, status: foot.arch.left ? footArchStatus(foot, footAge) : "unknown", index: foot.chizhin.left }}
-                  right={{ arch: foot.arch.right, status: foot.arch.right ? footArchStatus(foot, footAge) : "unknown", index: foot.chizhin.right }}
-                />
-              </Art>
+            <Panel
+              title="Стопы"
+              caption={`отпечаток стоя${since(footExam)}`}
+              status={footArchStatus(foot, footAge)}
+              fill={fillKey === "feet"}
+              art={
+                <Art maxWidth={240}>
+                  <FootPrints
+                    left={{ arch: foot.arch.left, status: foot.arch.left ? footArchStatus(foot, footAge) : "unknown", index: foot.chizhin.left }}
+                    right={{ arch: foot.arch.right, status: foot.arch.right ? footArchStatus(foot, footAge) : "unknown", index: foot.chizhin.right }}
+                  />
+                </Art>
+              }
+            >
               <Stack direction="row" gap={0.5} flexWrap="wrap">
                 {foot.mobility && <Chip size="small" label={optionLabel(MOBILITY, foot.mobility).split(" (")[0]} sx={{ height: 24, borderRadius: "999px" }} />}
                 <Chip size="small" label={foot.complaints ? "Есть жалобы" : "Жалоб нет"} sx={{ height: 24, borderRadius: "999px" }} />
@@ -232,13 +312,20 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
           )}
 
           {hasHeel && foot && (
-            <Panel title="Пятки" caption={`вид сзади${since(footExam)}`} status={heelsStatus(foot, footAge)}>
-              <Art maxWidth={240}>
-                <Heels
-                  left={{ deg: foot.heel.left, status: heelStatus(foot.heel.left, months) }}
-                  right={{ deg: foot.heel.right, status: heelStatus(foot.heel.right, months) }}
-                />
-              </Art>
+            <Panel
+              title="Пятки"
+              caption={`вид сзади${since(footExam)}`}
+              status={heelsStatus(foot, footAge)}
+              fill={fillKey === "heels"}
+              art={
+                <Art maxWidth={240}>
+                  <Heels
+                    left={{ deg: foot.heel.left, status: heelStatus(foot.heel.left, months) }}
+                    right={{ deg: foot.heel.right, status: heelStatus(foot.heel.right, months) }}
+                  />
+                </Art>
+              }
+            >
               <Verdict>
                 Угол между осью голени и осью пятки. {olderThan7 ? "С 7 лет норма до 5°" : "До 7 лет норма до 10°"}, до 15° —
                 пограничное.
@@ -247,15 +334,22 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
           )}
 
           {hasLegs && legs && (
-            <Panel title="Ноги" caption={`вид спереди${since(legsExam)}`} status={legsAxisStatus(legs, legsAge)}>
-              <Art maxWidth={240}>
-                <Legs
-                  axis={legs.axis}
-                  distanceCm={legs.distance}
-                  status={legAxisStatus(legs.axis, legs.distance, legs.symmetric, legsMonths)}
-                  lengthDiff={legs.lengthDiff}
-                />
-              </Art>
+            <Panel
+              title="Ноги"
+              caption={`вид спереди${since(legsExam)}`}
+              status={legsAxisStatus(legs, legsAge)}
+              fill={fillKey === "legs"}
+              art={
+                <Art maxWidth={240}>
+                  <Legs
+                    axis={legs.axis}
+                    distanceCm={legs.distance}
+                    status={legAxisStatus(legs.axis, legs.distance, legs.symmetric, legsMonths)}
+                    lengthDiff={legs.lengthDiff}
+                  />
+                </Art>
+              }
+            >
               <Verdict>
                 {legs.axis === "varus"
                   ? `Расстояние между коленями${legs.distance != null ? ` ${fmt(legs.distance)} см` : " не измерено"}. До 2 лет норма до 5 см.`
@@ -267,17 +361,24 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
           )}
 
           {hasBack && spine && (
-            <Panel title="Спина" caption={`${adams ? "вид сзади и наклон вперёд" : "вид сзади"}${since(spineExam)}`} status={spineStatus(spine)}>
-              <Art maxWidth={240}>
-                <BackView
-                  shoulderHigher={shoulder && shoulder.side !== "both" ? shoulder.side : null}
-                  curve={adams?.result === "rib" && adams.side ? adams.side : null}
-                  humpSide={adams?.result && adams.result !== "negative" ? adams.side : null}
-                  atr={adams?.atr ?? null}
-                  status={adams?.atr != null ? atrStatus(adams.atr) : spineStatus(spine)}
-                  showAdams={adams != null}
-                />
-              </Art>
+            <Panel
+              title="Спина"
+              caption={`${adams ? "вид сзади и наклон вперёд" : "вид сзади"}${since(spineExam)}`}
+              status={spineStatus(spine)}
+              fill={fillKey === "back"}
+              art={
+                <Art maxWidth={240}>
+                  <BackView
+                    shoulderHigher={shoulder && shoulder.side !== "both" ? shoulder.side : null}
+                    curve={adams?.result === "rib" && adams.side ? adams.side : null}
+                    humpSide={adams?.result && adams.result !== "negative" ? adams.side : null}
+                    atr={adams?.atr ?? null}
+                    status={adams?.atr != null ? atrStatus(adams.atr) : spineStatus(spine)}
+                    showAdams={adams != null}
+                  />
+                </Art>
+              }
+            >
               <Verdict>Ротация по сколиометру: до 3° — норма, 4–6° — повтор через 4–12 мес, от 7° — снимок и ортопед.</Verdict>
             </Panel>
           )}
