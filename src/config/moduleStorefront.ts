@@ -109,6 +109,18 @@ export const STOREFRONT_PRODUCTS: StorefrontProduct[] = [
     parts: ["odoctor.kg"],
   },
   {
+    // Категория — как у «Отчётов» (analytics → clients в moduleStorefrontModel).
+    id: "pnl", title: "Прибыли и убытки", modules: ["pnl"], category: "clients", icon: "insights", price: null,
+    route: "/pnl",
+    tagline: "Отчёт о прибылях и убытках по месяцам — с выгрузкой в Excel и готовой формой №2",
+    features: [
+      "Выручка, себестоимость, расходы по статьям и чистая прибыль",
+      "Сравнение с прошлым годом и «водопад» расходов",
+      "Выгрузка в Excel и государственная форма №2",
+    ],
+    parts: ["Прибыли и убытки"],
+  },
+  {
     id: "ai_analyst", title: "ИИ-аналитик", modules: [], soon: true, category: "clients", icon: "ai", price: 3000,
     tagline: "Спрашиваете о выручке и записях — отвечает по данным вашей CRM",
     features: [],
