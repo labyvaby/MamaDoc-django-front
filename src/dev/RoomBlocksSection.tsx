@@ -50,9 +50,15 @@ export interface RoomBlocksSectionProps {
    * дальше окна карточки — без этого его было бы не снять.
    */
   focusBlock?: HotelRoomBlock | null;
+  /**
+   * Ремонт со сроком (HotelRoom.returnsOn): его блок — от статуса номера, как
+   * бессрочный. Снять его отсюда нельзя — номер остался бы «в ремонте».
+   */
+  repairReturnsOn?: string | null;
 }
 
-export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, roomNumber, blocks, focusBlock }) => {
+export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, roomNumber, blocks, focusBlock, repairReturnsOn }) => {
+  const isDatedRepair = (b: HotelRoomBlock) => repairReturnsOn != null && b.dateTo === repairReturnsOn;
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
@@ -197,6 +203,10 @@ export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, ro
                 <Typography variant="caption" color="text.secondary">
                   {isOpenEnded(b) ? (
                     <>С {formatHotelDate(b.dateFrom)}, без даты окончания · вернётся в продажу, когда номер выйдет из состояния «Ремонт»</>
+                  ) : isDatedRepair(b) ? (
+                    <>
+                      {formatHotelNightsRange(b.dateFrom, b.dateTo)} · вернётся в продажу сам {formatHotelDate(b.dateTo)} — срок меняется в состоянии номера
+                    </>
                   ) : (
                     <>
                       {formatHotelNightsRange(b.dateFrom, b.dateTo)} · {nightsBetween(b.dateFrom, b.dateTo)}{" "}
@@ -205,7 +215,7 @@ export const RoomBlocksSection: React.FC<RoomBlocksSectionProps> = ({ roomId, ro
                   )}
                 </Typography>
               </Box>
-              {canManage && !isOpenEnded(b) && (
+              {canManage && !isOpenEnded(b) && !isDatedRepair(b) && (
                 <Button size="small" onClick={() => void handleRelease(b)} disabled={releasingId != null} sx={{ flexShrink: 0 }}>
                   {releasingId === b.id ? "Возвращаем…" : "Вернуть в продажу"}
                 </Button>

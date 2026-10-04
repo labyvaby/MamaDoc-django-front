@@ -1116,6 +1116,8 @@ export interface HotelRoom {
   housekeepingState: string;
   /** Настоящее состояние уборки — используйте это поле, не housekeepingState. */
   state: "dirty" | "clean" | "inspected" | "repair";
+  /** Ремонт со сроком: первый день снова в продаже; null — без срока или не в ремонте. */
+  returnsOn?: string | null;
   /** Ключи из HotelCatalogs.mealOptions — какое питание доступно в этом номере. */
   mealOptions: string[];
   note: string;
@@ -1224,8 +1226,9 @@ export function updateRoom(id: number, data: HotelRoomUpdateData): Promise<Hotel
 }
 
 /** dirty/clean/inspected — право hotel.housekeeping.view; repair — hotel.manage. Принимает и "cleaned" (= "clean"). */
-export function setRoomHousekeeping(id: number, state: string): Promise<HotelRoom> {
-  return apiRequest<HotelRoom>(`/v2/hotel/rooms/${id}/housekeeping/`, { method: "PATCH", body: { state } });
+/** returnsOn — только с repair: первый день снова в продаже; без него ремонт бессрочный. */
+export function setRoomHousekeeping(id: number, state: string, returnsOn?: string): Promise<HotelRoom> {
+  return apiRequest<HotelRoom>(`/v2/hotel/rooms/${id}/housekeeping/`, { method: "PATCH", body: returnsOn ? { state, returnsOn } : { state } });
 }
 
 /** 409 HAS_DEPENDENTS, если номер когда-либо бронировали → updateRoom(id, {status: "out_of_service"}). */

@@ -10,41 +10,84 @@
  * уборки, «Ремонт» — hotel.manage; при отказе (403) сообщение бэка показываем
  * как есть, а не гадаем по правам на фронте. Смена применяется сразу, без
  * общей кнопки «Сохранить».
+ *
+ * «Ремонт» спрашивает срок (просьба заказчика: был только бессрочным): «без
+ * срока» или день возврата в продажу — номер вернётся сам, сервер проверяет раз
+ * в 5 минут. Брони после этого дня ремонту не мешают. Срок можно поменять.
  */
 import React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Box, Chip, CircularProgress, Menu, MenuItem, Stack, Typography } from "@mui/material";
+import {
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  FormControlLabel,
+  Menu,
+  MenuItem,
+  Radio,
+  RadioGroup,
+  Stack,
+  Typography,
+} from "@mui/material";
+import dayjs, { type Dayjs } from "dayjs";
 import { alpha, useTheme } from "@mui/material/styles";
 import ArrowDropDownOutlined from "@mui/icons-material/ArrowDropDownOutlined";
 import { useSnackbar } from "notistack";
 
 import { setRoomHousekeeping } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
+import { CustomDatePicker } from "../components/ui";
 import { HOTEL_ROOM_STATES, HOTEL_ROOM_STATE_LABELS, hotelRoomStateColor, type HotelRoomState } from "./hotelDisplay";
 
 export interface RoomStateControlProps {
   roomId: number;
   /** Текущее состояние (HotelRoom.state). */
   state: string;
+  /** Ремонт со сроком: первый день снова в продаже (HotelRoom.returnsOn). */
+  returnsOn?: string | null;
 }
 
-export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, state }) => {
+export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, state, returnsOn }) => {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
   const [saving, setSaving] = React.useState(false);
+  // Диалог срока ремонта: dated — до даты, иначе без срока.
+  const [repairOpen, setRepairOpen] = React.useState(false);
+  const [dated, setDated] = React.useState(false);
+  const [back, setBack] = React.useState<Dayjs | null>(null);
 
-  const label = HOTEL_ROOM_STATE_LABELS[state as HotelRoomState] ?? state;
+  const repairUntil = state === "repair" && returnsOn ? dayjs(returnsOn) : null;
+  const label =
+    repairUntil != null ? `Ремонт · в продаже с ${repairUntil.format("D MMM")}` : (HOTEL_ROOM_STATE_LABELS[state as HotelRoomState] ?? state);
   const color = hotelRoomStateColor(state, theme);
   const dark = theme.palette.mode === "dark";
 
-  const choose = async (next: HotelRoomState) => {
+  const openRepair = () => {
     setAnchor(null);
-    if (next === state) return;
+    setDated(repairUntil != null);
+    setBack(repairUntil ?? dayjs().add(7, "day"));
+    setRepairOpen(true);
+  };
+
+  const choose = async (next: HotelRoomState, returnsOnDate?: string) => {
+    setAnchor(null);
+    if (next === "repair" && returnsOnDate === undefined && !repairOpen) {
+      openRepair();
+      return;
+    }
+    if (next === state && next !== "repair") return;
     setSaving(true);
     try {
-      await setRoomHousekeeping(roomId, next);
+      await setRoomHousekeeping(roomId, next, returnsOnDate || undefined);
+      setRepairOpen(false);
       // Открытые задачи уборки по убранному номеру здесь не закрываем: это
       // делает бэкенд одной транзакцией (статус «Отменена»), а не фронт пачкой
       // PATCH-запросов. Список задач перечитываем ниже — он покажет результат.
@@ -103,7 +146,50 @@ export const RoomStateControl: React.FC<RoomStateControlProps> = ({ roomId, stat
             <Typography variant="body2">{HOTEL_ROOM_STATE_LABELS[s]}</Typography>
           </MenuItem>
         ))}
+        {state === "repair" && <Divider />}
+        {state === "repair" && (
+          <MenuItem onClick={openRepair} sx={{ minWidth: 160 }}>
+            <Typography variant="body2">{repairUntil ? "Изменить срок ремонта…" : "Указать срок ремонта…"}</Typography>
+          </MenuItem>
+        )}
       </Menu>
+      <Dialog open={repairOpen} onClose={() => (saving ? null : setRepairOpen(false))} maxWidth="xs" fullWidth>
+        <DialogTitle>{state === "repair" ? "Срок ремонта" : "Номер в ремонт"}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Номер снимется с продажи в шахматке и на сайте. Если на время ремонта есть брони, их сначала надо перенести.
+          </Typography>
+          <RadioGroup value={dated ? "dated" : "open"} onChange={(e) => setDated(e.target.value === "dated")}>
+            <FormControlLabel value="dated" control={<Radio size="small" />} label="До даты — вернётся в продажу сам" />
+            {dated && (
+              <Box sx={{ pl: 3.75, pb: 1 }}>
+                <CustomDatePicker
+                  label="В продаже с"
+                  value={back}
+                  onChange={(v) => setBack(v)}
+                  minDate={dayjs().add(1, "day")}
+                  shortYearMode="future"
+                  slotProps={{ textField: { size: "small", fullWidth: true, helperText: back ? `последний день ремонта — ${back.subtract(1, "day").format("D MMMM")}` : " " } }}
+                />
+              </Box>
+            )}
+            <FormControlLabel value="open" control={<Radio size="small" />} label="Без срока — вернуть в продажу вручную" />
+          </RadioGroup>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRepairOpen(false)} disabled={saving}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            disableElevation
+            disabled={saving || (dated && (!back || !back.isValid() || !back.isAfter(dayjs(), "day")))}
+            onClick={() => void choose("repair", dated && back ? back.format("YYYY-MM-DD") : "")}
+          >
+            {saving ? "Сохраняем…" : state === "repair" ? "Сохранить срок" : "Поставить в ремонт"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };
