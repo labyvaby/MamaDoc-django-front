@@ -150,6 +150,7 @@ const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPag
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
+const PnlPage = lazy(() => import("./pages/pnl").then(module => ({ default: module.PnlPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
 const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
 // Касса (POS) — полноэкранный модуль: собственная шапка вместо общей, поэтому
@@ -412,6 +413,11 @@ function App() {
                         name: "load",
                         list: "/load",
                         meta: { label: "Нагрузка" }
+                      },
+                      {
+                        name: "pnl",
+                        list: "/pnl",
+                        meta: { label: "Прибыли и убытки" }
                       },
                       {
                         name: "salary-reports",
@@ -936,6 +942,17 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.reports}>
                               <Suspense fallback={<LinearProgress />}>
                                 <LoadAnalyticsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        {/* Прибыли и убытки: право pnl.view + модуль pnl (canAccess проверяет оба). */}
+                        <Route
+                          path="pnl"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.pnl}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <PnlPage />
                               </Suspense>
                             </RequirePermission>
                           }
