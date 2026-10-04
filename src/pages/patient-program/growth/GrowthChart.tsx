@@ -5,7 +5,7 @@ import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Scatter,
 import { ChipGroup } from "../vision/VisionControls";
 import { INDICATOR_OF, type MeasureKey, type Measurement } from "./growthData";
 import { CENTILE_LINES, lmsAt, valueAtZ, type GrowthSex } from "./growthNorms";
-import { ageTick, ageTicks, chartRange, formatNumber, valueDomain } from "./growthUi";
+import { ageTick, ageTicks, chartRange, formatNumber, valueAxis } from "./growthUi";
 import { WHO_LMS } from "./whoGrowthData";
 
 const TABS: ReadonlyArray<{ value: MeasureKey; label: string; unit: string }> = [
@@ -63,7 +63,7 @@ export const GrowthChart: React.FC<{ list: Measurement[]; sex: GrowthSex | null 
     tableEnd,
   );
   const rows = sex && curveTo != null ? curves(tab.value, sex, from, curveTo) : [];
-  const domain = valueDomain([...rows.flatMap((row) => [row.p3, row.p97]), ...points.map((point) => point.v)]);
+  const axis = valueAxis([...rows.flatMap((row) => [row.p3, row.p97]), ...points.map((point) => point.v)]);
   const success = theme.palette.success.main;
   const tick = { fontSize: 12, fill: theme.palette.text.secondary };
   const digits = tab.value === "heightCm" || tab.value === "headCm" ? 0 : 1;
@@ -80,7 +80,8 @@ export const GrowthChart: React.FC<{ list: Measurement[]; sex: GrowthSex | null 
             <CartesianGrid stroke={theme.palette.divider} strokeDasharray="3 3" vertical={false} />
             <XAxis type="number" dataKey="m" domain={[from, to]} ticks={ageTicks(from, to)} tickFormatter={ageTick} tick={tick} />
             <YAxis
-              domain={domain ?? ["auto", "auto"]}
+              domain={axis?.domain ?? ["auto", "auto"]}
+              ticks={axis?.ticks}
               allowDataOverflow
               tickFormatter={(value: number) => formatNumber(value, digits)}
               tick={tick}

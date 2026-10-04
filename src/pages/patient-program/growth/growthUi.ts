@@ -51,12 +51,20 @@ export function chartRange(
  * Пределы оси значений: коридор ВОЗ и замеры вместе, с небольшим запасом —
  * иначе одна странная точка прячет нормы за краем графика.
  */
-export function valueDomain(values: ReadonlyArray<number>): [number, number] | null {
+const NICE_STEPS = [0.5, 1, 2, 5, 10, 20, 25, 50, 100];
+
+export function valueAxis(values: ReadonlyArray<number>): { domain: [number, number]; ticks: number[] } | null {
   if (!values.length) return null;
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const pad = Math.max((max - min) * 0.06, 0.5);
-  return [Math.max(0, Math.floor(min - pad)), Math.ceil(max + pad)];
+  const wanted = Math.max((max - min) / 6, 0.5);
+  const step = NICE_STEPS.find((item) => item >= wanted) ?? 100;
+  // Круглые деления и запас в пятую часть шага, чтобы линии не упирались в край.
+  const low = Math.max(0, Math.floor((min - step * 0.2) / step) * step);
+  const high = Math.ceil((max + step * 0.2) / step) * step;
+  const ticks: number[] = [];
+  for (let value = low; value <= high + 1e-9; value += step) ticks.push(Math.round(value * 100) / 100);
+  return { domain: [low, high], ticks };
 }
 
 /** Деления оси возраста: через 3, 6 или 12 месяцев — по длине периода. */
