@@ -42,6 +42,10 @@ describe("previewSectionsFor", () => {
     }
   });
 
+  it("право pnl.view открывает только раздел «Прибыли и убытки»", () => {
+    expect(keysFor(["pnl.view"])).toEqual(["pnl"]);
+  });
+
   it("исторические реестры открываются каждый своим правом", () => {
     expect(keysFor(["appointments.all_appointments.view"])).toEqual(["allAppointments"]);
     expect(keysFor(["appointments.all_procedures.view"])).toEqual(["allProcedures"]);
