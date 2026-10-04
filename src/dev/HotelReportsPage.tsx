@@ -7,7 +7,9 @@
  *  • «Заезды» (HotelBalancesReport) — «Балансы бронирований» Exely по дате заезда;
  *  • «Доходность и загрузка» (HotelYieldReport) — по месяцам, неделям и дням;
  *  • «Горничные» (HotelHousekeepersReport) — нагрузка уборки по графику;
- *  • «Номера за день» (HotelDayReport) — кто где живёт и по какой цене.
+ *  • «Номера за день» (HotelDayReport) — кто где живёт и по какой цене;
+ *  • «Правки цен» (HotelPriceChangesReport) — свои цены, скидки и суммы за период;
+ *  • «Объекты» (HotelPropertiesReport) — все объекты организации рядом.
  *
  * Отчёт и его фильтры живут в адресе (?r=balances&balance=debt&from=…), так
  * что блоки одного отчёта открывают другой с нужным фильтром, а «Назад» в
@@ -27,6 +29,8 @@ import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWall
 import KingBedOutlined from "@mui/icons-material/KingBedOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import EditNoteOutlined from "@mui/icons-material/EditNoteOutlined";
+import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 
@@ -36,6 +40,8 @@ import { HotelBalancesReport } from "./HotelBalancesReport";
 import { HotelDayReport } from "./HotelDayReport";
 import { HotelHousekeepersReport } from "./HotelHousekeepersReport";
 import { HotelOwnerReport } from "./HotelOwnerReport";
+import { HotelPriceChangesReport } from "./HotelPriceChangesReport";
+import { HotelPropertiesReport } from "./HotelPropertiesReport";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { HotelShiftReport } from "./HotelShiftReport";
 import { HotelYieldReport } from "./HotelYieldReport";
@@ -57,6 +63,7 @@ const REPORTS: ReportMeta[] = [
   {
     kind: "shift",
     label: "Отчёт смены",
+    short: "Смена",
     hint: "Наличка, безнал, расходы, касса",
     audience: "ресепшен",
     icon: <AssignmentTurnedInOutlined />,
@@ -90,15 +97,34 @@ const REPORTS: ReportMeta[] = [
   {
     kind: "day",
     label: "Номера за день",
+    short: "Номера",
     hint: "Кто где живёт и по какой цене",
     audience: "все",
     icon: <KingBedOutlined />,
     info: "Кто заселён на выбранную дату, по какой цене ночи и сколько номеров свободно. Считает бэкенд; выгрузка — реальный .xlsx.",
   },
+  {
+    kind: "pricechanges",
+    label: "Правки цен",
+    short: "Правки",
+    hint: "Свои цены, скидки и кто их ставил",
+    audience: "владелец, управляющий",
+    icon: <EditNoteOutlined />,
+    info: "Все ручные правки денег за период одним списком: своя цена ночи, скидка в процентах, своя сумма номера. Кто правил, с какой причиной и насколько изменилась сумма брони. Итог — по всему периоду.",
+  },
+  {
+    kind: "properties",
+    label: "Сравнение объектов",
+    short: "Объекты",
+    hint: "Загрузка и выручка объектов рядом",
+    audience: "владелец сети",
+    icon: <ApartmentOutlined />,
+    info: "Все объекты организации на одном экране: загрузка, выручка номеров, ADR, RevPAR, заезды, отмены и незаезды за период — по тем же правилам, что «Собственнику». Итоги считаются отдельно по каждой валюте.",
+  },
 ];
 
 /** Отчёты с панелью дат и фильтров (ReportControls) — её можно свернуть в строку. */
-const COLLAPSIBLE = new Set<HotelReportKind>(["owner", "balances", "yield"]);
+const COLLAPSIBLE = new Set<HotelReportKind>(["owner", "balances", "yield", "pricechanges", "properties"]);
 const CONTROLS_KEY = "mamadoc:hotel-reports:controls-collapsed";
 type Device = "phone" | "desktop";
 const readCollapsed = (): Partial<Record<Device, boolean>> => {
@@ -116,6 +142,8 @@ export const HotelReportsPage: React.FC = () => {
   const canOwner = useCan(["hotel.manage", "finance.view"]);
   const canShift = useCan("hotel.payments.manage");
   const canHousekeeping = useCan(["hotel.housekeeping.view", "hotel.manage"]);
+  // Новые отчёты бэкенда (r4) — по праву на отчёты.
+  const canReports = useCan(["hotel.reports.view", "hotel.manage"]);
   const [params, setParams] = useSearchParams();
   const [openId, setOpenId] = React.useState<number | null>(null);
   const queryClient = useQueryClient();
@@ -155,7 +183,15 @@ export const HotelReportsPage: React.FC = () => {
   );
 
   const visible = REPORTS.filter((r) =>
-    r.kind === "owner" ? canOwner : r.kind === "shift" ? canShift : r.kind === "housekeeping" ? canHousekeeping : true,
+    r.kind === "owner"
+      ? canOwner
+      : r.kind === "shift"
+        ? canShift
+        : r.kind === "housekeeping"
+          ? canHousekeeping
+          : r.kind === "pricechanges" || r.kind === "properties"
+            ? canReports
+            : true,
   );
   const requested = params.get("r") as HotelReportKind | null;
   const current = visible.find((r) => r.kind === requested) ?? visible[0];
@@ -256,6 +292,10 @@ export const HotelReportsPage: React.FC = () => {
         <HotelYieldReport key={property.id} propertyId={property.id} currency={property.currency} nav={nav} />
       ) : current.kind === "housekeeping" ? (
         <HotelHousekeepersReport key={property.id} propertyId={property.id} nav={nav} />
+      ) : current.kind === "pricechanges" ? (
+        <HotelPriceChangesReport key={property.id} propertyId={property.id} currency={property.currency} nav={nav} />
+      ) : current.kind === "properties" ? (
+        <HotelPropertiesReport nav={nav} />
       ) : (
         <HotelDayReport key={property.id} propertyId={property.id} propertyName={property.name} nav={nav} />
       )}

@@ -74,6 +74,10 @@ export const HotelReportSwitcher: React.FC<{
             bgcolor: "background.paper",
             boxShadow: `0 1px 2px ${alpha("#101828", dark ? 0.4 : 0.05)}`,
             minWidth: 0,
+            // Восемь отчётов на 1200–1366 px: не налезать на иконки справа — ряд прокручивается.
+            overflowX: "auto",
+            scrollbarWidth: "none",
+            "&::-webkit-scrollbar": { display: "none" },
           }}
         >
           {reports.map((r) => {
@@ -86,6 +90,7 @@ export const HotelReportSwitcher: React.FC<{
                 title={r.hint}
                 onClick={() => onSelect(r.kind)}
                 sx={{
+                  flexShrink: 0,
                   gap: 0.875,
                   px: 1.25,
                   py: 0.75,
