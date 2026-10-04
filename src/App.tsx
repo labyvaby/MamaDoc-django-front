@@ -63,6 +63,7 @@ import { CASHLESS_METHODS_ENABLED } from "./api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "./api/deals";
 import { WAITLIST_MODULE_ENABLED } from "./api/waitlist";
 import { djangoDataProvider } from "./config/djangoDataProvider";
+import { ScribeRecorderProvider } from "./scribe/ScribeRecorderProvider";
 
 // ОПТИМИЗАЦИЯ: Все страницы загружаются через lazy() для code splitting
 const UnderConstruction = lazy(() =>
@@ -499,6 +500,9 @@ function App() {
                       },
                     }}
                   >
+                    {/* ИИ-запись приёма живёт над маршрутами: окно заключения
+                        закрыли или ушли на другую страницу — звук пишется. */}
+                    <ScribeRecorderProvider>
                     <Routes>
                       {/* Касса (POS): та же авторизация и сайдбар, но без общей
                           шапки и без отступов — модуль занимает всю рабочую
@@ -1471,6 +1475,7 @@ function App() {
                         />
                       </Route>
                     </Routes>
+                    </ScribeRecorderProvider>
 
                     <DjangoQueryCacheReset />
                     <RateLimitDialog />
