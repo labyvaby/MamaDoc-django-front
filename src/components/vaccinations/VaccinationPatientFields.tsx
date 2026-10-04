@@ -34,7 +34,7 @@ type Props = {
 const GENDER_LABEL: Record<string, string> = { male: "Мужской", female: "Женский" };
 
 /**
- * Пол, дата рождения и ИНН ребёнка — без них прививку не оформить. Заполненное
+ * Пол, дата рождения и ИНН ребёнка — нужны для отчётов, можно пропустить. Заполненное
  * показывается строкой, пустое — полями ввода; ИНН сам заполняет пол и дату.
  */
 const VaccinationPatientFields: React.FC<Props> = ({ value, onChange, highlight = [], serverErrors }) => {

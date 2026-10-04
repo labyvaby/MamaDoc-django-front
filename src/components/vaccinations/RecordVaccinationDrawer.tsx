@@ -388,6 +388,10 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   const [patientDraft, setPatientDraft] = React.useState<PatientDraft>(originalPatientDraft);
   React.useEffect(() => setPatientDraft(originalPatientDraft), [originalPatientDraft]);
   const [highlight, setHighlight] = React.useState<string[]>([]);
+  // Пол/дата рождения/ИНН можно пропустить (решение 2026-10-04): первое
+  // «Сохранить» подсвечивает пустые поля, второе сохраняет без них.
+  const [skipPatientWarning, setSkipPatientWarning] = React.useState<string | null>(null);
+  React.useEffect(() => setSkipPatientWarning(null), [patientDraft]);
 
   // ── Справочник вакцин ──
   const vaccinesQuery = useQuery({
@@ -584,9 +588,11 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       return;
     }
     const gaps = patientGaps(patientDraft);
-    if (patient && gaps.length > 0) {
+    if (patient && gaps.length > 0 && skipPatientWarning == null) {
       setHighlight(gaps.map((g) => `patient.${g}`));
-      setError("Укажите пол, дату рождения и ИНН (или причину, почему его нет)");
+      setSkipPatientWarning(
+        "Не заполнены пол, дата рождения или ИНН — они нужны для отчётов. Заполните сейчас или нажмите «Сохранить» ещё раз, чтобы дополнить позже.",
+      );
       return;
     }
     mutation.mutate();
@@ -634,6 +640,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       <Box sx={{ flex: 1, overflowY: "auto", px: 3, py: 2.5 }}>
         <MotionStack spacing={2} variants={cascadeContainer} initial="hidden" animate="show">
           {error && <Alert severity="error">{error}</Alert>}
+          {skipPatientWarning && <Alert severity="warning">{skipPatientWarning}</Alert>}
           {branchId == null && (
             <Alert severity="warning">
               Не выбран активный филиал — ввод вакцины недоступен. Переключите филиал вверху.

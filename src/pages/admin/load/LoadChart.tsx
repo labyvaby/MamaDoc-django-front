@@ -8,53 +8,50 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  ReferenceLine,
 } from "recharts";
-import dayjs from "dayjs";
 
-import type { HourPoint, DayPoint } from "../../../api/load";
 import { useT } from "../../../i18n/VerticalProvider";
-
-export type LoadChartMode = "hourly" | "daily";
+import { formatHours, type LoadBucket, type LoadMetric } from "./loadBuckets";
 
 interface Props {
-  mode: LoadChartMode;
-  hourly: HourPoint[];
-  daily: DayPoint[];
+  metric: LoadMetric;
+  buckets: LoadBucket[];
 }
 
-/** Business-hours window for the hourly view, widened to any hour with data. */
-function hourWindow(hourly: HourPoint[]): [number, number] {
-  const nonZero = hourly.filter((h) => h.count > 0).map((h) => h.hour);
-  if (nonZero.length === 0) return [8, 20];
-  return [Math.min(8, Math.min(...nonZero)), Math.max(20, Math.max(...nonZero))];
-}
+type ChartPoint = LoadBucket & { value: number | null };
 
-export const LoadChart: React.FC<Props> = ({ mode, hourly, daily }) => {
+export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
   const { t } = useT("load");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const isUtilization = metric === "utilization";
 
-  const data = useMemo(() => {
-    if (mode === "daily") {
-      return daily.map((d) => ({ label: dayjs(d.date).format("DD.MM"), value: d.count }));
-    }
-    const [lo, hi] = hourWindow(hourly);
-    return hourly
-      .filter((h) => h.hour >= lo && h.hour <= hi)
-      .map((h) => ({ label: `${String(h.hour).padStart(2, "0")}:00`, value: h.count }));
-  }, [mode, hourly, daily]);
+  const data = useMemo<ChartPoint[]>(
+    () => buckets.map((b) => ({ ...b, value: isUtilization ? b.utilization : b.count })),
+    [buckets, isUtilization],
+  );
 
-  const peakValue = useMemo(
-    () => (data.length ? Math.max(...data.map((d) => d.value)) : 0),
-    [data],
+  const peakValue = useMemo(() => data.reduce((m, d) => Math.max(m, d.value ?? 0), 0), [data]);
+  // Подписи недель («28.09–04.10») шире точки: без отступа крайние
+  // срезаются краем графика.
+  const wideLabels = data.some((d) => d.label.length > 6);
+  // Загрузка бывает больше 100% (приёмы сверх графика): шкала растёт до
+  // ближайших 25% выше пика, пунктир отмечает 100% — сам график.
+  const utilizationStep = peakValue <= 150 ? 25 : peakValue <= 300 ? 50 : 100;
+  const utilizationTop = Math.max(100, Math.ceil(peakValue / utilizationStep) * utilizationStep);
+  // Ровные деления, среди которых обязательно есть 100%.
+  const utilizationTicks = Array.from(
+    { length: utilizationTop / utilizationStep + 1 },
+    (_, i) => i * utilizationStep,
   );
 
   const primaryColor = theme.palette.primary.main;
   const peakColor = theme.palette.error.main;
 
-  const renderDot = (props: { cx?: number; cy?: number; value?: number; index?: number }) => {
+  const renderDot = (props: { cx?: number; cy?: number; value?: number | null; index?: number }) => {
     const { cx, cy, value, index } = props;
-    if (value === peakValue && value > 0 && cx != null && cy != null) {
+    if (value != null && value === peakValue && value > 0 && cx != null && cy != null) {
       return (
         <circle
           key={`dot-${index}`}
@@ -68,6 +65,16 @@ export const LoadChart: React.FC<Props> = ({ mode, hourly, daily }) => {
       );
     }
     return <React.Fragment key={`dot-${index}`} />;
+  };
+
+  const formatValue = (value: unknown, point: ChartPoint | undefined): [string | number, string] => {
+    if (!isUtilization) return [typeof value === "number" ? value : 0, t("chartTooltipLabel")];
+    if (value == null || !point) return ["нет смен", "Загрузка"];
+    const outside = point.outsideMinutes > 0 ? ` (+${formatHours(point.outsideMinutes)} ч вне графика)` : "";
+    return [
+      `${value}% · ${formatHours(point.busyMinutes)} из ${formatHours(point.scheduleMinutes)} ч${outside}`,
+      "Загрузка",
+    ];
   };
 
   return (
@@ -88,12 +95,24 @@ export const LoadChart: React.FC<Props> = ({ mode, hourly, daily }) => {
           minTickGap={isMobile ? 24 : 16}
           tick={{ fontSize: isMobile ? 10 : 12, fill: theme.palette.text.secondary }}
           interval={isMobile ? "preserveStartEnd" : 0}
+          padding={wideLabels ? { left: 28, right: 36 } : undefined}
         />
         <YAxis
           tick={{ fontSize: isMobile ? 10 : 12, fill: theme.palette.text.secondary }}
           allowDecimals={false}
-          width={isMobile ? 28 : 40}
+          width={isMobile ? 32 : 44}
+          domain={isUtilization ? [0, utilizationTop] : undefined}
+          ticks={isUtilization ? utilizationTicks : undefined}
+          tickFormatter={isUtilization ? (v: number) => `${v}%` : undefined}
         />
+        {isUtilization && utilizationTop > 100 && (
+          <ReferenceLine
+            y={100}
+            stroke={theme.palette.warning.main}
+            strokeDasharray="6 4"
+            label={{ value: "график", position: "insideTopRight", fill: theme.palette.warning.main, fontSize: 11 }}
+          />
+        )}
         <Tooltip
           contentStyle={{
             borderRadius: 10,
@@ -103,8 +122,10 @@ export const LoadChart: React.FC<Props> = ({ mode, hourly, daily }) => {
           }}
           labelStyle={{ fontWeight: 600, color: theme.palette.text.primary }}
           itemStyle={{ color: theme.palette.text.secondary }}
-          formatter={(value: number | undefined) => [value ?? 0, t("chartTooltipLabel")]}
-          labelFormatter={(label) => (mode === "daily" ? `Дата: ${label}` : `Время: ${label}`)}
+          formatter={(value, _name, item) => formatValue(value, item?.payload as ChartPoint | undefined)}
+          labelFormatter={(label, payload) =>
+            (payload?.[0]?.payload as ChartPoint | undefined)?.title ?? String(label)
+          }
         />
         <Area
           type="monotone"
@@ -113,6 +134,7 @@ export const LoadChart: React.FC<Props> = ({ mode, hourly, daily }) => {
           strokeWidth={isMobile ? 2 : 3}
           fillOpacity={1}
           fill="url(#loadColorValue)"
+          connectNulls={false}
           dot={renderDot}
           activeDot={{ r: isMobile ? 5 : 7, strokeWidth: 0, fill: peakColor }}
         />

@@ -657,32 +657,49 @@ const VaccinationsPage: React.FC = () => {
               </Box>
             );
           }
+          // Дозы в одну строку капсулами «① 2 мес.» — номер и возраст рядом.
           return (
-            <Box sx={twoLineCellSx}>
-              <Stack direction="row" gap={0.5} alignItems="center">
-                {doses.map((d) => (
+            <Stack direction="row" gap={0.5} alignItems="center" sx={{ height: "100%", minWidth: 0, overflow: "hidden" }}>
+              {doses.map((d) => (
+                <Stack
+                  key={d.id}
+                  direction="row"
+                  alignItems="center"
+                  gap={0.5}
+                  sx={{
+                    flexShrink: 0,
+                    height: 22,
+                    pl: 0.25,
+                    pr: 0.75,
+                    borderRadius: "11px",
+                    border: 1,
+                    borderColor: alpha(theme.palette.primary.main, 0.4),
+                  }}
+                >
                   <Box
-                    key={d.id}
+                    component="span"
                     sx={{
-                      width: 18,
-                      height: 18,
+                      width: 16,
+                      height: 16,
                       borderRadius: "50%",
-                      display: "grid",
-                      placeItems: "center",
-                      fontSize: 11,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 10,
+                      lineHeight: 1,
                       fontWeight: 700,
-                      color: "primary.contrastText",
-                      bgcolor: "primary.main",
+                      color: theme.palette.primary.contrastText,
+                      bgcolor: theme.palette.primary.main,
                     }}
                   >
                     {d.doseNumber}
                   </Box>
-                ))}
-              </Stack>
-              <Typography variant="caption" color="text.secondary" noWrap>
-                {doses.map((d) => doseAgeText(d)).join(" · ")}
-              </Typography>
-            </Box>
+                  <Box component="span" sx={{ fontSize: 12, lineHeight: 1, whiteSpace: "nowrap", color: "text.secondary" }}>
+                    {doseAgeText(d)}
+                  </Box>
+                </Stack>
+              ))}
+            </Stack>
           );
         },
       },
@@ -764,7 +781,7 @@ const VaccinationsPage: React.FC = () => {
         ),
       },
     ],
-    [dosesByVaccine, stockMap],
+    [dosesByVaccine, stockMap, theme],
   );
 
   const batchesColumns = React.useMemo<GridColDef<VaccineBatch>[]>(

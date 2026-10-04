@@ -5,11 +5,17 @@ import { apiRequest } from "./client";
 export interface HourPoint {
   hour: number; // 0..23
   count: number;
+  scheduleMinutes: number; // shift minutes in this hour of day (all days, all staff)
+  busyMinutes: number; // busy minutes inside those shifts
+  outsideMinutes: number; // busy minutes outside shifts (staff with shifts in the period)
 }
 
 export interface DayPoint {
   date: string; // YYYY-MM-DD
   count: number;
+  scheduleMinutes: number;
+  busyMinutes: number;
+  outsideMinutes: number;
 }
 
 export interface HeatCell {
@@ -23,6 +29,11 @@ export interface EmployeeLoad {
   fullName: string;
   appointments: number;
   hours: string; // decimal-safe string (worked hours from attendance)
+  scheduleMinutes: number; // shift minutes by schedule
+  busyMinutes: number; // busy minutes inside shifts
+  outsideMinutes: number; // busy minutes outside shifts
+  utilizationPct: number | null; // 0..100, null without schedule
+  attendanceUtilizationPct: number | null; // busy inside attendance ÷ worked, null without attendance
 }
 
 export interface LoadKpi {
@@ -34,6 +45,11 @@ export interface LoadKpi {
   busiestWeekdayAvg: number;
   prevTotal: number;
   deltaPct: number | null;
+  scheduleMinutes: number;
+  busyMinutes: number;
+  outsideMinutes: number; // only staff who have shifts in the period
+  utilizationPct: number | null;
+  attendanceUtilizationPct: number | null;
 }
 
 export interface LoadAnalytics {

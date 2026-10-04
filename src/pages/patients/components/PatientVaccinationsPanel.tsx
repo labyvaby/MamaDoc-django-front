@@ -262,7 +262,7 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {/* ── Данные пациента, без которых прививку не оформить ── */}
+      {/* ── Данные пациента для отчётов (можно дополнить позже) ── */}
       <Box sx={{ mb: 1.5, flexShrink: 0 }}>
         <Typography variant="body2" color="text.secondary">
           {GENDER_LABEL[patient.gender] ?? "Пол не указан"}
@@ -288,7 +288,7 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
               )
             }
           >
-            Укажите {gaps.map((g) => GAP_LABEL[g]).join(", ")} — без этого прививку не оформить.
+            Не заполнено: {gaps.map((g) => GAP_LABEL[g]).join(", ")} — нужно для отчётов по прививкам, можно дополнить позже.
           </Alert>
         )}
       </Box>
