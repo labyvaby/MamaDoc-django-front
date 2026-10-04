@@ -192,7 +192,32 @@ export interface HotelProperty {
   bik?: string;
   directorName?: string;
   accountantName?: string;
+  // ── r3/r4 бэкенда (docs/hotel-backend-r3-frontend.md, r4): поля есть, когда сервер обновлён.
+  /** Ночной аудит закрывает незаезды прошлых дней. */
+  autoNoShow?: boolean;
+  /** "03:00:00" в ответе; в PATCH — "HH:MM". */
+  nightAuditTime?: string;
+  /** Сколько минут держится заявка с сайта, 5–1440. */
+  websiteHoldMinutes?: number;
+  /** "HH:MM" — заявка в последние 12 ч перед этим временем держится до него; null — не задано. */
+  websiteHoldUntil?: string | null;
+  /** Бесплатная отмена до N суток до заезда; null — штраф с момента бронирования; 0 — до дня заезда. */
+  freeCancellationDays?: number | null;
+  cancellationPenalty?: HotelCancellationPenaltyKind;
+  /** Процент (percent) или сумма (amount); иначе null. */
+  cancellationPenaltyValue?: Money | null;
+  prepaymentPercent?: Money | null;
+  /** Внести предоплату в течение N часов после бронирования. */
+  prepaymentHours?: number | null;
+  /** Условия словами — строит сервер, только чтение; "" — условий нет. */
+  cancellationPolicyText?: string;
+  /** Предупреждение графика: больше N часов подряд (1–168). */
+  rosterMaxHoursInRow?: number;
+  /** Предупреждение графика: больше N дней без выходного (1–60). */
+  rosterMaxDaysInRow?: number;
 }
+
+export type HotelCancellationPenaltyKind = "none" | "first_night" | "percent" | "amount";
 
 export interface HotelPropertyCreateData {
   name: string;
@@ -216,6 +241,17 @@ export interface HotelPropertyCreateData {
   bik?: string;
   directorName?: string;
   accountantName?: string;
+  autoNoShow?: boolean;
+  nightAuditTime?: string;
+  websiteHoldMinutes?: number;
+  websiteHoldUntil?: string | null;
+  freeCancellationDays?: number | null;
+  cancellationPenalty?: HotelCancellationPenaltyKind;
+  cancellationPenaltyValue?: Money | null;
+  prepaymentPercent?: Money | null;
+  prepaymentHours?: number | null;
+  rosterMaxHoursInRow?: number;
+  rosterMaxDaysInRow?: number;
 }
 
 export interface HotelPropertyUpdateData extends Partial<HotelPropertyCreateData> {
@@ -262,6 +298,9 @@ export interface HotelRoomType {
   roomLayout: string;
   isLuxury: boolean;
   description: string;
+  /** Для сайта на английском (?lang=en); пусто — сайт покажет русское. Поля нет — сервер ещё без него. */
+  nameEn?: string;
+  descriptionEn?: string;
   /** Цена «номера без ничего», сом/ночь — на запись только она. */
   basePrice: Money;
   /** basePrice + Σ extraPrice отмеченных характеристик по справочнику объекта — только чтение, не считать на фронте. */
@@ -451,6 +490,10 @@ export interface HotelPricingRule {
   stage: "night" | "booking";
   /** Отправлять обратно в PATCH — расхождение → 409 VERSION_CONFLICT. */
   version: number;
+  /** Черновик от события календаря — выключен и ждёт подтверждения (r4 §18). */
+  isDraft?: boolean;
+  /** id события календаря, из которого сделан черновик. */
+  sourceEvent?: string | null;
   createdById: number | null;
   createdByName: string;
   updatedById: number | null;
@@ -504,6 +547,17 @@ export function updatePricingRule(id: number, data: HotelPricingRuleUpdateData):
 
 export function deletePricingRule(id: number): Promise<void> {
   return apiRequest<void>(`/v2/hotel/pricing-rules/${id}/`, { method: "DELETE" });
+}
+
+/** Черновики правил от событий — ждут подтверждения (r4 §18). Старый сервер параметр пропускает — фильтруем сами. */
+export async function listPricingRuleDrafts(propertyId: number, signal?: AbortSignal): Promise<HotelPricingRule[]> {
+  const rules = await apiRequest<HotelPricingRule[]>(`/v2/hotel/pricing-rules/${buildQuery({ propertyId, draft: true, includeInactive: true })}`, { signal });
+  return rules.filter((r) => r.isDraft === true);
+}
+
+/** Включить черновик: isDraft → false, isActive → true. */
+export function confirmPricingRule(id: number): Promise<HotelPricingRule> {
+  return apiRequest<HotelPricingRule>(`/v2/hotel/pricing-rules/${id}/confirm/`, { method: "POST" });
 }
 
 /**
@@ -1522,6 +1576,27 @@ export interface HotelReservation {
 
 export interface HotelReservationDetail extends HotelReservation {
   logs: HotelReservationLog[];
+  /** Условия отмены на момент бронирования; null — у брони нет условий объекта. */
+  cancellationTerms?: HotelCancellationTerms | null;
+  /** Сколько стоит отмена сегодня; null — условий нет или бронь закрыта. Сам штраф сервер не начисляет. */
+  cancellationPenalty?: HotelCancellationPenaltyQuote | null;
+}
+
+export interface HotelCancellationTerms {
+  freeCancellationDays: number | null;
+  penalty: HotelCancellationPenaltyKind;
+  penaltyValue: Money | null;
+  prepaymentPercent: Money | null;
+  prepaymentHours: number | null;
+  currency: string;
+}
+
+export interface HotelCancellationPenaltyQuote {
+  applies: boolean;
+  amount: Money;
+  /** Последний день бесплатной отмены; null — бесплатной отмены нет. */
+  freeUntil: string | null;
+  currency: string;
 }
 
 export interface HotelReservationList {
@@ -2547,6 +2622,8 @@ export interface HotelHousekeepingTask {
   /** Кто нажал «выполнено» (или назначенный, если у пользователя нет карточки сотрудника). */
   completedById?: number | null;
   completedByName?: string;
+  /** Ремонт закрыл номер до выполнения (r4 §13). */
+  blocksRoom?: boolean;
 }
 
 export interface HotelHousekeepingTaskListParams {
@@ -2570,6 +2647,8 @@ export interface HotelHousekeepingTaskCreateData {
   note?: string;
   /** Позиция брони того же объекта — задачу потом находят по ней (?reservationItemId=). */
   reservationItemId?: number | null;
+  /** Только у maintenance: номер снят с продажи, пока задача не done/cancelled (r4 §13). */
+  blocksRoom?: boolean;
 }
 
 export interface HotelHousekeepingTaskUpdateData {
@@ -2673,6 +2752,9 @@ export interface HotelCityEvent {
   sourceUrl: string | null;
   /** Добавлено сотрудником отеля, а не пришло из источника. */
   isManual: boolean;
+  /** Правило цены от этого события (r4 §18); null — правила нет. Полей нет — сервер ещё без них. */
+  priceRuleId?: number | null;
+  priceRuleStatus?: "draft" | "active" | "inactive" | null;
 }
 
 export interface HotelCityEventCreateData {
@@ -2699,6 +2781,11 @@ export function listCityEvents(
 /** POST /v2/hotel/city-events/ — событие, добавленное вручную (isManual: true в ответе). */
 export function createCityEvent(data: HotelCityEventCreateData): Promise<HotelCityEvent> {
   return apiRequest<HotelCityEvent>("/v2/hotel/city-events/", { method: "POST", body: data });
+}
+
+/** «Цена в один клик»: черновик правила на даты события; повторный вызов вернёт тот же черновик. */
+export function createEventPriceDraft(data: { propertyId: number; eventId: string }): Promise<HotelPricingRule> {
+  return apiRequest<HotelPricingRule>("/v2/hotel/city-events/price-draft/", { method: "POST", body: data });
 }
 
 // ── График персонала: посты и смены ───────────────────────────────────────
@@ -2817,8 +2904,30 @@ export function saveStaffShifts(data: {
   propertyId: number;
   shifts: HotelStaffShiftInput[];
   allowOverlap?: boolean;
-}): Promise<{ saved: HotelStaffShift[]; removed: { postId: number; date: string }[] }> {
-  return apiRequest<{ saved: HotelStaffShift[]; removed: { postId: number; date: string }[] }>("/v2/hotel/staff-shifts/", { method: "PUT", body: data });
+}): Promise<{ saved: HotelStaffShift[]; removed: { postId: number; date: string }[]; warnings?: HotelShiftWarning[] }> {
+  return apiRequest<{ saved: HotelStaffShift[]; removed: { postId: number; date: string }[]; warnings?: HotelShiftWarning[] }>("/v2/hotel/staff-shifts/", {
+    method: "PUT",
+    body: data,
+  });
+}
+
+/** Переработка или работа без выходного — предупреждение, сохранять не мешает (r4 §14). */
+export interface HotelShiftWarning {
+  kind: "hours_in_row" | "days_in_row";
+  employeeId: number;
+  employeeName: string;
+  limit: number;
+  value: number;
+  dateFrom: string;
+  dateTo: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  /** Готовый текст для показа. */
+  message: string;
+}
+
+export function listShiftWarnings(params: { propertyId: number; from: string; to: string }, signal?: AbortSignal): Promise<HotelShiftWarning[]> {
+  return apiRequest<HotelShiftWarning[]>(`/v2/hotel/staff-shifts/warnings/${buildQuery(params)}`, { signal });
 }
 
 /** Конфликт из 409 SHIFT_OVERLAP. */
@@ -2955,4 +3064,155 @@ export function saveShiftNote(data: Omit<HotelShiftNote, "updatedAt" | "updatedB
 
 export function getYieldReport(params: { propertyId: number; from: string; to: string }, signal?: AbortSignal): Promise<HotelYieldReport> {
   return apiRequest<HotelYieldReport>(`/v2/hotel/reports/yield/${buildQuery(params)}`, { signal });
+}
+
+// ── Ночной аудит (r3 §1, r4 §19) ─────────────────────────────────────────
+
+export interface HotelNightAuditEntry {
+  reservationId: number;
+  number: number;
+  guestName: string;
+  checkIn: string;
+  /** У оставленных людям: partly_arrived — часть номеров заселена; later_arrival — другой номер заезжает позже. */
+  reason: "partly_arrived" | "later_arrival" | string | null;
+}
+
+export interface HotelNightAuditCash {
+  currency: string;
+  cashIn: Money;
+  cashlessIn: Money;
+  refundsCash: Money;
+  refundsCashless: Money;
+  net: Money;
+  paymentsCount: number;
+  byMethod: { method: string; label: string; payments: Money; refunds: Money; net: Money }[];
+  accruedRooms: Money;
+  accruedServices: Money;
+  accruedTotal: Money;
+  shifts: { id: number; openedAt: string; closedAt: string | null; expectedCash: Money; actualCash: Money; difference: Money }[];
+  /** Сумма расхождений по сменам; null — смен не закрывали. */
+  shiftsDifference: Money | null;
+  openShift: boolean;
+}
+
+export interface HotelNightAudit {
+  id: number;
+  propertyId: number;
+  /** Закрытый день: брони с заездом в этот день и раньше. */
+  businessDate: string;
+  startedAt: string;
+  finishedAt: string | null;
+  closed: HotelNightAuditEntry[];
+  skipped: HotelNightAuditEntry[];
+  /** У запусков до r4 — null. */
+  cash?: HotelNightAuditCash | null;
+}
+
+export function listNightAudits(
+  params: { propertyId: number; from?: string; to?: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<{ count: number; results: HotelNightAudit[] }> {
+  return apiRequest<{ count: number; results: HotelNightAudit[] }>(`/v2/hotel/night-audits/${buildQuery(params)}`, { signal });
+}
+
+// ── Уведомления сотрудникам (r4 §11) ─────────────────────────────────────
+
+export interface HotelAlerts {
+  propertyId: number;
+  generatedAt: string;
+  arrivingSoon: { reservationId: number; number: number; guestName: string; guestPhone: string; arrivalTime: string; minutesLeft: number; rooms: string[] }[];
+  overdueHousekeeping: {
+    taskId: number;
+    roomId: number;
+    roomNumber: string;
+    kind: HotelHousekeepingTask["kind"];
+    status: HotelHousekeepingTask["status"];
+    assignedToId: number | null;
+    assignedToName: string;
+    dueAt: string;
+    minutesOverdue: number;
+  }[];
+  departingWithDebt: { reservationId: number; number: number; guestName: string; guestPhone: string; rooms: string[]; departureTime: string; balanceDue: Money; currency: string }[];
+}
+
+export function getHotelAlerts(propertyId: number, signal?: AbortSignal): Promise<HotelAlerts> {
+  return apiRequest<HotelAlerts>(`/v2/hotel/alerts/${buildQuery({ propertyId })}`, { signal });
+}
+
+// ── Отчёт «Правки цен» (r4 §15) ──────────────────────────────────────────
+
+export interface HotelPriceChange {
+  id: number;
+  createdAt: string;
+  reservationId: number;
+  reservationNumber: number;
+  guestName: string;
+  itemId: number | null;
+  roomNumber: string | null;
+  userId: number | null;
+  userName: string;
+  kind: "nights" | "discount" | "nights_discount" | "manual_total" | "other";
+  reason: string;
+  oldAmount: Money | null;
+  newAmount: Money | null;
+  delta: Money | null;
+  oldDiscountPercent: Money | null;
+  newDiscountPercent: Money | null;
+  nights: { date: string; oldPrice: Money; newPrice: Money; oldDiscount: Money; newDiscount: Money }[];
+}
+
+export interface HotelPriceChangesReport {
+  count: number;
+  /** Сумма по всему периоду, не только по странице. */
+  totalDelta: Money;
+  currency: string;
+  dateFrom: string;
+  dateTo: string;
+  results: HotelPriceChange[];
+}
+
+/** from/to включительно. */
+export function getPriceChangesReport(
+  params: { propertyId: number; from: string; to: string; userId?: number; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<HotelPriceChangesReport> {
+  return apiRequest<HotelPriceChangesReport>(`/v2/hotel/reports/price-changes/${buildQuery(params)}`, { signal });
+}
+
+// ── Отчёт «Сравнение объектов» (r4 §16) ──────────────────────────────────
+
+export interface HotelPropertyComparisonRow {
+  propertyId: number;
+  propertyName: string;
+  currency: string;
+  availableRoomNights: number;
+  soldRoomNights: number;
+  occupancyPercent: Money;
+  roomRevenue: Money;
+  adr: Money;
+  revpar: Money;
+  arrivals: number;
+  departures: number;
+  cancellations: number;
+  notArrived: number;
+  notArrivedRevenue: Money;
+  leftEarlyNights?: number;
+  leftEarlyRevenue?: Money;
+}
+
+export interface HotelPropertyComparison {
+  dateFrom: string;
+  dateTo: string;
+  results: HotelPropertyComparisonRow[];
+  /** По валюте отдельно — деньги разных валют не складываются. */
+  totals: (Omit<HotelPropertyComparisonRow, "propertyId" | "propertyName"> & { properties: number })[];
+}
+
+/** to не включается — как в reports/occupancy/. Без propertyIds — все объекты пользователя. */
+export function getPropertyComparison(params: { from: string; to: string; propertyIds?: number[] }, signal?: AbortSignal): Promise<HotelPropertyComparison> {
+  const { propertyIds, ...rest } = params;
+  return apiRequest<HotelPropertyComparison>(
+    `/v2/hotel/reports/properties/${buildQuery({ ...rest, propertyIds: propertyIds?.length ? propertyIds.join(",") : undefined })}`,
+    { signal },
+  );
 }
