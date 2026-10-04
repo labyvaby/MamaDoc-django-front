@@ -39,6 +39,8 @@ const RULES = {
 } satisfies Record<string, FieldRules>;
 
 const CUSTOM = "custom";
+/** Штраф отмены/незаезда — своя сумма, строка kind «penalty» (r5). */
+const PENALTY = "penalty";
 const money = (v: string | number) => Number(v).toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 
 export const ReservationChargesSection: React.FC<{
@@ -51,6 +53,9 @@ export const ReservationChargesSection: React.FC<{
   const { enqueueSnackbar } = useSnackbar();
   const canManage = useCan("hotel.payments.manage");
   const closed = reservation.status === "cancelled" || reservation.status === "no_show";
+  // Счёт открыт и после отмены (r5): штраф, забытая услуга, снять ошибочную строку. Закрыт только у сгоревшей временной брони.
+  const billLocked = reservation.status === "expired";
+  const penaltyName = reservation.status === "no_show" ? "Штраф за незаезд" : "Штраф за отмену брони";
 
   const [showVoided, setShowVoided] = React.useState(false);
   const chargesQuery = useQuery({
@@ -88,6 +93,7 @@ export const ReservationChargesSection: React.FC<{
   }, [reservation.id]);
 
   const serviceKey = pickedKey ?? (services.length > 0 ? String(services[0].id) : CUSTOM);
+  const isPenalty = serviceKey === PENALTY;
   const service = services.find((s) => String(s.id) === serviceKey);
   const fromCatalog = service != null;
   const effectiveName = fromCatalog ? service.name : name;
@@ -95,8 +101,9 @@ export const ReservationChargesSection: React.FC<{
   const total = Number(effectivePrice) * Number(quantity);
 
   const openForm = () => {
-    setPickedKey(null);
-    setName("");
+    // После отмены чаще всего начисляют штраф — с него и начинаем.
+    setPickedKey(closed ? PENALTY : null);
+    setName(closed ? penaltyName : "");
     setPrice("");
     setQuantity("1");
     setDate(dayjs());
@@ -132,6 +139,7 @@ export const ReservationChargesSection: React.FC<{
         date: date.format("YYYY-MM-DD"),
         comment: comment.trim() || undefined,
         version: reservation.version,
+        ...(isPenalty ? { kind: "penalty" as const } : {}),
       });
       setFormOpen(false);
       refresh();
@@ -177,7 +185,7 @@ export const ReservationChargesSection: React.FC<{
         >
           Услуги
         </Typography>
-        {canManage && !formOpen && !closed && (
+        {canManage && !formOpen && !billLocked && (
           <Button size="small" startIcon={<AddOutlined fontSize="small" />} onClick={openForm}>
             Добавить услугу
           </Button>
@@ -190,7 +198,8 @@ export const ReservationChargesSection: React.FC<{
         </Typography>
       ) : charges.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
-          Допуслуг в счёте нет. {canManage && !closed ? "Мини-бар, прачечная, поздний выезд — добавьте сюда." : ""}
+          {closed ? "В счёте ничего нет." : "Допуслуг в счёте нет."}{" "}
+          {canManage && !billLocked ? (closed ? "Штраф за отмену можно начислить здесь." : "Мини-бар, прачечная, поздний выезд — добавьте сюда.") : ""}
         </Typography>
       ) : (
         <Box>
@@ -200,6 +209,11 @@ export const ReservationChargesSection: React.FC<{
               <Stack key={c.id} direction="row" alignItems="center" gap={1.5} sx={{ py: 1.1, borderTop: i === 0 ? "none" : line, opacity: voided ? 0.55 : 1 }}>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography variant="body2" fontWeight={600} sx={{ textDecoration: voided ? "line-through" : "none" }}>
+                    {c.kind === "penalty" && (
+                      <Box component="span" sx={{ mr: 0.75, px: 0.75, py: 0.1, borderRadius: "6px", fontSize: 11.5, fontWeight: 700, color: "error.main", bgcolor: "action.hover" }}>
+                        Штраф
+                      </Box>
+                    )}
                     {c.name}
                     <Typography component="span" variant="body2" color="text.secondary">
                       {" "}
@@ -220,7 +234,7 @@ export const ReservationChargesSection: React.FC<{
                 <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", flexShrink: 0, textDecoration: voided ? "line-through" : "none" }}>
                   {money(c.totalAmount)}
                 </Typography>
-                {canManage && !voided && !closed && (
+                {canManage && !voided && !billLocked && (
                   <Tooltip title="Отменить услугу">
                     <span>
                       <Button
@@ -270,6 +284,8 @@ export const ReservationChargesSection: React.FC<{
             onChange={(e) => {
               setPickedKey(e.target.value);
               setPrice("");
+              if (e.target.value === PENALTY) setName(penaltyName);
+              else if (isPenalty) setName("");
             }}
             disabled={saving}
             slotProps={{ input: { startAdornment: <FieldIcon icon={<RoomServiceOutlined />} /> } }}
@@ -281,6 +297,7 @@ export const ReservationChargesSection: React.FC<{
               </MenuItem>
             ))}
             <MenuItem value={CUSTOM}>Другая услуга…</MenuItem>
+            <MenuItem value={PENALTY}>Штраф за отмену или незаезд…</MenuItem>
           </TextField>
           {!fromCatalog && (
             <FormField

@@ -769,6 +769,8 @@ export interface HotelCharge {
   voidedAt: string | null;
   voidedById: number | null;
   voidedByName: string;
+  /** «penalty» — штраф отмены или незаезда (r5); поля нет — сервер ещё без него, это «service». */
+  kind?: "service" | "penalty";
 }
 
 export interface HotelChargeList extends HotelPage<HotelCharge> {
@@ -798,6 +800,8 @@ export interface HotelChargeCreateData {
   comment?: string;
   /** Версия брони: расхождение — 409 VERSION_CONFLICT. Без неё проверка не делается. */
   version?: number;
+  /** «penalty» — строка штрафа (r5). */
+  kind?: "service" | "penalty";
 }
 
 /** Право hotel.payments.manage. Нельзя для отменённой брони и no-show (409 INVALID_TRANSITION). */
@@ -1770,7 +1774,8 @@ export function moveRoom(
 
 export function cancelReservation(
   id: number,
-  data: { reason: string; noShow?: boolean; version?: number },
+  /** penaltyAmount — начислить штраф той же транзакцией (r5): строка счёта, после отмены — долг. */
+  data: { reason: string; noShow?: boolean; version?: number; penaltyAmount?: string },
 ): Promise<HotelReservationDetail> {
   return apiRequest<HotelReservationDetail>(`/v2/hotel/reservations/${id}/cancel/`, { method: "POST", body: data });
 }
@@ -3093,6 +3098,8 @@ export interface HotelNightAuditCash {
   byMethod: { method: string; label: string; payments: Money; refunds: Money; net: Money }[];
   accruedRooms: Money;
   accruedServices: Money;
+  /** Сколько из accruedServices — штрафы отмен и незаездов (r5). */
+  accruedPenalties?: Money;
   accruedTotal: Money;
   shifts: { id: number; openedAt: string; closedAt: string | null; expectedCash: Money; actualCash: Money; difference: Money }[];
   /** Сумма расхождений по сменам; null — смен не закрывали. */
