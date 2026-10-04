@@ -703,14 +703,15 @@ const AddEventDrawer: React.FC<{ open: boolean; propertyId: number; onClose: () 
         </DrawerSection>
         <DrawerSection label="Спрос и цена">
           <Stack gap={2}>
-            <Stack direction="row" gap={2}>
+            {/* На телефоне спрос своей строкой — иначе «Высокий спрос» обрезался до «Высокий с…». */}
+            <Stack direction="row" gap={2} sx={{ flexWrap: { xs: "wrap", md: "nowrap" } }}>
               <FormField
                 select
                 icon={<LocalFireDepartmentOutlined />}
                 label="Ожидаемый спрос"
                 value={demand}
                 onValueChange={(v) => setDemand(v as HotelCityEventDemand)}
-                sx={{ flex: 1 }}
+                sx={{ flex: 1, minWidth: { xs: "100%", md: "auto" } }}
               >
                 {(Object.keys(DEMAND_META) as HotelCityEventDemand[]).map((d) => (
                   <MenuItem key={d} value={d}>

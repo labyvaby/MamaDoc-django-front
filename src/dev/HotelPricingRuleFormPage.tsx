@@ -1166,7 +1166,8 @@ const RangeFields: React.FC<{
   onFrom: (v: string) => void;
   onTo: (v: string) => void;
 }> = ({ fromLabel, toLabel, unit, from, to, min, max, disabled, onFrom, onTo }) => (
-  <Stack direction="row" gap={1.5} alignItems="center">
+  // На телефоне поля друг под другом: в ряд подпись «До (не включая)» обрезалась.
+  <Stack direction="row" gap={1.5} alignItems="center" sx={{ flexWrap: { xs: "wrap", md: "nowrap" } }}>
     <FormField
       label={fromLabel}
       unit={unit}
@@ -1175,9 +1176,11 @@ const RangeFields: React.FC<{
       rules={{ kind: "int", min, max }}
       disabled={disabled}
       size="small"
-      sx={{ flex: 1 }}
+      sx={{ flex: 1, minWidth: { xs: "100%", md: 0 } }}
     />
-    <Typography color="text.secondary">—</Typography>
+    <Typography color="text.secondary" sx={{ display: { xs: "none", md: "block" } }}>
+      —
+    </Typography>
     <FormField
       label={toLabel}
       unit={unit}
@@ -1186,7 +1189,7 @@ const RangeFields: React.FC<{
       rules={{ kind: "int", min, max }}
       disabled={disabled}
       size="small"
-      sx={{ flex: 1 }}
+      sx={{ flex: 1, minWidth: { xs: "100%", md: 0 } }}
     />
   </Stack>
 );
