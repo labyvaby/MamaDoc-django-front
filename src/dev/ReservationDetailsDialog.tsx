@@ -453,7 +453,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setTab("billing");
   };
   const paidShare = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
-  const stayStatus = item ? mapStayDisplayStatus(item.stayStatus) : null;
+  // Отменённая, незаезд, истёкшая: статус проживания («Подтверждена») рядом со статусом брони противоречил ему.
+  const reservationClosed = reservation != null && ["cancelled", "no_show", "expired"].includes(reservation.status);
+  const stayStatus = item && !reservationClosed ? mapStayDisplayStatus(item.stayStatus) : null;
   const stayColor = stayStatus ? hotelStayStatusColor(stayStatus, theme) : theme.palette.text.disabled;
 
   const detailRows: { label: string; value: React.ReactNode }[] =
@@ -825,8 +827,17 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 </Stack>
                 <Stack direction="row" gap={0.75} justifyContent={{ xs: "flex-start", md: "flex-end" }} alignItems="baseline">
                   <CurrencyEquivalent propertyId={reservation.propertyId} baseCurrency={reservation.currency} amount={Number(reservation.totalAmount)} />
-                  <Typography variant="caption" color={balance > 0 ? "error.main" : "success.main"} fontWeight={600}>
-                    {balance > 0 ? `к оплате ${money(balance)}` : "оплачено полностью"}
+                  {/* У закрытой брони долга нет — это не значит, что её оплатили. */}
+                  <Typography variant="caption" color={reservationClosed ? "text.secondary" : balance > 0 ? "error.main" : "success.main"} fontWeight={600}>
+                    {reservationClosed
+                      ? balance < 0
+                        ? `к возврату ${money(-balance)}`
+                        : paid > 0
+                          ? `внесено ${money(paid)}`
+                          : "без оплаты"
+                      : balance > 0
+                        ? `к оплате ${money(balance)}`
+                        : "оплачено полностью"}
                   </Typography>
                 </Stack>
               </Box>
