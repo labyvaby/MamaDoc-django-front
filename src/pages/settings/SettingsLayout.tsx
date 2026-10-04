@@ -14,7 +14,9 @@ import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { Link as RouterLink, useLocation } from "react-router";
 
+import ExtensionOutlined from "@mui/icons-material/ExtensionOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
+import RateReviewOutlined from "@mui/icons-material/RateReviewOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import LanguageOutlined from "@mui/icons-material/LanguageOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
@@ -39,15 +41,13 @@ import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
 import RouterOutlined from "@mui/icons-material/RouterOutlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
 import BoltOutlined from "@mui/icons-material/BoltOutlined";
-import WhatsApp from "@mui/icons-material/WhatsApp";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
+import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
-import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
-import HubOutlined from "@mui/icons-material/HubOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -75,6 +75,7 @@ export const SETTINGS_GROUPS = [
   "access",
   "catalogs",
   "operations",
+  "platform",
 ] as const;
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
@@ -184,12 +185,6 @@ const TAB_DEFS: TabDef[] = [
     group: "catalogs",
   },
   {
-    key: "integrations",
-    to: "/settings/integrations",
-    icon: <HubOutlined fontSize="small" />,
-    group: "operations",
-  },
-  {
     key: "conclusionForms",
     to: "/settings/conclusion-forms",
     icon: <DescriptionOutlined fontSize="small" />,
@@ -223,7 +218,7 @@ const TAB_DEFS: TabDef[] = [
     key: "skud",
     to: "/settings/skud",
     icon: <RouterOutlined fontSize="small" />,
-    group: "operations",
+    group: "platform",
   },
   {
     key: "announcements",
@@ -238,35 +233,43 @@ const TAB_DEFS: TabDef[] = [
     group: "operations",
   },
   {
-    key: "automations",
-    to: "/settings/automations",
-    icon: <BoltOutlined fontSize="small" />,
+    key: "reviews",
+    to: "/settings/reviews",
+    icon: <RateReviewOutlined fontSize="small" />,
     group: "operations",
   },
   {
-    key: "whatsapp",
-    to: "/settings/whatsapp",
-    icon: <WhatsApp fontSize="small" />,
-    group: "operations",
+    key: "notificationGateway",
+    to: "/settings/notification-gateway",
+    icon: <RouterOutlined fontSize="small" />,
+    group: "platform",
+  },
+  {
+    key: "automations",
+    to: "/settings/automations",
+    icon: <BoltOutlined fontSize="small" />,
+    group: "platform",
   },
   {
     key: "odoctor",
     to: "/settings/odoctor",
     icon: <StorefrontOutlined fontSize="small" />,
-    group: "operations",
-  },
-  {
-    key: "chatwoot",
-    to: "/settings/chatwoot",
-    icon: <ForumOutlined fontSize="small" />,
-    group: "operations",
+    group: "platform",
   },
   {
     key: "lab",
     to: "/settings/lab",
     icon: <ScienceOutlined fontSize="small" />,
-    group: "operations",
+    group: "platform",
   },
+  {
+    key: "chatwoot",
+    to: "/settings/chatwoot",
+    icon: <ForumOutlined fontSize="small" />,
+    group: "platform",
+  },
+  { key: "altegio", to: "/settings/altegio", icon: <RouterOutlined fontSize="small" />, group: "platform" },
+  { key: "modules", to: "/settings/modules", icon: <ExtensionOutlined fontSize="small" />, group: "platform" },
 ];
 
 /**
@@ -279,10 +282,7 @@ export function useVisibleSettingsTabs(): TabDef[] {
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const { activeOrganization } = usePermissions();
-  // Клиническая специфика (специализации врачей, диагнозы, бланки
-  // заключений, страховые) не подходит ни рознице, ни отелю — то же самое
-  // применимо к Viva, что и к retail, не отдельный список.
-  const nonClinicHiddenTabs: SettingsTabKey[] = [
+  const retailHiddenTabs: SettingsTabKey[] = [
     "site",
     "specializations",
     "banks",
@@ -291,15 +291,11 @@ export function useVisibleSettingsTabs(): TabDef[] {
     "conclusionForms",
   ];
   return TAB_DEFS.filter((tab) => {
-    if (
-      (activeOrganization?.vertical === "retail" || activeOrganization?.vertical === "hotel") &&
-      nonClinicHiddenTabs.includes(tab.key)
-    ) {
+    if (activeOrganization?.vertical === "retail" && retailHiddenTabs.includes(tab.key)) {
       return false;
     }
     if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
     if (tab.key === "clients" && activeOrganization?.vertical !== "retail") return false;
-    if (tab.key === "integrations" && activeOrganization?.vertical !== "hotel") return false;
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).
     if (tab.key === "cashlessMethods" && !CASHLESS_METHODS_ENABLED) return false;

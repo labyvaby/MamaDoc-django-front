@@ -109,6 +109,12 @@ export type DjangoProduct = {
     updatedAt: string;
 };
 
+export type DjangoProductCost = { productId: number; costPrice: string };
+
+export function getProductCostPrice(productId: number, signal?: AbortSignal): Promise<DjangoProductCost> {
+    return apiRequest<DjangoProductCost>(`/warehouse/products/${productId}/cost/`, { signal });
+}
+
 export type DjangoProductAttributeValue = {
     attributeId: number;
     attributeName: string;
@@ -147,6 +153,8 @@ export type DjangoProductCategoryNode = {
     productCount: number;
     createdAt: string;
     updatedAt: string;
+    markupMultiplier: string | null;
+    markupRoundingStep: number;
 };
 
 export type DjangoProductModel = {
@@ -474,6 +482,8 @@ export function createProductCategory(data: {
     parentId?: number;
     attributeIds?: number[];
     organizationId?: number;
+    markupMultiplier?: string | null;
+    markupRoundingStep?: number;
 }): Promise<DjangoProductCategoryNode> {
     const { organizationId, ...body } = data;
     const qs = organizationId != null ? `?organizationId=${organizationId}` : "";
@@ -485,7 +495,7 @@ export function createProductCategory(data: {
 
 export function updateProductCategory(
     id: number,
-    data: { name?: string; parentId?: number; clearParent?: boolean; attributeIds?: number[]; isActive?: boolean },
+    data: { name?: string; parentId?: number; clearParent?: boolean; attributeIds?: number[]; isActive?: boolean; markupMultiplier?: string | null; markupRoundingStep?: number },
 ): Promise<DjangoProductCategoryNode> {
     return apiRequest<DjangoProductCategoryNode>(`/v2/warehouse/product-categories/${id}/`, {
         method: "PATCH",
@@ -830,12 +840,20 @@ export async function createTransfer(data: {
 
 // ── Warehouse documents (v2) ────────────────────────────────────────────────
 
+/**
+ * Режим инвентаризации. `blind` — по сканеру; `showcase` — витринная
+ * («обратная»): сотрудник идёт по списку учёта и отмечает «на месте».
+ * Старый бэкенд поля не присылает — такой документ считается слепым.
+ */
+export type InventoryCountMode = "blind" | "showcase";
+
 export type WarehouseInventoryCount = {
     id: number;
     organizationId: number;
     warehouseId: number;
     warehouseName: string;
     status: string;
+    mode?: InventoryCountMode;
     comment: string;
     lineTotal: number;
     countedTotal: number;
@@ -857,11 +875,51 @@ export type WarehouseInventoryLine = {
     difference: string | null;
     countedAt: string | null;
     scannedByName: string | null;
+    /** Текущий учётный остаток — только у открытой витринной инвентаризации. */
+    onHand?: string | null;
 };
 
 export type WarehouseInventoryDetail = {
     document: WarehouseInventoryCount;
     lines: WarehouseInventoryLine[];
+};
+
+export type WarehouseTransferDocument = {
+    id: number;
+    organizationId: number;
+    fromWarehouseId: number;
+    fromWarehouseName: string;
+    toWarehouseId: number;
+    toWarehouseName: string;
+    status: string;
+    comment: string;
+    createdByName: string | null;
+    sentByName: string | null;
+    acceptedByName: string | null;
+    createdAt: string;
+    sentAt: string | null;
+    acceptedAt: string | null;
+    /** Точки складов — «откуда» и «куда». */
+    fromBranchId?: number | null;
+    fromBranchName?: string | null;
+    toBranchId?: number | null;
+    toBranchName?: string | null;
+    /**
+     * Этот пользователь сейчас может принять документ: он отправлен, есть право
+     * приёмки и активная точка — получатель. Решает сервер, фронт не угадывает.
+     */
+    canAccept?: boolean;
+    lines: Array<{
+        id: number;
+        productId: number;
+        productName: string;
+        sku: string | null;
+        modelId: number | null;
+        attributes: Array<{ attributeId: number; attributeName: string; role: string; valueId: number; value: string }>;
+        sent: string;
+        received: string | null;
+        shortfall: string | null;
+    }>;
 };
 
 export type WarehouseReprice = {
@@ -923,6 +981,7 @@ export function startWarehouseInventoryCount(data: {
     warehouseId: number;
     productIds?: number[];
     comment?: string;
+    mode?: InventoryCountMode;
     organizationId?: number;
 }): Promise<WarehouseInventoryDetail> {
     const { organizationId, ...body } = data;
@@ -954,6 +1013,18 @@ export function submitInventoryCountLines(
     });
 }
 
+/** «На месте» в витринной инвентаризации; без productIds — все непроверенные. */
+export function confirmInventoryCountOnHand(
+    id: number,
+    productIds: number[] = [],
+    organizationId?: number,
+): Promise<WarehouseInventoryDetail> {
+    return apiRequest<WarehouseInventoryDetail>(withQuery(`/v2/warehouse/inventory-counts/${id}/confirm/`, { organizationId }), {
+        method: "POST",
+        body: { productIds },
+    });
+}
+
 export function closeWarehouseInventoryCount(id: number, organizationId?: number): Promise<{
     document: WarehouseInventoryCount;
     lines: WarehouseInventoryLine[];
@@ -970,6 +1041,42 @@ export function cancelWarehouseInventoryCount(id: number, organizationId?: numbe
         method: "POST",
         body: {},
     });
+}
+
+export function getWarehouseTransferDocuments(organizationId?: number, signal?: AbortSignal) {
+    return apiRequest<WarehouseTransferDocument[]>(withQuery("/v2/warehouse/transfer-documents/", { organizationId }), { signal });
+}
+
+export function createWarehouseTransfer(data: {
+    fromWarehouseId: number;
+    toWarehouseId: number;
+    lines: Array<{ productId: number; quantity: string | number }>;
+    comment?: string;
+    organizationId?: number;
+}) {
+    const { organizationId, ...body } = data;
+    return apiRequest<WarehouseTransferDocument>(withQuery("/v2/warehouse/transfer-documents/", { organizationId }), { method: "POST", body });
+}
+
+/** Что едет на мою точку и ждёт приёмки (право warehouse.manage или warehouse.transfers.accept). */
+export function getIncomingWarehouseTransfers(signal?: AbortSignal) {
+    return apiRequest<WarehouseTransferDocument[]>("/v2/warehouse/transfer-documents/incoming/", { signal });
+}
+
+export function getWarehouseTransferDetail(id: number, organizationId?: number, signal?: AbortSignal) {
+    return apiRequest<WarehouseTransferDocument>(withQuery(`/v2/warehouse/transfer-documents/${id}/`, { organizationId }), { signal });
+}
+
+export function sendWarehouseTransfer(id: number, organizationId?: number) {
+    return apiRequest<WarehouseTransferDocument>(withQuery(`/v2/warehouse/transfer-documents/${id}/send/`, { organizationId }), { method: "POST", body: {} });
+}
+
+export function acceptWarehouseTransfer(id: number, received: Array<{ productId: number; quantity: string }>, organizationId?: number) {
+    return apiRequest<WarehouseTransferDocument>(withQuery(`/v2/warehouse/transfer-documents/${id}/accept/`, { organizationId }), { method: "POST", body: { received } });
+}
+
+export function cancelWarehouseTransfer(id: number, organizationId?: number) {
+    return apiRequest<WarehouseTransferDocument>(withQuery(`/v2/warehouse/transfer-documents/${id}/cancel/`, { organizationId }), { method: "POST", body: {} });
 }
 
 export function getRepriceDocuments(

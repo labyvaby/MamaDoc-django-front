@@ -87,6 +87,7 @@ import AppointmentProductLines, {
 import AppointmentConsumptions from "./details/AppointmentConsumptions";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
 import AppointmentPriceHistory from "./details/AppointmentPriceHistory";
+import { appointmentNetPaid } from "./paymentCancelGuard";
 import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
 
 /** Действие шапки карточки — рисуется кнопкой или пунктом меню. */
@@ -134,7 +135,7 @@ interface AppointmentDetailsPanelProps {
    */
   onRecordVaccination?: (
     a: DjangoAppointment,
-    prefill?: { vaccineId: number; doseNumber: number },
+    prefill?: { vaccineId: number; doseNumber: number; draftRecordId?: number },
   ) => void;
   /** Групповой ввод нескольких положенных доз за один визит. */
   onRecordVaccinationMulti?: (
@@ -336,14 +337,40 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     [apptRecordsQuery.data],
   );
 
-  /** Точная привязка: строка счёта закрыта конкретной записью. */
+  /**
+   * Точная привязка: строка счёта закрыта проведённой записью. Черновик,
+   * созданный продажей, строку не закрывает — его ещё надо оформить.
+   */
   const recordedLineIds = React.useMemo(
     () =>
       new Set(
-        apptRecords.map((r) => r.productLineId).filter((id): id is number => id != null),
+        apptRecords
+          .filter((r) => r.status !== "draft")
+          .map((r) => r.productLineId)
+          .filter((id): id is number => id != null),
       ),
     [apptRecords],
   );
+
+  /** Черновик на строке счёта — «Оформить» открывает именно его. */
+  const draftByLineId = React.useMemo(() => {
+    const map = new Map<number, number>();
+    for (const r of apptRecords) {
+      if (r.status === "draft" && r.productLineId != null) map.set(r.productLineId, r.id);
+    }
+    return map;
+  }, [apptRecords]);
+
+  /**
+   * Положенные дозы без тех вакцин, что уже проданы в приёме черновиком: их
+   * оформляют со строки счёта, иначе новая запись добавила бы вторую строку.
+   */
+  const dueDosesToEnter = React.useMemo(() => {
+    const draftVaccineIds = new Set(
+      apptRecords.filter((r) => r.status === "draft").map((r) => r.vaccineId),
+    );
+    return dueDoses.filter((d) => !draftVaccineIds.has(d.vaccineId));
+  }, [dueDoses, apptRecords]);
 
   /**
    * Запасной счёт по вакцине — для записей, созданных до появления
@@ -397,6 +424,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   // а не на статус приёма: бэк оставляет его scheduled/confirmed и после оплаты.
   // «discounted» без внесённых сумм — скидка 100%, тоже закрытый расчёт.
   const isPaymentAccepted = hasPaid || payStatus === "paid" || payStatus === "discounted";
+
+  // Оплаченный приём не отменяют — сначала возврат всей суммы (правило
+  // заказчика 29.09.2026). Сводка оплаты свежее и знает о возвратах.
+  const netPaid = appointmentNetPaid(pay ?? appt);
+  const cancelBlockedByPayment = netPaid > 0;
 
   // ── чек по оплаченному приёму ─────────────────────────────────────────────
   // Раньше чек печатали только из дровера оплаты и из заключения; кассе он
@@ -552,7 +584,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         durationMinutes: sl.durationMinutes,
         amount: som(lineAmount),
         conclusionState: sl.conclusionState,
-        conclusionsTotal: sl.conclusionsTotal,
+        // conclusionsTotal бэк обещал, но отдаёт только conclusionIds (27.09.2026).
+        conclusionsTotal: sl.conclusionsTotal ?? sl.conclusionIds?.length,
         conclusionsCompleted: sl.conclusionsCompleted,
         action:
           canOverridePrice &&
@@ -619,7 +652,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     };
 
     const actionBtn =
-      canManageFinance && !isCancelled ? (
+      canManageFinance && isCancelled && netPaid > 0 ? (
+        // Отменённый приём с деньгами (отменили до запрета) — принять оплату
+        // нельзя, но возврат оформить нужно: дровер оплаты у отменённого
+        // приёма показывает только возвраты.
+        <Button
+          variant="outlined"
+          color="error"
+          size="small"
+          startIcon={<PaymentsOutlined />}
+          onClick={() => onPay(appt)}
+          sx={{ boxShadow: "none", textTransform: "none", whiteSpace: "nowrap" }}
+        >
+          {t("details.openRefund")}
+        </Button>
+      ) : canManageFinance && !isCancelled ? (
         <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
           <Button
             variant={hasPaid ? "outlined" : "contained"}
@@ -860,7 +907,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
   const handleConfirm = () => {
     setConfirmOpen(false);
-    if (confirmAction === "cancel" && onCancelAppt) onCancelAppt(appt);
+    if (confirmAction === "cancel" && onCancelAppt && !cancelBlockedByPayment) onCancelAppt(appt);
     if (confirmAction === "delete" && onDelete) onDelete(appt);
     setConfirmAction(null);
   };
@@ -1164,10 +1211,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               // счёт и склад второй раз не трогаются (бэк, 21.08.2026).
               onRecordVaccine={
                 canRecordVaccination && onRecordVaccination && isAppointmentActive
-                  ? (vaccineId) =>
+                  ? (vaccineId, line) =>
                       onRecordVaccination(appt, {
                         vaccineId,
                         doseNumber: doseNumberForVaccine(vaccineId),
+                        draftRecordId: draftByLineId.get(line.id),
                       })
                   : undefined
               }
@@ -1177,7 +1225,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 можно ввести», а не содержание визита. */}
             {canRecordVaccination && appt.patient && isAppointmentActive && (
               <AppointmentDueDoses
-                dueDoses={dueDoses}
+                dueDoses={dueDosesToEnter}
                 onRecord={(prefill) => onRecordVaccination?.(appt, prefill)}
                 onRecordMulti={(doses) => onRecordVaccinationMulti?.(appt, doses)}
               />
@@ -1388,20 +1436,49 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
       {/* ── Confirm dialog ── */}
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>
-          {confirmAction === "delete" ? t("details.deleteTitle") : t("details.cancelTitle")}
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            {confirmAction === "delete" ? t("details.deleteText") : t("details.cancelText")}
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)}>{t("details.back")}</Button>
-          <Button onClick={handleConfirm} color="error" variant="contained" autoFocus>
-            {confirmAction === "delete" ? t("details.delete") : t("details.cancelSubmit")}
-          </Button>
-        </DialogActions>
+        {confirmAction === "cancel" && cancelBlockedByPayment ? (
+          <>
+            <DialogTitle>{t("details.cancelBlockedTitle")}</DialogTitle>
+            <DialogContent>
+              <DialogContentText>
+                {t("details.cancelBlockedText", { amount: som(netPaid) })}
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmOpen(false)}>{t("details.back")}</Button>
+              {canManageFinance && (
+                <Button
+                  onClick={() => {
+                    setConfirmOpen(false);
+                    setConfirmAction(null);
+                    onPay(appt);
+                  }}
+                  variant="contained"
+                  autoFocus
+                >
+                  {t("details.openRefund")}
+                </Button>
+              )}
+            </DialogActions>
+          </>
+        ) : (
+          <>
+            <DialogTitle>
+              {confirmAction === "delete" ? t("details.deleteTitle") : t("details.cancelTitle")}
+            </DialogTitle>
+            <DialogContent>
+              <DialogContentText>
+                {confirmAction === "delete" ? t("details.deleteText") : t("details.cancelText")}
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmOpen(false)}>{t("details.back")}</Button>
+              <Button onClick={handleConfirm} color="error" variant="contained" autoFocus>
+                {confirmAction === "delete" ? t("details.delete") : t("details.cancelSubmit")}
+              </Button>
+            </DialogActions>
+          </>
+        )}
       </Dialog>
     </>
   );

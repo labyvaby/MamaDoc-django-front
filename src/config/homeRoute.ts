@@ -2,7 +2,7 @@ import { PAGE_PERMISSIONS } from "./accessPermissions";
 import type { RoleName } from "../types/rbac";
 
 type PermissionCheck = (permission: string | string[]) => boolean;
-type ModuleCheck = (module: "cleaning" | "documents" | "knowledge") => boolean;
+type ModuleCheck = (module: "cleaning" | "documents" | "knowledge" | "realty") => boolean;
 
 export interface HomeRouteContext {
   roleCode?: RoleName | string | null;
@@ -11,6 +11,8 @@ export interface HomeRouteContext {
   hasActiveEmployee?: boolean;
   /** Настроенный организацией безопасный стартовый экран. */
   defaultHomeRoute?: string | null;
+  /** Вертикаль организации (`activeOrganization.vertical`). */
+  vertical?: string | null;
 }
 
 /**
@@ -26,6 +28,7 @@ export function resolveHomeRoute({
   canOpenModule,
   hasActiveEmployee = false,
   defaultHomeRoute,
+  vertical,
 }: HomeRouteContext): string {
   const role = String(roleCode ?? "").toLowerCase();
 
@@ -35,6 +38,10 @@ export function resolveHomeRoute({
   if (defaultHomeRoute === "/pos" && can(PAGE_PERMISSIONS.pos)) {
     return "/pos";
   }
+
+  // Застройщик работает в шахматке: у суперадмина и широких ролей есть и
+  // клиничная Регистратура, но застройщику она ни к чему.
+  if (vertical === "realestate" && canOpenModule("realty")) return "/realestate/chessboard";
 
   if (role === "doctor" && can(PAGE_PERMISSIONS.doctorRoom)) return "/doctor";
   if (role === "nurse" && can(PAGE_PERMISSIONS.nurseRoom)) return "/nurse";

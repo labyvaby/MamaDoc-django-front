@@ -19,6 +19,11 @@ export interface LabSettingsForm {
   lisDoctorId: string;
   chargeInstruments: boolean;
   branches: LabBranchRow[];
+  /** Учётная запись, выданная лабораторией этой клинике. */
+  lisUsername: string;
+  /** Пустое поле — пароль не меняем; `hasPassword` говорит, задан ли он. */
+  lisPassword: string;
+  hasPassword: boolean;
 }
 
 const numberOrEmpty = (value: number | null): string => (value == null ? "" : String(value));
@@ -28,6 +33,9 @@ export function labConfigToForm(config: LabConfig): LabSettingsForm {
     lisOrganizationId: numberOrEmpty(config.lisOrganizationId),
     lisDoctorId: numberOrEmpty(config.lisDoctorId),
     chargeInstruments: config.chargeInstruments,
+    lisUsername: config.lisUsername,
+    lisPassword: "",
+    hasPassword: config.hasPassword,
     branches: config.branches.map((row) => ({
       branchId: row.branchId,
       branchName: row.branchName,
@@ -54,6 +62,15 @@ export function findLabSettingsProblem(form: LabSettingsForm): string | null {
   if (positiveInt(form.lisOrganizationId) == null) {
     return "Код организации в ЛИС — положительное число.";
   }
+  if (form.lisUsername.trim() === "") {
+    return "Укажите логин, который выдала лаборатория.";
+  }
+  // Пароль обязателен только пока он не сохранён: форма его не
+  // показывает, и требовать ввод заново при правке соседнего поля значит
+  // заставлять искать бумажку с паролем ради галочки «плата за пробирки».
+  if (!form.hasPassword && form.lisPassword === "") {
+    return "Укажите пароль от учётной записи ЛИС.";
+  }
   if (positiveInt(form.lisDoctorId) == null) {
     return "Код врача по умолчанию в ЛИС — положительное число.";
   }
@@ -77,6 +94,8 @@ export function labFormToInput(form: LabSettingsForm): LabConfigInput {
     lisOrganizationId: positiveInt(form.lisOrganizationId) ?? 0,
     lisDoctorId: positiveInt(form.lisDoctorId) ?? 0,
     chargeInstruments: form.chargeInstruments,
+    lisUsername: form.lisUsername.trim(),
+    lisPassword: form.lisPassword,
     branches: form.branches.map((row) => ({
       branchId: row.branchId,
       lisRegistryId: positiveInt(row.lisRegistryId),

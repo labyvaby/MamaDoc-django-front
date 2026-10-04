@@ -22,9 +22,23 @@ import { useT } from "../../../i18n/VerticalProvider";
 
 import LoadFilters from "./LoadFilters";
 import LoadKpiCards from "./LoadKpiCards";
-import { LoadChart, type LoadChartMode } from "./LoadChart";
+import { LoadChart } from "./LoadChart";
 import { LoadHeatmap } from "./LoadHeatmap";
 import { LoadByEmployee } from "./LoadByEmployee";
+import {
+  availableGranularities,
+  buildBuckets,
+  fitGranularity,
+  type LoadGranularity,
+  type LoadMetric,
+} from "./loadBuckets";
+
+const GRANULARITIES: { value: LoadGranularity; label: string; dative: string }[] = [
+  { value: "hourly", label: "Часы", dative: "часам" },
+  { value: "daily", label: "Дни", dative: "дням" },
+  { value: "weekly", label: "Недели", dative: "неделям" },
+  { value: "monthly", label: "Месяцы", dative: "месяцам" },
+];
 
 // Тонкая карточка-обёртка в стиле гайда (плоская, на хайрлайне).
 const Card: React.FC<{ title?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; sx?: object }> = ({
@@ -44,7 +58,14 @@ const Card: React.FC<{ title?: React.ReactNode; action?: React.ReactNode; childr
     }}
   >
     {(title || action) && (
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        flexWrap="wrap"
+        useFlexGap
+        sx={{ mb: 1.5, gap: 1 }}
+      >
         {typeof title === "string" ? (
           <Typography variant="subtitle2" fontWeight={600}>
             {title}
@@ -70,7 +91,10 @@ export const LoadAnalyticsPage: React.FC = () => {
     return { from: f, to: t };
   });
   const [employees, setEmployees] = React.useState<DjangoEmployeeListItem[]>([]);
-  const [chartMode, setChartMode] = React.useState<LoadChartMode>("hourly");
+  // Выбор разбивки запоминается: на коротком периоде показывается ближайшая
+  // доступная, а на длинном снова выбранная.
+  const [granularity, setGranularity] = React.useState<LoadGranularity>("hourly");
+  const [metric, setMetric] = React.useState<LoadMetric>("count");
 
   const isSuper = isSuperAdmin();
   const needsOrg = isSuper && !activeOrganization;
@@ -80,7 +104,8 @@ export const LoadAnalyticsPage: React.FC = () => {
   const employeeIds = employees.map((e) => e.id);
   const from = range.from.format("YYYY-MM-DD");
   const to = range.to.format("YYYY-MM-DD");
-  const singleDay = range.from.isSame(range.to, "day");
+  const available = availableGranularities(range.from, range.to);
+  const activeGranularity = fitGranularity(granularity, available);
 
   const query = useQuery({
     queryKey: djangoQueryKeys.reports.load({ from, to, branchId, employeeIds, organizationId }),
@@ -96,13 +121,21 @@ export const LoadAnalyticsPage: React.FC = () => {
 
   const data = query.data;
   const daysCount = Math.max(1, range.to.diff(range.from, "day") + 1);
+  const buckets = React.useMemo(
+    () => (data ? buildBuckets(activeGranularity, data.hourly, data.daily) : []),
+    [data, activeGranularity],
+  );
+  const granularityMeta = GRANULARITIES.find((g) => g.value === activeGranularity) ?? GRANULARITIES[0];
+  const countTitles: Record<LoadGranularity, string> = {
+    hourly: t("hourlyTitle"),
+    daily: t("dailyTitle"),
+    weekly: t("weeklyTitle"),
+    monthly: t("monthlyTitle"),
+  };
+  const chartTitle =
+    metric === "utilization" ? `Загрузка по ${granularityMeta.dative}` : countTitles[activeGranularity];
 
   // ── Handlers ──
-  const handleRangeChange = (r: DateRange) => {
-    setRange(r);
-    // Один день → почасовой график осмысленнее подневного.
-    if (r.from.isSame(r.to, "day")) setChartMode("hourly");
-  };
   const toggleEmployee = (emp: { id: number; fullName: string }) => {
     setEmployees((prev) =>
       prev.some((e) => e.id === emp.id)
@@ -132,7 +165,7 @@ export const LoadAnalyticsPage: React.FC = () => {
           <LoadFilters
             range={range}
             employees={employees}
-            onRangeChange={handleRangeChange}
+            onRangeChange={setRange}
             onEmployeesChange={setEmployees}
           />
 
@@ -154,34 +187,53 @@ export const LoadAnalyticsPage: React.FC = () => {
               <Card
                 title={
                   <Typography variant="subtitle2" fontWeight={600}>
-                    {chartMode === "hourly" ? t("hourlyTitle") : t("dailyTitle")}
+                    {chartTitle}
                   </Typography>
                 }
                 action={
-                  <ToggleButtonGroup
-                    size="small"
-                    exclusive
-                    value={chartMode}
-                    onChange={(_, v) => v && setChartMode(v)}
-                  >
-                    <ToggleButton value="hourly" sx={{ textTransform: "none", px: 1.5 }}>
-                      Часы
-                    </ToggleButton>
-                    <ToggleButton value="daily" disabled={singleDay} sx={{ textTransform: "none", px: 1.5 }}>
-                      Дни
-                    </ToggleButton>
-                  </ToggleButtonGroup>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <ToggleButtonGroup
+                      size="small"
+                      exclusive
+                      value={metric}
+                      onChange={(_, v: LoadMetric | null) => v && setMetric(v)}
+                    >
+                      <ToggleButton value="count" sx={{ textTransform: "none", px: 1.5 }}>
+                        {t("chartTooltipLabel")}
+                      </ToggleButton>
+                      <ToggleButton value="utilization" sx={{ textTransform: "none", px: 1.5 }}>
+                        Загрузка
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                    <ToggleButtonGroup
+                      size="small"
+                      exclusive
+                      value={activeGranularity}
+                      onChange={(_, v: LoadGranularity | null) => v && setGranularity(v)}
+                    >
+                      {GRANULARITIES.map((g) => (
+                        <ToggleButton
+                          key={g.value}
+                          value={g.value}
+                          disabled={!available.includes(g.value)}
+                          sx={{ textTransform: "none", px: 1.5 }}
+                        >
+                          {g.label}
+                        </ToggleButton>
+                      ))}
+                    </ToggleButtonGroup>
+                  </Stack>
                 }
                 sx={{
-                  height: { xs: 300, md: 340 },
-                  minHeight: { xs: 300, md: 340 },
+                  height: { xs: 380, md: 360 },
+                  minHeight: { xs: 380, md: 360 },
                   flexShrink: 0,
                   display: "flex",
                   flexDirection: "column",
                 }}
               >
                 <Box sx={{ flex: 1, minHeight: 0 }}>
-                  <LoadChart mode={chartMode} hourly={data.hourly} daily={data.daily} />
+                  <LoadChart metric={metric} buckets={buckets} />
                 </Box>
               </Card>
 

@@ -13,13 +13,21 @@ const context = (
     const values = Array.isArray(requested) ? requested : [requested];
     return values.some((permission) => permissions.includes(permission));
   },
-  canOpenModule: (module: "cleaning" | "documents" | "knowledge") =>
+  canOpenModule: (module: "cleaning" | "documents" | "knowledge" | "realty") =>
     modules.includes(module),
   hasActiveEmployee: true,
   defaultHomeRoute,
 });
 
 describe("resolveHomeRoute", () => {
+  it("застройщик с модулем realty начинает с шахматки, а не с Регистратуры", () => {
+    const base = context("superadmin", ["appointments.registry.view"], ["realty"]);
+    expect(resolveHomeRoute({ ...base, vertical: "realestate" })).toBe("/realestate/chessboard");
+    // Без модуля — обычный разбор по правам; клинике шахматка не подставляется.
+    expect(resolveHomeRoute({ ...context("superadmin", ["appointments.registry.view"]), vertical: "realestate" })).toBe("/appointments");
+    expect(resolveHomeRoute({ ...base, vertical: "clinic" })).toBe("/appointments");
+  });
+
   it("opens the configured store POS when the employee has access", () => {
     expect(
       resolveHomeRoute(

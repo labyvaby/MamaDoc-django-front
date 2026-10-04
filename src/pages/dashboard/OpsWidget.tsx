@@ -1,6 +1,5 @@
 import React from "react";
 import { Box, Skeleton, Stack, Typography } from "@mui/material";
-import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 
@@ -11,8 +10,7 @@ import { useCanChecker } from "../../hooks/useCan";
 import { formatKGS } from "../../utility/format";
 import { WidgetError, type WidgetProps } from "./widgetKit";
 import { num } from "./widgetUtils";
-import { previousRange } from "./period";
-import { dealsSummaryQuery, reviewStatsQuery, tasksSummaryQuery } from "./queries";
+import { useDashboardData } from "./DashboardData";
 
 type Tone = "neutral" | "error" | "success";
 
@@ -105,7 +103,7 @@ const OpsSection: React.FC<{
  * Красным — только то, что требует реакции (просрочки, негатив), и только
  * когда оно не ноль.
  */
-export const OpsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) => {
+export const OpsWidget: React.FC<WidgetProps> = ({ range }) => {
   const { can } = useCanChecker();
   const canTasks = can(PAGE_PERMISSIONS.tasks);
   // Воронка ждёт бэкенда на проде: секцию убираем тем же флагом, что и
@@ -113,24 +111,25 @@ export const OpsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) =>
   const canDeals = DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals);
   const canReviews = can(PAGE_PERMISSIONS.reviews);
 
-  const prev = React.useMemo(() => previousRange(range, periodKey), [range, periodKey]);
-  const tasks = useQuery(tasksSummaryQuery(scope, canTasks));
-  const deals = useQuery(dealsSummaryQuery(scope, canDeals));
-  const reviews = useQuery(reviewStatsQuery(scope, range, canReviews));
-  const prevReviews = useQuery(reviewStatsQuery(scope, prev, canReviews));
+  const data = useDashboardData();
+  const { prev } = data;
+  // Секция рисуется, если есть право и раздел пришёл (или ещё грузится):
+  // сервер не отдаёт раздел выключенного модуля — пустую секцию не показываем.
+  const shows = (key: "tasks" | "deals" | "reviews") =>
+    !!data.sections[key] || data.isLoading(key) || !!data.error(key);
 
   const sections: React.ReactNode[] = [];
 
-  if (canTasks) {
-    const t = tasks.data;
+  if (canTasks && shows("tasks")) {
+    const t = data.sections.tasks;
     sections.push(
       <OpsSection
         key="tasks"
         title="Задачи"
         sub="сейчас"
         href="/tasks"
-        loading={tasks.isLoading}
-        error={tasks.isError ? tasks.error : undefined}
+        loading={data.isLoading("tasks")}
+        error={data.error("tasks")}
         metrics={[
           {
             value: t?.overdue ?? 0,
@@ -148,16 +147,16 @@ export const OpsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) =>
     );
   }
 
-  if (canDeals) {
-    const d = deals.data;
+  if (canDeals && shows("deals")) {
+    const d = data.sections.deals;
     sections.push(
       <OpsSection
         key="deals"
         title="Воронка"
         sub="сейчас"
         href="/deals"
-        loading={deals.isLoading}
-        error={deals.isError ? deals.error : undefined}
+        loading={data.isLoading("deals")}
+        error={data.error("deals")}
         metrics={[
           {
             value: d?.openCount ?? 0,
@@ -176,35 +175,35 @@ export const OpsWidget: React.FC<WidgetProps> = ({ range, periodKey, scope }) =>
     );
   }
 
-  if (canReviews) {
-    const r = reviews.data;
-    const p = prevReviews.data;
-    // Без единого отправленного запроса бэк отдаёт avgRating "0.0". Показать
+  if (canReviews && shows("reviews")) {
+    const r = data.sections.reviews;
+    const p = r?.baseline;
+    // Без единого отправленного запроса бэк отдаёт averageRating "0.0". Показать
     // ноль значило бы соврать: это не плохая оценка, а отсутствие оценок.
     const hasReviews = !!r && r.sent > 0;
-    const responsePercent = r ? Math.round(num(r.responseRate) * 100) : 0;
+    const responsePercent = r && r.sent > 0 ? Math.round((r.answered / r.sent) * 100) : 0;
     sections.push(
       <OpsSection
         key="reviews"
         title="Отзывы"
         sub={range.label}
         href="/reviews"
-        loading={reviews.isLoading}
-        error={reviews.isError ? reviews.error : undefined}
+        loading={data.isLoading("reviews")}
+        error={data.error("reviews")}
         metrics={[
           {
-            value: hasReviews ? r!.avgRating.replace(".", ",") : "—",
+            value: hasReviews ? r!.averageRating.replace(".", ",") : "—",
             label: "средняя оценка",
             hint: hasReviews
               ? `${r!.answered} из ${r!.sent} ответили · отклик ${responsePercent}%`
               : "запросов не было",
-            tone: hasReviews ? (num(r!.avgRating) >= 4 ? "success" : "error") : "neutral",
+            tone: hasReviews ? (num(r!.averageRating) >= 4 ? "success" : "error") : "neutral",
           },
           {
-            value: r?.negativeCount ?? 0,
+            value: r?.negative ?? 0,
             label: "негативных",
-            hint: p ? `${prev.label} — ${p.negativeCount}` : undefined,
-            tone: r && r.negativeCount > 0 ? "error" : "neutral",
+            hint: p ? `${prev.label} — ${p.negative}` : undefined,
+            tone: r && r.negative > 0 ? "error" : "neutral",
           },
         ]}
       />,

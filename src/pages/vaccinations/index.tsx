@@ -29,23 +29,22 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import EventBusyOutlined from "@mui/icons-material/EventBusyOutlined";
 import UpcomingOutlined from "@mui/icons-material/UpcomingOutlined";
+import AssignmentLateOutlined from "@mui/icons-material/AssignmentLateOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import MedicationOutlined from "@mui/icons-material/MedicationOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
-import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DeleteSweepOutlined from "@mui/icons-material/DeleteSweepOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
+import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
+import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 
 import {
   AppButton,
-  CustomDatePicker,
-  DateRangeField,
   PageHeader,
   UserAvatar,
-  type DateRange,
 } from "../../components/ui";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useCanChecker } from "../../hooks/useCan";
@@ -62,12 +61,12 @@ import {
 import {
   deleteCalendarTemplate,
   getBatches,
+  getDraftCount,
   SCHEDULE_DASHBOARD_PAGE_SIZE,
   VACCINATION_BATCH_WRITEOFF_ENABLED,
   VACCINATION_SCHEDULE_BRANCH_SCOPING,
   getCalendarTemplate,
   getMonthlyReport,
-  getRecords,
   getScheduleDashboard,
   getVaccines,
   updateSchedule,
@@ -76,20 +75,51 @@ import {
   type ScheduleStatus,
   type Vaccine,
   type VaccineBatch,
-  type VaccinationRecord,
   type VaccinationScheduleSlot,
 } from "../../api/vaccinations";
 import { getPatient, type DjangoPatient } from "../../api/patients";
 import DjangoEditPatientDrawer from "../../components/patients/DjangoEditPatientDrawer";
-import { RecordStatusChip, ScheduleStatusChip } from "../../components/vaccinations/VaccinationChips";
+import { ScheduleStatusChip } from "../../components/vaccinations/VaccinationChips";
 import RecordVaccinationDrawer from "../../components/vaccinations/RecordVaccinationDrawer";
 import VaccineDialog from "../../components/vaccinations/VaccineDialog";
 import BatchDialog from "../../components/vaccinations/BatchDialog";
 import BatchWriteOffDialog from "../../components/vaccinations/BatchWriteOffDialog";
 import CalendarTemplateDialog from "../../components/vaccinations/CalendarTemplateDialog";
-import { injectionSiteLabel, scheduleDateInfo } from "./meta";
+import DraftsTab from "./DraftsTab";
+import Form5Tab from "./Form5Tab";
+import RecordsTab from "./RecordsTab";
+import DashboardTab from "./DashboardTab";
+import DuePlaceholder from "./DuePlaceholder";
+import { PROGRAM_LABEL, batchUsed, countText, expiryInfo, stockByVaccine, type Tone as StockTone } from "./stockInfo";
+import { formatMoney } from "./totalsFormat";
+import { doseAgeText } from "../../components/vaccinations/calendarTable";
+import CalendarTab from "./CalendarTab";
+import PeriodStepper from "../../components/vaccinations/PeriodStepper";
+import KrCalendarDialog from "../../components/vaccinations/KrCalendarDialog";
+import {
+  ExemptionDialog,
+  RefusalDialog,
+} from "../../components/vaccinations/ExemptionRefusalDialogs";
+import { scheduleDateInfo } from "./meta";
 
-type VaccTab = "due" | "records" | "vaccines" | "batches" | "calendar" | "report";
+/**
+ * «Кому пора» — только дети, состоящие на учёте (решение 2026-10-03). Модуля
+ * учёта в этой ветке нет, поэтому список выключен и показана заглушка; когда
+ * учёт вольётся — фильтр по нему и false здесь.
+ */
+const DUE_WAITS_FOR_REGISTRY = true;
+
+type VaccTab = "drafts" | "due" | "records" | "vaccines" | "batches" | "calendar" | "report" | "form5" | "dashboard";
+
+/** «Не оформлено» — только тем, кто оформляет прививки (vaccinations.record). */
+/** Дашборд — первым: итоги месяца/года, вакцины, возраст и пол детей. */
+const DASHBOARD_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
+  { id: "dashboard", label: "Дашборд", icon: InsightsOutlined },
+];
+
+const RECORD_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
+  { id: "drafts", label: "Не оформлено", icon: AssignmentLateOutlined },
+];
 
 const BASE_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
   { id: "due", label: "Кому пора", icon: UpcomingOutlined },
@@ -109,19 +139,23 @@ const MANAGE_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
 const READ_TABS: { id: VaccTab; label: string; icon: React.ElementType }[] = [
   { id: "calendar", label: "Календарь", icon: EventAvailableOutlined },
   { id: "report", label: "Отчёт", icon: SummarizeOutlined },
+  { id: "form5", label: "Форма 5", icon: DescriptionOutlined },
 ];
 
 /**
  * Смысловые группы вкладок для визуальной кластеризации ленты разделителями:
  * «Работа» (ежедневное) · «Справочники» (настройка) · «Аналитика».
  */
-const TAB_GROUP: Record<VaccTab, "work" | "ref" | "analytics"> = {
+const TAB_GROUP: Record<VaccTab, "overview" | "work" | "ref" | "analytics"> = {
+  drafts: "work",
   due: "work",
   records: "work",
   vaccines: "ref",
   batches: "ref",
   calendar: "ref",
   report: "analytics",
+  dashboard: "overview",
+  form5: "analytics",
 };
 
 /** Компактная плитка сводки — тот же стиль, что в задачах/бронях. */
@@ -199,23 +233,35 @@ const VaccinationsPage: React.FC = () => {
   const canManage = can("vaccinations.manage");
 
   const tabs = React.useMemo(
-    () => (canManage ? [...BASE_TABS, ...MANAGE_TABS, ...READ_TABS] : [...BASE_TABS, ...READ_TABS]),
-    [canManage],
+    () => [
+      ...DASHBOARD_TABS,
+      ...(canRecord ? RECORD_TABS : []),
+      // «Кому пора» скрыта до модуля учёта детей (DUE_WAITS_FOR_REGISTRY).
+      ...BASE_TABS.filter((t) => !(DUE_WAITS_FOR_REGISTRY && t.id === "due")),
+      ...(canManage ? MANAGE_TABS : []),
+      ...READ_TABS,
+    ],
+    [canManage, canRecord],
   );
+
+  // Бейдж на вкладке «Не оформлено».
+  const draftCountQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.draftCount({ branchId, orgId }),
+    queryFn: ({ signal }) => getDraftCount(branchId, orgId, signal),
+    enabled: !permLoading && canRecord,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const draftCount = draftCountQuery.data ?? 0;
 
   const [tab, setTab] = React.useState<VaccTab>(() => {
     const saved = sessionStorage.getItem("vaccinations-tab");
-    return (saved as VaccTab) ?? "due";
+    return (saved as VaccTab) ?? "dashboard";
   });
 
   // Скрыть manage-вкладку, если право пропало (или его и не было).
   React.useEffect(() => {
-    if (!tabs.some((t) => t.id === tab)) setTab("due");
+    if (!tabs.some((t) => t.id === tab)) setTab("dashboard");
   }, [tabs, tab]);
-  const [recordsRange, setRecordsRange] = React.useState<DateRange>({
-    from: dayjs().subtract(29, "day").startOf("day"),
-    to: dayjs().endOf("day"),
-  });
   const [drawerPatient, setDrawerPatient] = React.useState<DjangoPatient | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
@@ -229,7 +275,11 @@ const VaccinationsPage: React.FC = () => {
   });
   // Списание доз партии (порча/срок) — отдельное действие, не правка прихода.
   const [writeOffBatchTarget, setWriteOffBatchTarget] = React.useState<VaccineBatch | null>(null);
-  const [calendarDialog, setCalendarDialog] = React.useState<{ open: boolean; row: CalendarTemplateRow | null }>({
+  const [calendarDialog, setCalendarDialog] = React.useState<{
+    open: boolean;
+    row: CalendarTemplateRow | null;
+    preset?: { vaccineId: number; doseNumber: number } | null;
+  }>({
     open: false,
     row: null,
   });
@@ -238,10 +288,14 @@ const VaccinationsPage: React.FC = () => {
   // (branchId не передаём — бэк строит по доступному скоупу орг).
   const [reportOrgWide, setReportOrgWide] = React.useState(false);
   const [deleteConfirm, setDeleteConfirm] = React.useState<CalendarTemplateRow | null>(null);
+  const [krDialogOpen, setKrDialogOpen] = React.useState(false);
   // Пропуск дозы с причиной (пишем в notes слота): улучшает семантику календаря
   // и точность отчёта (отказ родителя / медотвод / отложено).
   const [skipTarget, setSkipTarget] = React.useState<VaccinationScheduleSlot | null>(null);
   const [skipReason, setSkipReason] = React.useState("");
+  // Медотвод и отказ из строки «Кому пора» (форма 5, разделы 2 и 3).
+  const [exemptionTarget, setExemptionTarget] = React.useState<VaccinationScheduleSlot | null>(null);
+  const [refusalTarget, setRefusalTarget] = React.useState<VaccinationScheduleSlot | null>(null);
 
   const handleTabChange = (t: VaccTab) => {
     setTab(t);
@@ -259,7 +313,7 @@ const VaccinationsPage: React.FC = () => {
     page: 0,
     pageSize: SCHEDULE_DASHBOARD_PAGE_SIZE,
   });
-  const [dueStatus, setDueStatus] = React.useState<"all" | "overdue" | "planned">("all");
+  const [dueStatus, setDueStatus] = React.useState<"all" | "overdue" | "planned" | "exempt">("all");
 
   const dueFilters = {
     branchId: dueBranchId ?? undefined,
@@ -281,7 +335,7 @@ const VaccinationsPage: React.FC = () => {
         { ...dueFilters, page: duePagination.page + 1, pageSize: duePagination.pageSize },
         signal,
       ),
-    enabled: enabled && tab === "due",
+    enabled: enabled && tab === "due" && !DUE_WAITS_FOR_REGISTRY,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -307,29 +361,7 @@ const VaccinationsPage: React.FC = () => {
       ]);
       return { overdue: overdue.count, week: week.count };
     },
-    enabled: enabled && tab === "due" && serverPaged,
-    staleTime: DJANGO_LIST_STALE_TIME_MS,
-    placeholderData: keepPreviousData,
-  });
-
-  const recordsQuery = useQuery({
-    queryKey: djangoQueryKeys.vaccinations.records({
-      branchId,
-      orgId,
-      from: recordsRange.from.format("YYYY-MM-DD"),
-      to: recordsRange.to.format("YYYY-MM-DD"),
-    }),
-    queryFn: ({ signal }) =>
-      getRecords(
-        {
-          branchId: branchId ?? undefined,
-          dateFrom: recordsRange.from.format("YYYY-MM-DD"),
-          dateTo: recordsRange.to.format("YYYY-MM-DD"),
-          organizationId: orgId,
-        },
-        signal,
-      ),
-    enabled: enabled && tab === "records",
+    enabled: enabled && tab === "due" && serverPaged && !DUE_WAITS_FOR_REGISTRY,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -346,7 +378,7 @@ const VaccinationsPage: React.FC = () => {
     queryKey: djangoQueryKeys.vaccinations.batches({ branchId, orgId, tab: "manage" }),
     queryFn: ({ signal }) =>
       getBatches({ branchId: branchId ?? undefined, organizationId: orgId }, signal),
-    enabled: enabled && canManage && tab === "batches",
+    enabled: enabled && canManage && (tab === "batches" || tab === "vaccines"),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -354,7 +386,7 @@ const VaccinationsPage: React.FC = () => {
   const calendarQuery = useQuery({
     queryKey: djangoQueryKeys.vaccinations.calendarTemplate({ orgId }),
     queryFn: ({ signal }) => getCalendarTemplate(orgId, signal),
-    enabled: enabled && tab === "calendar",
+    enabled: enabled && (tab === "calendar" || tab === "vaccines"),
     staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
     placeholderData: keepPreviousData,
   });
@@ -431,16 +463,6 @@ const VaccinationsPage: React.FC = () => {
   const overdueCount = (localCounts ?? dueCountsQuery.data)?.overdue ?? 0;
   const weekCount = (localCounts ?? dueCountsQuery.data)?.week ?? 0;
 
-  // Живая подпись под заголовком: на «Кому пора» подсвечивает главное —
-  // сколько всего запланировано и сколько из них просрочено; на других
-  // вкладках — нейтральное описание раздела.
-  const heroSubtitle = React.useMemo(() => {
-    if (tab !== "due") return "Иммунопрофилактика и календарь вакцин";
-    if (dueTotal === 0) return "Иммунопрофилактика и календарь вакцин";
-    const total = `${dueTotal} ${pluralSlots(dueTotal)}`;
-    return overdueCount > 0 ? `${total} · ${overdueCount} просрочено` : total;
-  }, [tab, dueTotal, overdueCount]);
-
   const dueColumns = React.useMemo<GridColDef<VaccinationScheduleSlot>[]>(
     () => [
       {
@@ -507,7 +529,7 @@ const VaccinationsPage: React.FC = () => {
       {
         field: "actions",
         headerName: "",
-        width: 180,
+        width: 320,
         sortable: false,
         // Ввод «со склада» отсюда убран: администрирование вакцины — из
         // регистратуры (по приёму). Здесь оставляем только «Пропустить»
@@ -544,6 +566,32 @@ const VaccinationsPage: React.FC = () => {
                 Пропустить
               </Button>
             )}
+            {canRecord && row.status !== "exempt" && (
+              <Button
+                size="small"
+                color="inherit"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExemptionTarget(row);
+                }}
+                sx={{ textTransform: "none", borderRadius: "8px", color: "text.secondary" }}
+              >
+                Медотвод
+              </Button>
+            )}
+            {canRecord && (
+              <Button
+                size="small"
+                color="inherit"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRefusalTarget(row);
+                }}
+                sx={{ textTransform: "none", borderRadius: "8px", color: "text.secondary" }}
+              >
+                Отказ
+              </Button>
+            )}
           </Stack>
         ),
       },
@@ -551,131 +599,164 @@ const VaccinationsPage: React.FC = () => {
     [canRecord, canUpdatePatient, editPatientLoadingId, openEditPatient, scheduleMutation.isPending, t],
   );
 
-  const recordsColumns = React.useMemo<GridColDef<VaccinationRecord>[]>(
-    () => [
-      {
-        field: "administeredAt",
-        headerName: "Дата",
-        width: 130,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Typography variant="body2">{dayjs(row.administeredAt).format("DD.MM.YYYY")}</Typography>
-        ),
-      },
-      {
-        field: "vaccineName",
-        headerName: "Вакцина",
-        flex: 1,
-        minWidth: 180,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Box sx={twoLineCellSx}>
-            <Typography variant="body2" fontWeight={500} noWrap>
-              {row.vaccineName} · доза {row.doseNumber}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {row.isExternal ? "Внешняя" : "Со склада"} · {injectionSiteLabel(row.injectionSite)}
-            </Typography>
-          </Box>
-        ),
-      },
-      {
-        field: "administeredBy",
-        headerName: "Кто вводил",
-        width: 190,
-        sortable: false,
-        renderCell: ({ row }) =>
-          row.administeredBy ? (
-            <Stack direction="row" alignItems="center" gap={1} sx={{ height: "100%", minWidth: 0 }}>
-              <UserAvatar name={row.administeredBy.fullName} size={28} sx={{ borderRadius: "8px", flexShrink: 0 }} />
-              <Typography variant="body2" noWrap>
-                {row.administeredBy.fullName}
-              </Typography>
-            </Stack>
-          ) : (
-            <Typography variant="body2" color="text.disabled">
-              —
-            </Typography>
-          ),
-      },
-      {
-        field: "status",
-        headerName: "Статус",
-        width: 150,
-        sortable: false,
-        renderCell: ({ row }) => <RecordStatusChip status={row.status} />,
-      },
-    ],
-    [],
-  );
+  // Для «Вакцин»: схема доз из календаря и остаток по партиям — одной строкой.
+  const dosesByVaccine = React.useMemo(() => {
+    const map = new Map<number, CalendarTemplateRow[]>();
+    for (const r of calendarQuery.data ?? []) {
+      if (!r.isActive) continue;
+      const list = map.get(r.vaccineId) ?? [];
+      list.push(r);
+      map.set(r.vaccineId, list);
+    }
+    for (const list of map.values()) list.sort((x, y) => x.doseNumber - y.doseNumber);
+    return map;
+  }, [calendarQuery.data]);
+  const stockMap = React.useMemo(() => stockByVaccine(batchesQuery.data ?? []), [batchesQuery.data]);
+
+  const toneColor = (tone: StockTone) => (tone === "error" ? "error.main" : tone === "warning" ? "warning.main" : "text.secondary");
 
   const vaccinesColumns = React.useMemo<GridColDef<Vaccine>[]>(
     () => [
       {
         field: "name",
         headerName: "Вакцина",
-        flex: 1,
-        minWidth: 200,
+        flex: 1.2,
+        minWidth: 220,
         sortable: false,
         renderCell: ({ row }) => (
           <Box sx={twoLineCellSx}>
-            <Typography variant="body2" fontWeight={500} noWrap>
-              {row.name}
-            </Typography>
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+              <Typography variant="body2" fontWeight={600} noWrap>
+                {row.name}
+              </Typography>
+              {row.funding === "state" && (
+                <Chip size="small" label="гос." color="primary" variant="outlined" sx={{ height: 18, fontSize: 11, borderRadius: "6px" }} />
+              )}
+            </Stack>
             <Typography variant="caption" color="text.secondary" noWrap>
-              {[row.manufacturer, row.targetDisease].filter(Boolean).join(" · ") || "—"}
+              {[row.targetDisease, row.manufacturer].filter(Boolean).join(" · ") || "—"}
             </Typography>
           </Box>
         ),
       },
       {
-        field: "dosesRequired",
-        headerName: "Доз / интервал",
-        width: 160,
+        field: "schedule",
+        headerName: "Схема по календарю",
+        flex: 1,
+        minWidth: 220,
         sortable: false,
-        renderCell: ({ row }) => (
-          <Typography variant="body2">
-            {row.dosesRequired} доз
-            {row.intervalDays != null ? ` · ${row.intervalDays} дн` : ""}
-          </Typography>
-        ),
+        renderCell: ({ row }) => {
+          const doses = dosesByVaccine.get(row.id) ?? [];
+          if (doses.length === 0) {
+            return (
+              <Box sx={twoLineCellSx}>
+                <Typography variant="body2">{countText(row.dosesRequired, "доза", "дозы", "доз")}</Typography>
+                <Typography variant="caption" color="text.disabled" noWrap>
+                  нет в календаре
+                </Typography>
+              </Box>
+            );
+          }
+          // Дозы в одну строку капсулами «① 2 мес.» — номер и возраст рядом.
+          return (
+            <Stack direction="row" gap={0.5} alignItems="center" sx={{ height: "100%", minWidth: 0, overflow: "hidden" }}>
+              {doses.map((d) => (
+                <Stack
+                  key={d.id}
+                  direction="row"
+                  alignItems="center"
+                  gap={0.5}
+                  sx={{
+                    flexShrink: 0,
+                    height: 22,
+                    pl: 0.25,
+                    pr: 0.75,
+                    borderRadius: "11px",
+                    border: 1,
+                    borderColor: alpha(theme.palette.primary.main, 0.4),
+                  }}
+                >
+                  <Box
+                    component="span"
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 10,
+                      lineHeight: 1,
+                      fontWeight: 700,
+                      color: theme.palette.primary.contrastText,
+                      bgcolor: theme.palette.primary.main,
+                    }}
+                  >
+                    {d.doseNumber}
+                  </Box>
+                  <Box component="span" sx={{ fontSize: 12, lineHeight: 1, whiteSpace: "nowrap", color: "text.secondary" }}>
+                    {doseAgeText(d)}
+                  </Box>
+                </Stack>
+              ))}
+            </Stack>
+          );
+        },
       },
       {
-        field: "recommendedAgeMonths",
-        headerName: "Возраст",
-        width: 110,
+        field: "stock",
+        headerName: "На складе",
+        width: 190,
         sortable: false,
-        renderCell: ({ row }) => (
-          <Typography variant="body2" color={row.recommendedAgeMonths == null ? "text.disabled" : undefined}>
-            {row.recommendedAgeMonths != null ? `${row.recommendedAgeMonths} мес` : "—"}
-          </Typography>
-        ),
+        renderCell: ({ row }) => {
+          const st = stockMap.get(row.id);
+          if (!st) {
+            return (
+              <Typography variant="body2" color="text.disabled">
+                нет партий
+              </Typography>
+            );
+          }
+          const exp = st.nearestExpiry ? expiryInfo(st.nearestExpiry) : null;
+          return (
+            <Box sx={twoLineCellSx}>
+              <Typography variant="body2" fontWeight={600} color={st.remaining === 0 ? "error.main" : undefined}>
+                {countText(st.remaining, "доза", "дозы", "доз")}
+                <Typography component="span" variant="caption" color="text.secondary">
+                  {` · ${countText(st.batches, "партия", "партии", "партий")}`}
+                </Typography>
+              </Typography>
+              <Typography variant="caption" noWrap sx={{ color: exp ? toneColor(exp.tone) : "text.disabled" }}>
+                {st.nearestExpiry ? `годен до ${dayjs(st.nearestExpiry).format("DD.MM.YY")}` : "годных нет"}
+              </Typography>
+            </Box>
+          );
+        },
       },
       {
         field: "price",
-        headerName: "Цена / остаток",
-        width: 150,
+        headerName: "Цена",
+        width: 130,
         sortable: false,
-        renderCell: ({ row }) =>
-          row.productId != null ? (
-            <Box sx={twoLineCellSx}>
-              <Typography variant="body2" noWrap>
-                {row.price != null ? `${row.price} сом` : "—"}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" noWrap>
-                остаток {row.stock}
-              </Typography>
-            </Box>
+        renderCell: ({ row }) => {
+          if (row.funding === "state" && (row.price == null || Number(row.price) === 0)) {
+            return <Typography variant="body2" color="text.secondary">бесплатно</Typography>;
+          }
+          return row.productId != null && row.price != null ? (
+            <Typography variant="body2" fontWeight={600}>
+              {formatMoney(row.price)}
+            </Typography>
           ) : (
             <Typography variant="body2" color="text.disabled">
               без товара
             </Typography>
-          ),
+          );
+        },
       },
       {
         field: "isActive",
         headerName: "Статус",
-        width: 130,
+        width: 110,
         sortable: false,
         renderCell: ({ row }) =>
           row.isActive ? (
@@ -700,25 +781,36 @@ const VaccinationsPage: React.FC = () => {
         ),
       },
     ],
-    [],
+    [dosesByVaccine, stockMap, theme],
   );
 
   const batchesColumns = React.useMemo<GridColDef<VaccineBatch>[]>(
     () => [
       {
         field: "vaccineName",
-        headerName: "Вакцина",
+        headerName: "Вакцина / партия",
         flex: 1,
-        minWidth: 180,
+        minWidth: 220,
         sortable: false,
         renderCell: ({ row }) => (
           <Box sx={twoLineCellSx}>
-            <Typography variant="body2" fontWeight={500} noWrap>
-              {row.vaccineName}
-            </Typography>
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+              <Typography variant="body2" fontWeight={600} noWrap>
+                {row.vaccineName}
+              </Typography>
+              {row.program && (
+                <Chip
+                  size="small"
+                  label={PROGRAM_LABEL[row.program]}
+                  color={row.program === "commercial" ? "default" : "primary"}
+                  variant="outlined"
+                  sx={{ height: 18, fontSize: 11, borderRadius: "6px" }}
+                />
+              )}
+            </Stack>
             <Typography variant="caption" color="text.secondary" noWrap>
               №{row.batchNumber}
-              {row.productId == null ? " · без склада" : ""}
+              {row.productId == null ? " · без товара склада" : ""}
             </Typography>
           </Box>
         ),
@@ -726,45 +818,86 @@ const VaccinationsPage: React.FC = () => {
       {
         field: "remaining",
         headerName: "Остаток",
-        width: 130,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Box sx={twoLineCellSx}>
-            <Typography variant="body2">
-              {row.remaining} / {row.quantityInitial}
-            </Typography>
-            {VACCINATION_BATCH_WRITEOFF_ENABLED && Boolean(row.writtenOff) && (
-              <Typography variant="caption" color="error.main" noWrap>
-                списано {row.writtenOff}
-              </Typography>
-            )}
-          </Box>
-        ),
-      },
-      {
-        field: "expiresAt",
-        headerName: "Годен до",
-        width: 140,
+        width: 210,
         sortable: false,
         renderCell: ({ row }) => {
-          const expired = dayjs(row.expiresAt).isBefore(dayjs(), "day");
+          const share = row.quantityInitial > 0 ? row.remaining / row.quantityInitial : 0;
           return (
-            <Typography variant="body2" sx={{ color: expired ? "error.main" : undefined, fontWeight: expired ? 600 : 400 }}>
-              {dayjs(row.expiresAt).format("DD.MM.YYYY")}
-            </Typography>
+            <Box sx={{ ...twoLineCellSx, width: "100%" }}>
+              <Stack direction="row" alignItems="center" gap={1}>
+                <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: "action.hover", overflow: "hidden" }}>
+                  <Box
+                    sx={{
+                      width: `${share * 100}%`,
+                      height: "100%",
+                      bgcolor: share === 0 ? "error.main" : share < 0.2 ? "warning.main" : "primary.main",
+                    }}
+                  />
+                </Box>
+                <Typography variant="body2" fontWeight={600} sx={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                  {row.remaining} из {row.quantityInitial}
+                </Typography>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                использовано {batchUsed(row)}
+                {row.writtenOff ? ` · списано ${row.writtenOff}` : ""}
+              </Typography>
+            </Box>
           );
         },
       },
       {
-        field: "supplier",
-        headerName: "Поставщик",
-        width: 160,
+        field: "expiresAt",
+        headerName: "Годен до",
+        width: 150,
+        sortable: false,
+        renderCell: ({ row }) => {
+          const exp = expiryInfo(row.expiresAt);
+          return (
+            <Box sx={twoLineCellSx}>
+              <Typography variant="body2" fontWeight={exp.tone === "default" ? 400 : 600} sx={{ color: exp.tone === "default" ? undefined : toneColor(exp.tone) }}>
+                {dayjs(row.expiresAt).format("DD.MM.YYYY")}
+              </Typography>
+              <Typography variant="caption" noWrap sx={{ color: toneColor(exp.tone) }}>
+                {exp.text}
+              </Typography>
+            </Box>
+          );
+        },
+      },
+      {
+        field: "receivedAt",
+        headerName: "Поступила",
+        width: 170,
         sortable: false,
         renderCell: ({ row }) => (
-          <Typography variant="body2" color={row.supplier ? undefined : "text.disabled"} noWrap>
-            {row.supplier || "—"}
-          </Typography>
+          <Box sx={twoLineCellSx}>
+            <Typography variant="body2">{row.receivedAt ? dayjs(row.receivedAt).format("DD.MM.YYYY") : "—"}</Typography>
+            <Typography variant="caption" color={row.supplier ? "text.secondary" : "text.disabled"} noWrap>
+              {row.supplier || "поставщик не указан"}
+            </Typography>
+          </Box>
         ),
+      },
+      {
+        field: "costPrice",
+        headerName: "Закупка",
+        width: 140,
+        sortable: false,
+        renderCell: ({ row }) => {
+          const cost = Number(row.costPrice);
+          if (!cost) {
+            return <Typography variant="body2" color="text.disabled">—</Typography>;
+          }
+          return (
+            <Box sx={twoLineCellSx}>
+              <Typography variant="body2">{formatMoney(row.costPrice)} / доза</Typography>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                остаток на {formatMoney(String(cost * row.remaining))}
+              </Typography>
+            </Box>
+          );
+        },
       },
       {
         field: "actions",
@@ -802,110 +935,6 @@ const VaccinationsPage: React.FC = () => {
       },
     ],
     [],
-  );
-
-  const calendarColumns = React.useMemo<GridColDef<CalendarTemplateRow>[]>(
-    () => [
-      {
-        field: "vaccineName",
-        headerName: "Вакцина",
-        flex: 1,
-        minWidth: 180,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Box sx={twoLineCellSx}>
-            <Typography variant="body2" fontWeight={500} noWrap>
-              {row.vaccineName} · доза {row.doseNumber}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {row.label || `${row.ageMonths} мес`}
-            </Typography>
-          </Box>
-        ),
-      },
-      {
-        field: "ageMonths",
-        headerName: "Возраст",
-        width: 150,
-        sortable: false,
-        // ageDays точнее месяцев (135 дн = 4,5 мес) и имеет приоритет у бэка,
-        // maxAgeMonths отсекает переросших — показываем оба, когда заданы.
-        renderCell: ({ row }) => (
-          <Box sx={twoLineCellSx}>
-            <Typography variant="body2" noWrap>
-              {row.ageDays != null ? `${row.ageDays} дн` : `${row.ageMonths} мес`}
-            </Typography>
-            {row.maxAgeMonths != null && (
-              <Typography variant="caption" color="text.secondary" noWrap>
-                до {row.maxAgeMonths} мес
-              </Typography>
-            )}
-          </Box>
-        ),
-      },
-      {
-        field: "dueWindowDays",
-        headerName: "Окно",
-        width: 110,
-        sortable: false,
-        renderCell: ({ row }) => (
-          <Typography variant="body2">{row.dueWindowDays} дн</Typography>
-        ),
-      },
-      {
-        field: "mandatory",
-        headerName: "Тип",
-        width: 140,
-        sortable: false,
-        renderCell: ({ row }) =>
-          row.mandatory ? (
-            <Chip size="small" label="Обязательная" color="primary" variant="outlined" sx={{ borderRadius: "7px" }} />
-          ) : (
-            <Chip size="small" label="Рекоменд." variant="outlined" sx={{ borderRadius: "7px" }} />
-          ),
-      },
-      {
-        field: "isActive",
-        headerName: "Статус",
-        width: 120,
-        sortable: false,
-        renderCell: ({ row }) =>
-          row.isActive ? (
-            <Chip size="small" label="Активна" color="success" variant="outlined" sx={{ borderRadius: "7px" }} />
-          ) : (
-            <Chip size="small" label="Скрыта" variant="outlined" sx={{ borderRadius: "7px" }} />
-          ),
-      },
-      ...(canManage
-        ? [
-            {
-              field: "actions",
-              headerName: "",
-              width: 96,
-              sortable: false,
-              renderCell: ({ row }: { row: CalendarTemplateRow }) => (
-                <Stack direction="row" gap={0.25}>
-                  <IconButton
-                    size="small"
-                    aria-label="Изменить строку"
-                    onClick={() => setCalendarDialog({ open: true, row })}
-                  >
-                    <EditOutlined fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    aria-label="Удалить строку"
-                    onClick={() => setDeleteConfirm(row)}
-                  >
-                    <DeleteOutlineOutlined fontSize="small" />
-                  </IconButton>
-                </Stack>
-              ),
-            } satisfies GridColDef<CalendarTemplateRow>,
-          ]
-        : []),
-    ],
-    [canManage],
   );
 
   const reportColumns = React.useMemo<GridColDef<MonthlyReportRow>[]>(
@@ -984,7 +1013,6 @@ const VaccinationsPage: React.FC = () => {
         showTitle={false}
         loading={
           dueQuery.isFetching ||
-          recordsQuery.isFetching ||
           vaccinesQuery.isFetching ||
           batchesQuery.isFetching ||
           calendarQuery.isFetching ||
@@ -1002,34 +1030,7 @@ const VaccinationsPage: React.FC = () => {
           pb: 2,
         }}
       >
-        {/* ── Hero: иконка-плашка + название раздела + живая подпись ── */}
-        <Stack direction="row" alignItems="center" gap={1.5} sx={{ mt: 2, mb: 0.5 }}>
-          <Box
-            sx={(t) => ({
-              width: 44,
-              height: 44,
-              borderRadius: "12px",
-              flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "primary.onSurface",
-              bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1),
-              "& .MuiSvgIcon-root": { fontSize: 24 },
-            })}
-          >
-            <VaccinesOutlined />
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="h6" fontWeight={700} sx={{ letterSpacing: -0.2, lineHeight: 1.2 }}>
-              Вакцины
-            </Typography>
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {heroSubtitle}
-            </Typography>
-          </Box>
-        </Stack>
-
+        {/* Название раздела уже в шапке приложения — здесь сразу вкладки. */}
         {/* ── Вкладки + сводка + кнопка ── */}
         <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap" sx={{ mt: 1.5, mb: 1.5 }}>
           <Stack
@@ -1078,6 +1079,23 @@ const VaccinationsPage: React.FC = () => {
                     <Stack direction="row" alignItems="center" gap={0.75} sx={{ position: "relative" }}>
                       <Icon sx={{ fontSize: 17 }} />
                       <span>{label}</span>
+                      {id === "drafts" && draftCount > 0 && (
+                        <Box
+                          component="span"
+                          sx={{
+                            minWidth: 18,
+                            px: 0.5,
+                            borderRadius: "9px",
+                            fontSize: "0.7rem",
+                            lineHeight: "18px",
+                            textAlign: "center",
+                            bgcolor: active ? "primary.contrastText" : "warning.main",
+                            color: active ? "primary.main" : "warning.contrastText",
+                          }}
+                        >
+                          {draftCount}
+                        </Box>
+                      )}
                     </Stack>
                   </ButtonBase>
                 </React.Fragment>
@@ -1087,7 +1105,7 @@ const VaccinationsPage: React.FC = () => {
 
           <Box sx={{ flex: 1 }} />
 
-          {tab === "due" && (
+          {tab === "due" && !DUE_WAITS_FOR_REGISTRY && (
             <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
               <ToggleButtonGroup
                 exclusive
@@ -1108,16 +1126,15 @@ const VaccinationsPage: React.FC = () => {
                 <ToggleButton value="planned" sx={{ textTransform: "none", px: 1.5 }}>
                   Запланированные
                 </ToggleButton>
+                <ToggleButton value="exempt" sx={{ textTransform: "none", px: 1.5 }}>
+                  Медотвод
+                </ToggleButton>
               </ToggleButtonGroup>
               {overdueCount > 0 && (
                 <StatTile icon={<EventBusyOutlined />} label="Просрочено" value={overdueCount} tone="error" />
               )}
               <StatTile icon={<UpcomingOutlined />} label="На неделю" value={weekCount} tone="warning" />
             </Stack>
-          )}
-
-          {tab === "records" && (
-            <DateRangeField value={recordsRange} onChange={setRecordsRange} minWidth={220} />
           )}
 
           {(tab === "due" || tab === "records") && canRecord && (
@@ -1144,13 +1161,18 @@ const VaccinationsPage: React.FC = () => {
             </AppButton>
           )}
           {tab === "calendar" && canManage && (
-            <AppButton
-              variant="contained"
-              startIcon={<AddOutlined />}
-              onClick={() => setCalendarDialog({ open: true, row: null })}
-            >
-              Добавить строку
-            </AppButton>
+            <>
+              <AppButton variant="outlined" onClick={() => setKrDialogOpen(true)}>
+                Загрузить календарь КР
+              </AppButton>
+              <AppButton
+                variant="contained"
+                startIcon={<AddOutlined />}
+                onClick={() => setCalendarDialog({ open: true, row: null })}
+              >
+                Добавить строку
+              </AppButton>
+            </>
           )}
           {tab === "report" && (
             <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
@@ -1169,28 +1191,17 @@ const VaccinationsPage: React.FC = () => {
                   </ToggleButton>
                 </ToggleButtonGroup>
               )}
-              <CustomDatePicker
-                label="Месяц"
-                value={reportMonth ? dayjs(`${reportMonth}-01`) : null}
-                onChange={(next) => {
-                  if (next && next.isValid()) setReportMonth(next.format("YYYY-MM"));
-                }}
-                views={["year", "month"]}
-                openTo="month"
-                format="MM.YY"
-                shortYearMode="nearest"
-                slotProps={{ textField: { size: "small", sx: { minWidth: 170 } } }}
-              />
+              <PeriodStepper value={reportMonth} onChange={setReportMonth} />
             </Stack>
           )}
         </Stack>
 
-        {branchId == null && tab !== "calendar" && tab !== "report" && tab !== "due" && (
+        {branchId == null && tab !== "calendar" && tab !== "report" && tab !== "form5" && tab !== "dashboard" && tab !== "records" && tab !== "due" && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
             Выберите активный филиал, чтобы увидеть вакцины по нему.
           </Alert>
         )}
-        {tab === "due" && !VACCINATION_SCHEDULE_BRANCH_SCOPING && (
+        {tab === "due" && !DUE_WAITS_FOR_REGISTRY && !VACCINATION_SCHEDULE_BRANCH_SCOPING && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
             Плановые дозы показаны по всей организации: филиал у них пока не проставляется.
           </Alert>
@@ -1209,7 +1220,20 @@ const VaccinationsPage: React.FC = () => {
         )}
 
         {/* ── Таблица ── */}
-        {tab === "due" &&
+        {tab === "form5" && <Form5Tab branchId={branchId} orgId={orgId} />}
+
+        {tab === "drafts" && canRecord && (
+          <DraftsTab
+            branchId={branchId}
+            orgId={orgId}
+            canRecord={canRecord}
+            canUpdatePatient={canUpdatePatient}
+            onEditPatient={(id) => void openEditPatient(id)}
+          />
+        )}
+
+        {tab === "due" && DUE_WAITS_FOR_REGISTRY && <DuePlaceholder />}
+        {tab === "due" && !DUE_WAITS_FOR_REGISTRY &&
           (dueQuery.error ? (
             <Alert severity="error">
               {dueQuery.error instanceof Error ? dueQuery.error.message : "Ошибка загрузки"}
@@ -1237,29 +1261,8 @@ const VaccinationsPage: React.FC = () => {
             </Box>
           ))}
 
-        {tab === "records" &&
-          (recordsQuery.error ? (
-            <Alert severity="error">
-              {recordsQuery.error instanceof Error ? recordsQuery.error.message : "Ошибка загрузки"}
-            </Alert>
-          ) : (
-            <Box sx={{ flex: 1, minHeight: 360 }}>
-              <DataGrid<VaccinationRecord>
-                rows={recordsQuery.data ?? []}
-                columns={recordsColumns}
-                loading={recordsQuery.isLoading}
-                disableColumnMenu
-                disableRowSelectionOnClick
-                rowHeight={64}
-                columnHeaderHeight={theme.appLayout.table.headerRowHeight}
-                slots={{ noRowsOverlay: NoRows("Нет записей за период") }}
-                localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
-                sx={gridSx}
-                initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-                pageSizeOptions={[25, 50, 100]}
-              />
-            </Box>
-          ))}
+        {tab === "dashboard" && <DashboardTab branchId={branchId} orgId={orgId} />}
+        {tab === "records" && <RecordsTab branchId={branchId} orgId={orgId} />}
 
         {tab === "vaccines" && canManage &&
           (vaccinesQuery.error ? (
@@ -1309,32 +1312,19 @@ const VaccinationsPage: React.FC = () => {
             </Box>
           ))}
 
-        {tab === "calendar" &&
-          (calendarQuery.error ? (
-            <Alert severity="error">
-              {calendarQuery.error instanceof Error ? calendarQuery.error.message : "Ошибка загрузки"}
-            </Alert>
-          ) : (
-            <Box sx={{ flex: 1, minHeight: 360 }}>
-              <DataGrid<CalendarTemplateRow>
-                rows={calendarQuery.data ?? []}
-                columns={calendarColumns}
-                loading={calendarQuery.isLoading}
-                disableColumnMenu
-                disableRowSelectionOnClick
-                rowHeight={60}
-                columnHeaderHeight={theme.appLayout.table.headerRowHeight}
-                slots={{ noRowsOverlay: NoRows("Календарь пуст — добавьте строки") }}
-                localeText={ruRU.components.MuiDataGrid.defaultProps.localeText}
-                sx={gridSx}
-                initialState={{
-                  pagination: { paginationModel: { pageSize: 50 } },
-                  sorting: { sortModel: [{ field: "ageMonths", sort: "asc" }] },
-                }}
-                pageSizeOptions={[25, 50, 100]}
-              />
-            </Box>
-          ))}
+        {tab === "calendar" && (
+          <CalendarTab
+            rows={calendarQuery.data ?? []}
+            loading={calendarQuery.isLoading}
+            error={calendarQuery.error}
+            canManage={canManage}
+            onEdit={(row) => setCalendarDialog({ open: true, row, preset: null })}
+            onDelete={(row) => setDeleteConfirm(row)}
+            onAddDose={(vaccineId, doseNumber) =>
+              setCalendarDialog({ open: true, row: null, preset: { vaccineId, doseNumber } })
+            }
+          />
+        )}
 
         {tab === "report" &&
           (reportQuery.error ? (
@@ -1379,6 +1369,21 @@ const VaccinationsPage: React.FC = () => {
         lockedScenario="external"
       />
 
+      <KrCalendarDialog open={krDialogOpen} onClose={() => setKrDialogOpen(false)} />
+
+      <ExemptionDialog
+        open={exemptionTarget != null}
+        onClose={() => setExemptionTarget(null)}
+        patientId={exemptionTarget?.patientId ?? null}
+        vaccineId={exemptionTarget?.vaccineId ?? null}
+      />
+      <RefusalDialog
+        open={refusalTarget != null}
+        onClose={() => setRefusalTarget(null)}
+        patientId={refusalTarget?.patientId ?? null}
+        vaccineId={refusalTarget?.vaccineId ?? null}
+      />
+
       <DjangoEditPatientDrawer
         open={editPatientOpen}
         patient={editPatient}
@@ -1413,12 +1418,19 @@ const VaccinationsPage: React.FC = () => {
       <CalendarTemplateDialog
         open={calendarDialog.open}
         row={calendarDialog.row}
+        preset={calendarDialog.preset}
         onClose={() => setCalendarDialog({ open: false, row: null })}
       />
 
       <Dialog open={deleteConfirm != null} onClose={() => setDeleteConfirm(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Удалить строку календаря?</DialogTitle>
         <DialogContent>
+          {/* Ошибка действия видна в самом диалоге, а не под ним. */}
+          {actionError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {actionError}
+            </Alert>
+          )}
           <DialogContentText>
             {deleteConfirm
               ? t("page.deleteRowMessage", {
@@ -1451,6 +1463,12 @@ const VaccinationsPage: React.FC = () => {
       <Dialog open={skipTarget != null} onClose={() => setSkipTarget(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Пропустить дозу</DialogTitle>
         <DialogContent>
+          {/* Ошибка действия видна в самом диалоге, а не под ним. */}
+          {actionError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {actionError}
+            </Alert>
+          )}
           <DialogContentText sx={{ mb: 2 }}>
             {skipTarget ? `${skipTarget.vaccineName} · доза ${skipTarget.doseNumber}. Укажите причину — она сохранится в календаре.` : ""}
           </DialogContentText>
@@ -1500,15 +1518,6 @@ const VaccinationsPage: React.FC = () => {
     </Box>
   );
 };
-
-/** Склонение «запланирована/запланировано/запланированы» для подписи hero. */
-function pluralSlots(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "вакцина запланирована";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "вакцины запланированы";
-  return "вакцин запланировано";
-}
 
 /** Обёртка для двухстрочной ячейки DataGrid: флекс на .MuiDataGrid-cell
  *  центрирует только одну строку — многострочную центрируем явно. */

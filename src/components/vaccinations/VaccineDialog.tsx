@@ -5,23 +5,37 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  MenuItem,
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from "@mui/material";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AppButton } from "../ui";
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { useFormValidation } from "../../hooks/useFormValidation";
-import { djangoQueryKeys } from "../../api/queryKeys";
+import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import {
   createVaccine,
+  getForm5Rows,
   updateVaccine,
+  type Form5RowRef,
+  type VaccineFunding,
   type CreateVaccinePayload,
   type UpdateVaccinePayload,
   type Vaccine,
 } from "../../api/vaccinations";
+import { FollowupChecksEditor } from "./FollowupChecksEditor";
+import {
+  followupRowsError,
+  fromFollowupRows,
+  toFollowupRows,
+  type FollowupRow,
+} from "./reactionMeta";
 
 type VaccineDialogProps = {
   open: boolean;
@@ -51,6 +65,18 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
   const [recommendedAgeMonths, setRecommendedAgeMonths] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [isActive, setIsActive] = React.useState(true);
+  const [funding, setFunding] = React.useState<VaccineFunding>("commercial");
+  /** dose → код строки формы 5 ("" — не сопоставлено). */
+  const [rowByDose, setRowByDose] = React.useState<Record<number, string>>({});
+  /** Сетка осмотра места прививки (БЦЖ). */
+  const [followupRows, setFollowupRows] = React.useState<FollowupRow[]>([]);
+
+  const form5RowsQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.form5Rows(orgId),
+    queryFn: ({ signal }) => getForm5Rows(orgId, signal),
+    enabled: open && funding === "state",
+    staleTime: DJANGO_REFERENCE_STALE_TIME_MS,
+  });
 
   React.useEffect(() => {
     if (!open) return;
@@ -64,20 +90,37 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
     );
     setNotes(vaccine?.notes ?? "");
     setIsActive(vaccine?.isActive ?? true);
+    setFunding(vaccine?.funding ?? "commercial");
+    setRowByDose(
+      Object.fromEntries((vaccine?.form5Rows ?? []).map((r) => [r.dose, r.row])),
+    );
+    setFollowupRows(toFollowupRows(vaccine?.followupChecks));
     setError(null);
   }, [open, vaccine]);
 
   const mutation = useMutation({
     mutationFn: () => {
+      const doses = numOrUndef(dosesRequired) ?? 1;
+      const form5Rows: Form5RowRef[] =
+        funding === "state"
+          ? Object.entries(rowByDose)
+              .map(([dose, row]) => ({ dose: Number(dose), row }))
+              .filter((r) => r.row && r.dose <= doses)
+          : [];
+      // При правке пустое поле шлём "", чтобы его можно было очистить.
+      const text = (v: string) => (vaccine ? v.trim() : v.trim() || undefined);
       const base: CreateVaccinePayload = {
         name: name.trim(),
-        manufacturer: manufacturer.trim() || undefined,
-        targetDisease: targetDisease.trim() || undefined,
+        manufacturer: text(manufacturer),
+        targetDisease: text(targetDisease),
         dosesRequired: numOrUndef(dosesRequired) ?? 1,
         intervalDays: intervalDays.trim() === "" ? null : numOrUndef(intervalDays) ?? null,
         recommendedAgeMonths:
           recommendedAgeMonths.trim() === "" ? null : numOrUndef(recommendedAgeMonths) ?? null,
-        notes: notes.trim() || undefined,
+        notes: text(notes),
+        funding,
+        form5Rows,
+        followupChecks: fromFollowupRows(followupRows),
       };
       if (vaccine) {
         const payload: UpdateVaccinePayload = { ...base, isActive };
@@ -180,6 +223,50 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            fullWidth
+            value={funding}
+            onChange={(_, v) => v && setFunding(v)}
+          >
+            <ToggleButton value="commercial" sx={{ textTransform: "none" }}>
+              Платная
+            </ToggleButton>
+            <ToggleButton value="state" sx={{ textTransform: "none" }}>
+              Государственная
+            </ToggleButton>
+          </ToggleButtonGroup>
+          {funding === "state" && (
+            <Stack spacing={1}>
+              <Typography variant="caption" color="text.secondary">
+                Строки формы 5: какую строку закрывает каждая доза
+              </Typography>
+              {Array.from({ length: numOrUndef(dosesRequired) ?? 1 }, (_, i) => i + 1).map(
+                (dose) => (
+                  <TextField
+                    key={dose}
+                    select
+                    size="small"
+                    fullWidth
+                    label={`Доза ${dose}`}
+                    value={rowByDose[dose] ?? ""}
+                    onChange={(e) => setRowByDose((m) => ({ ...m, [dose]: e.target.value }))}
+                  >
+                    <MenuItem value="">
+                      <em>Не считается в форме 5</em>
+                    </MenuItem>
+                    {(form5RowsQuery.data ?? []).map((row) => (
+                      <MenuItem key={row.code} value={row.code}>
+                        {row.code} · {row.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                ),
+              )}
+            </Stack>
+          )}
+          <FollowupChecksEditor rows={followupRows} onChange={setFollowupRows} />
           {vaccine && (
             <FormControlLabel
               control={<Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />}
@@ -192,7 +279,11 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
         <AppButton variant="outlined" onClick={onClose} disabled={mutation.isPending}>
           Отмена
         </AppButton>
-        <AppButton variant="contained" onClick={() => { if (form.validate()) mutation.mutate(); }} disabled={mutation.isPending}>
+        <AppButton
+          variant="contained"
+          onClick={() => { if (form.validate()) mutation.mutate(); }}
+          disabled={mutation.isPending || followupRowsError(followupRows) != null}
+        >
           Сохранить
         </AppButton>
       </Stack>

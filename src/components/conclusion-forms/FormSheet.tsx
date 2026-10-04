@@ -149,6 +149,8 @@ const SheetField: React.FC<{
   return (
     <Box
       data-print-block
+      // Превью в дровере по клику на строку ставит курсор в её поле.
+      data-sheet-field={field.id}
       sx={{
         gridColumn: field.width === "half" ? "span 1" : "span 2",
         mb: "2.5mm",

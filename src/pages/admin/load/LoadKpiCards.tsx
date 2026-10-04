@@ -6,10 +6,12 @@ import BarChartOutlined from "@mui/icons-material/BarChartOutlined";
 import CalendarViewWeekOutlined from "@mui/icons-material/CalendarViewWeekOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import TrendingDownOutlined from "@mui/icons-material/TrendingDownOutlined";
+import WorkHistoryOutlined from "@mui/icons-material/WorkHistoryOutlined";
 
 import { subtleBg } from "../../../theme/uiHelpers";
 import type { LoadKpi } from "../../../api/load";
 import { useT } from "../../../i18n/VerticalProvider";
+import { formatHours, loadPct, outsideShare } from "./loadBuckets";
 
 const WEEKDAYS = [
   "Понедельник",
@@ -21,7 +23,7 @@ const WEEKDAYS = [
   "Воскресенье",
 ];
 
-type Tone = "accent" | "success" | "error";
+type Tone = "accent" | "success" | "warning" | "error";
 
 const Tile: React.FC<{
   icon: React.ReactNode;
@@ -49,9 +51,11 @@ const Tile: React.FC<{
         const c =
           tone === "success"
             ? t.palette.success.main
-            : tone === "error"
-              ? t.palette.error.main
-              : t.palette.primary.main;
+            : tone === "warning"
+              ? t.palette.warning.main
+              : tone === "error"
+                ? t.palette.error.main
+                : t.palette.primary.main;
         return {
           width: 40,
           height: 40,
@@ -60,12 +64,7 @@ const Tile: React.FC<{
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color:
-            tone === "accent"
-              ? "primary.onSurface"
-              : tone === "success"
-                ? "success.main"
-                : "error.main",
+          color: tone === "accent" ? "primary.onSurface" : `${tone}.main`,
           bgcolor: alpha(c, t.palette.mode === "dark" ? 0.16 : 0.1),
           "& .MuiSvgIcon-root": { fontSize: 20 },
         };
@@ -80,8 +79,10 @@ const Tile: React.FC<{
       <Typography variant="body1" fontWeight={600} noWrap>
         {value}
       </Typography>
+      {/* Перенос, а не многоточие: при меню слева плитки узкие, и хвост
+          подписи («· СКУД 45%») иначе пропадал. */}
       {sub && (
-        <Typography variant="caption" color="text.disabled" display="block" noWrap>
+        <Typography variant="caption" color="text.disabled" display="block">
           {sub}
         </Typography>
       )}
@@ -103,9 +104,30 @@ const LoadKpiCards: React.FC<LoadKpiCardsProps> = ({ kpi, daysCount }) => {
     kpi.deltaPct == null
       ? "—"
       : `${deltaUp ? "+" : ""}${kpi.deltaPct.toLocaleString("ru-RU")}%`;
+  // ?? 0 — бэк без поля (выложен позже фронта) не должен давать NaN.
+  const outsideMinutes = kpi.outsideMinutes ?? 0;
+  const totalPct = loadPct(kpi.busyMinutes + outsideMinutes, kpi.scheduleMinutes);
+  const utilizationSub = [
+    kpi.scheduleMinutes > 0
+      ? `${formatHours(kpi.busyMinutes)} из ${formatHours(kpi.scheduleMinutes)} ч`
+      : "нет графика",
+    kpi.scheduleMinutes > 0 && outsideMinutes > 0
+      ? `+${outsideShare(outsideMinutes, kpi.scheduleMinutes)} вне графика`
+      : null,
+    kpi.attendanceUtilizationPct != null ? `СКУД ${kpi.attendanceUtilizationPct}%` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap">
+      <Tile
+        icon={<WorkHistoryOutlined />}
+        label="Загрузка по графику"
+        value={totalPct == null ? "—" : `${totalPct}%`}
+        sub={utilizationSub}
+        tone={totalPct != null && totalPct > 100 ? "warning" : "accent"}
+      />
       <Tile
         icon={<SpeedOutlined />}
         label="Пиковый час"

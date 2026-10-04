@@ -1,5 +1,5 @@
 import React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Box,
@@ -11,6 +11,7 @@ import {
   LinearProgress,
   IconButton,
   Chip,
+  Snackbar,
   Stack,
   TextField,
   Typography,
@@ -23,6 +24,7 @@ import DownloadRounded from "@mui/icons-material/DownloadRounded";
 import QrCode2Rounded from "@mui/icons-material/QrCode2Rounded";
 import CloseRounded from "@mui/icons-material/CloseRounded";
 import { apiRequest } from "../../api/client";
+import { uploadClientPhoto, type CreateClientPayload, type DjangoClientStatus } from "../../api/clients";
 import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
   checkoutPosCart,
@@ -38,9 +40,11 @@ import {
 } from "../../api/pos";
 import { usePermissions } from "../../hooks/usePermissions";
 import { ActiveContextSwitcher } from "../../components/sidebar/ActiveContextSwitcher";
+import ClientEditorDrawer from "../clients/ClientEditorDrawer";
 import { PosClientFooter } from "./ClientFooter";
 import { PosHoldReceiptDialog } from "./HoldReceiptDialog";
-import { PosProductCards } from "./ProductCards";
+import { PosConfirmDialog, type PosConfirmRequest } from "./ConfirmDialog";
+import { PosProductResults, type PosProductResultsHandle } from "./ProductCards";
 import { PosReceipt } from "./Receipt";
 import { PosTopBar } from "./TopBar";
 import { CheckoutDialog } from "./CheckoutDialog";
@@ -50,11 +54,22 @@ import {
   inlineQuoteErrorField,
   type Benefits,
 } from "./LivePaymentPanel";
+import { decimalForRequest, maxDiscountPercent } from "./discountInput";
 import { posColors } from "./layout";
 import type { PosCatalogItem, PosClient, PosReceiptLine } from "./types";
 import { PosAmount } from "./ui";
+import { playScanFeedback, useBarcodeScanner } from "./barcodeScanner";
+import { formatPosError, posError, toPosUserError, type PosUserError } from "./errors";
+import { PosErrorNotice } from "./ErrorNotice";
 
-type CartRow = { product: PosProduct; quantity: number; removed?: boolean };
+type CartRow = {
+  product: PosProduct;
+  quantity: number;
+  discountAmount?: number;
+  /** Скидка процентом: сумма пересчитывается при смене количества. */
+  discountPercent?: number;
+  removed?: boolean;
+};
 type PosDraft = {
   rows: CartRow[];
   client: PosClient | null;
@@ -78,6 +93,18 @@ const colorHex = (label: string) =>
 const canStartProductSearch = (value: string) => {
   const term = value.trim();
   return Boolean(term) && (!/^\d+$/.test(term) || term.length >= 3);
+};
+
+const brandOf = (attributes: PosProduct["attributes"]) =>
+  attributes.find((attribute) => attribute.role === "generic" && /^(бренд|brand)$/i.test(attribute.name.trim()))?.value;
+
+/** Скидка на позицию в сомах: процент — от текущей суммы, сумма — не больше позиции. */
+const lineDiscount = (row: CartRow) => {
+  const subtotal = Number(row.product.price) * row.quantity;
+  const raw = row.discountPercent
+    ? (subtotal * row.discountPercent) / 100
+    : row.discountAmount ?? 0;
+  return Math.round(Math.min(Math.max(raw, 0), subtotal) * 100) / 100;
 };
 
 function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
@@ -109,11 +136,13 @@ function toLine(row: CartRow, variants: PosProduct[]): PosReceiptLine {
   return {
     id: String(p.id),
     name: p.name,
+    brand: brandOf(p.attributes),
     sku: p.sku,
     barcode: p.barcode,
     quantity: row.quantity,
     price: Number(p.price),
-    imageUrl: p.imageThumbnailUrl ?? p.imageUrl,
+    discountAmount: lineDiscount(row),
+    discountPercent: row.discountPercent,
     colors: colors.map((a) => ({
       id: String(a.id),
       label: a.value,
@@ -165,8 +194,8 @@ function toCatalogItem(product: PosProduct, family: PosProduct[]): PosCatalogIte
   return {
     id: String(product.id),
     name: commonName || product.name,
+    brand: brandOf(product.attributes),
     price: Number(product.price),
-    imageUrl: product.imageThumbnailUrl ?? product.imageUrl,
     stock: family.reduce((total, item) => total + Number(item.stock), 0),
     colors: colors.map((attribute) => ({
       id: String(attribute.id),
@@ -219,11 +248,20 @@ export default function LivePosPage() {
   const [search, setSearch] = React.useState("");
   const [debounced, setDebounced] = React.useState("");
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<number | null>(null);
+  const [resultsOpen, setResultsOpen] = React.useState(true);
+  const [activeResult, setActiveResult] = React.useState(-1);
+  const resultsRef = React.useRef<PosProductResultsHandle>(null);
   const [rows, setRows] = React.useState<CartRow[]>([]);
+  // Сканер срабатывает чаще, чем React перерисовывает страницу: остаток
+  // сверяем с последним составом чека, а не с тем, что был при прошлом рендере.
+  const rowsRef = React.useRef<CartRow[]>(rows);
+  rowsRef.current = rows;
   const [variants, setVariants] = React.useState<PosProduct[]>([]);
   const [client, setClient] = React.useState<PosClient | null>(null);
   const [clientQuery, setClientQuery] = React.useState("");
   const [clientSearch, setClientSearch] = React.useState("");
+  const [clientEditorOpen, setClientEditorOpen] = React.useState(false);
+  const [clientEditorQuery, setClientEditorQuery] = React.useState("");
   const [benefits, setBenefits] = React.useState<Benefits>(emptyBenefits);
   const [held, setHeld] = React.useState<PosSavedReceipt | null>(null);
   const [holdOpen, setHoldOpen] = React.useState(false);
@@ -234,8 +272,16 @@ export default function LivePosPage() {
   const [pending, setPending] = React.useState(false);
   const sending = React.useRef(false);
   const attempt = React.useRef({ fingerprint: "", key: "" });
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setErrorState] = React.useState<PosUserError | null>(null);
+  /** Принимает ошибку каталога, ответ API или строку — кассир видит понятный текст. */
+  const setError = React.useCallback(
+    (value: unknown) => setErrorState(value == null ? null : toPosUserError(value)),
+    []
+  );
+  const [addedNotice, setAddedNotice] = React.useState<{ key: number; text: string } | null>(null);
   const [saved, setSaved] = React.useState<PosSavedReceipt | null>(null);
+  const [confirmRequest, setConfirmRequest] =
+    React.useState<PosConfirmRequest | null>(null);
   const [returnTarget, setReturnTarget] =
     React.useState<PosSavedReceipt | null>(null);
   const [reason, setReason] = React.useState("");
@@ -289,6 +335,22 @@ export default function LivePosPage() {
     }, 250);
     return () => window.clearTimeout(id);
   }, [search]);
+
+  // Новый запрос или категория — список снова раскрыт, подсветка сброшена.
+  React.useEffect(() => {
+    setResultsOpen(true);
+    setActiveResult(-1);
+  }, [search, selectedCategoryId]);
+
+  // Поиск клиента запускается после короткой паузы в наборе: отдельная кнопка
+  // «Найти» в кассе не нужна, а запрос на каждый символ создавал бы лишнюю
+  // нагрузку на API.
+  React.useEffect(() => {
+    const id = window.setTimeout(() => {
+      setClientSearch(clientQuery.trim());
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [clientQuery]);
   const typedSearch = search.trim();
   const debouncedSearch = debounced.trim();
   const isSearchPending = typedSearch !== debouncedSearch;
@@ -354,7 +416,13 @@ export default function LivePosPage() {
         `clients/?search=${encodeURIComponent(clientSearch)}`,
         { signal }
       ),
-    enabled: ready && !!actions.clients && !held,
+    enabled: ready && !!actions.clients && !held && Boolean(clientSearch),
+  });
+  const clientStatuses = useQuery({
+    queryKey: [...prefix, "client-statuses"],
+    queryFn: ({ signal }) => posRequest<DjangoClientStatus[]>(scope, "client-statuses/", { signal }),
+    enabled: ready && !!actions.client_create && clientEditorOpen,
+    staleTime: 5 * 60 * 1000,
   });
   const receipts = useQuery({
     queryKey: [...prefix, list, listOffset, historyClient],
@@ -382,8 +450,10 @@ export default function LivePosPage() {
       .map((row) => ({
         productId: row.product.id,
         quantity: String(row.quantity),
+        discountAmount: lineDiscount(row).toFixed(2),
       })),
-    discountPercent: benefits.discount || "0",
+    discountPercent: decimalForRequest(benefits.discountPercent),
+    discountAmount: decimalForRequest(benefits.discount),
     discountKindId: benefits.discountKindId ?? undefined,
     clientDiscount: benefits.clientDiscount,
     promotions: benefits.promotions,
@@ -397,6 +467,8 @@ export default function LivePosPage() {
     enabled: ready && !!warehouseId && cart.lines.length > 0 && !held,
     staleTime: 0,
     retry: false,
+    // Пока сервер пересчитывает, панель не мигает «—»: показываем оценку ниже.
+    placeholderData: keepPreviousData,
   });
   const discountKindsQuery = useQuery({
     queryKey: ["django", "promotions", "discount-kinds", scope.branchId],
@@ -428,9 +500,81 @@ export default function LivePosPage() {
         lines: [],
       }
     : undefined;
-  const quote =
+  const serverQuote =
     heldQuote ??
     (quoteQuery.isError || !cart.lines.length ? undefined : quoteQuery.data);
+  const activeRows = rows.filter((row) => !row.removed);
+  const localSubtotal = activeRows.reduce(
+    (total, row) => total + Number(row.product.price) * row.quantity,
+    0
+  );
+  const localLineDiscount = activeRows.reduce(
+    (total, row) => total + lineDiscount(row),
+    0
+  );
+  // Ответ сервера для текущей корзины ещё не пришёл — считаем итог сами, чтобы
+  // скидка на товар и количество отражались в панели сразу, а не после запроса.
+  const quoteStale =
+    !held &&
+    cart.lines.length > 0 &&
+    !quoteQuery.isError &&
+    (quoteQuery.isPlaceholderData || (!quoteQuery.data && quoteQuery.isFetching));
+  const estimateQuote = (previous: PosQuote | undefined): PosQuote => {
+    const afterLines = localSubtotal - localLineDiscount;
+    const kind = discountKinds.find((item) => item.id === benefits.discountKindId);
+    const percent = kind ? Number(kind.percent) : Number(benefits.discountPercent) || 0;
+    // Процент (вид скидки или свой) считается от суммы после скидок на позиции, иначе — сумма.
+    const cartDiscount = percent
+      ? (afterLines * percent) / 100
+      : Math.min(Number(benefits.discount) || 0, afterLines);
+    let discount = localLineDiscount + cartDiscount;
+    // Без ручных скидок держим прошлую (акция) — иначе итог мигнёт на полную сумму.
+    if (!discount && previous)
+      discount = Math.min(Number(previous.discount), localSubtotal);
+    if (benefits.clientDiscount && client)
+      discount = Math.max(discount, (localSubtotal * client.discountPercent) / 100);
+    const total = Math.max(0, localSubtotal - discount);
+    const bonusesUsed =
+      benefits.bonuses && previous ? Math.min(Number(previous.bonuses), total) : 0;
+    const certificate = previous
+      ? Math.min(Number(previous.certificateAmount), total - bonusesUsed)
+      : 0;
+    return {
+      subtotal: localSubtotal.toFixed(2),
+      discount: discount.toFixed(2),
+      total: total.toFixed(2),
+      bonuses: bonusesUsed.toFixed(2),
+      certificateAmount: certificate.toFixed(2),
+      due: (total - bonusesUsed - certificate).toFixed(2),
+      promotionApplied: previous?.promotionApplied,
+      lines: [],
+    };
+  };
+  const quote = quoteStale ? estimateQuote(serverQuote) : serverQuote;
+  // Сервер без поддержки скидки на позицию молча её отбрасывает — не прячем это.
+  const lineDiscountIgnored =
+    !held &&
+    !quoteStale &&
+    !!quote &&
+    localLineDiscount > 0 &&
+    Number(quote.discount) + 0.01 < localLineDiscount;
+  const panelLineDiscounts = held
+    ? held.lines
+        .filter((line) => Number(line.discountAmount ?? 0) > 0)
+        .map((line) => ({
+          id: String(line.id),
+          name: line.productName,
+          label: "",
+          amount: Number(line.discountAmount),
+        }))
+    : activeRows
+        .filter((row) => lineDiscount(row) > 0)
+        .map((row) => ({
+          id: String(row.product.id),
+          name: row.product.name,
+          label: row.discountPercent ? `${row.discountPercent}%` : "",
+          amount: lineDiscount(row),
+        }));
   const busy = pending || (!held && quoteQuery.isFetching);
   const reset = () => {
     setRows([]);
@@ -444,11 +588,18 @@ export default function LivePosPage() {
   };
   const newReceipt = () => {
     if (sending.current) return;
-    if (
-      !rows.length ||
-      window.confirm("Начать новый чек? Несохранённая корзина будет очищена.")
-    )
+    if (!rows.length) {
       reset();
+      return;
+    }
+    setConfirmRequest({
+      title: "Начать новый чек?",
+      message: held
+        ? "Отложенный чек закроется и останется в списке отложенных."
+        : "Несохранённая корзина будет очищена.",
+      confirmLabel: "Новый чек",
+      onConfirm: reset,
+    });
   };
   const invalidate = () => {
     void cache.invalidateQueries({ queryKey: prefix });
@@ -461,40 +612,41 @@ export default function LivePosPage() {
     try {
       await callback();
     } catch (e) {
-      setError(message(e));
+      setError(e);
     } finally {
       sending.current = false;
       setPending(false);
     }
   };
-  const add = async (product: PosProduct) => {
-    if (!actions.sell || held || pending) return;
-    if (Number(product.stock) <= 0) {
-      setError("На выбранном складе нет свободного остатка.");
-      return;
+  /** Добавить товар в чек. `true` — позиция добавлена или её количество выросло. */
+  const add = async (product: PosProduct): Promise<boolean> => {
+    if (!actions.sell) {
+      setError(posError("NO_SELL_PERMISSION"));
+      return false;
+    }
+    if (held || pending) return false;
+    const stock = Number(product.stock);
+    if (stock <= 0) {
+      setError(posError("OUT_OF_STOCK", { name: product.name }));
+      return false;
+    }
+    const existing = rowsRef.current.find((row) => row.product.id === product.id);
+    if (existing && !existing.removed && existing.quantity >= stock) {
+      setError(posError("STOCK_LIMIT", { name: product.name, stock }));
+      return false;
     }
     setRows((previous) => {
-      const existing = previous.find((row) => row.product.id === product.id);
-      if (
-        existing &&
-        !existing.removed &&
-        existing.quantity >= Number(product.stock)
-      ) {
-        setError("Достигнут доступный остаток.");
-        return previous;
-      }
-      return existing
+      const current = previous.find((row) => row.product.id === product.id);
+      if (current && !current.removed && current.quantity >= stock) return previous;
+      return current
         ? previous.map((row) =>
             row.product.id === product.id
-              ? {
-                  ...row,
-                  quantity: row.removed ? 1 : row.quantity + 1,
-                  removed: false,
-                }
+              ? { ...row, quantity: row.removed ? 1 : row.quantity + 1, removed: false }
               : row
           )
         : [...previous, { product, quantity: 1 }];
     });
+    setError(null);
     setSearch("");
     searchInputRef.current?.focus();
     if (product.modelId) {
@@ -508,43 +660,78 @@ export default function LivePosPage() {
           ...previous.filter((item) => item.modelId !== product.modelId),
           ...result.results,
         ]);
-      } catch (e) {
-        setError(message(e));
+      } catch {
+        // Без списка вариантов строка просто не предложит сменить цвет/размер.
       }
     }
+    return true;
   };
-  const scanProduct = async (rawCode: string) => {
+
+  /**
+   * Товар по штрихкоду или артикулу — только точное совпадение, без учёта
+   * регистра. Поиск по названию сюда не подходит: частичное совпадение
+   * положило бы в чек не тот товар.
+   */
+  const addByCode = async (rawCode: string, source: "scanner" | "manual") => {
     const code = rawCode.trim();
-    searchInputRef.current?.focus();
-    if (code) setSearch(code);
-    if (
-      !canStartProductSearch(code) ||
-      !actions.sell ||
-      pending ||
-      held
-    )
-      return;
+    if (!code) return;
+    const fail = (value: PosUserError) => {
+      setError(value);
+      if (source === "scanner") playScanFeedback(false);
+    };
+    if (!actions.sell) return fail(posError("NO_SELL_PERMISSION"));
+    if (held) return fail(posError("SCAN_HELD_RECEIPT"));
+    if (pending) return fail(posError("SCAN_BUSY"));
+    if (!warehouseId) return fail(posError("NO_WAREHOUSE"));
+    if (source === "manual" && !canStartProductSearch(code)) return;
     try {
-      const result = await getPosProducts(scope, {
-        warehouseId,
-        search: code,
-        limit: 100,
-      });
-      const exact = result.results.find(
-        (item) =>
-          item.barcode === code ||
-          item.barcodes.includes(code) ||
-          item.sku === code
+      const result = await getPosProducts(scope, { warehouseId, search: code, limit: 50 });
+      const wanted = code.toLocaleLowerCase();
+      const same = (value: string | null | undefined) => (value ?? "").trim().toLocaleLowerCase() === wanted;
+      const exact = result.results.filter(
+        (item) => same(item.barcode) || item.barcodes.some(same) || same(item.sku)
       );
-      if (exact) void add(exact);
-      else if (result.count === 1) void add(result.results[0]);
-      else
-        setError(
-          "Уточните штрихкод или выберите товар в результатах поиска."
-        );
+      const match =
+        exact.length === 1
+          ? exact[0]
+          : source === "manual" && !exact.length && result.count === 1
+          ? result.results[0]
+          : undefined;
+      if (match) {
+        if (await add(match)) {
+          if (source === "scanner") playScanFeedback(true);
+          setAddedNotice({ key: Date.now(), text: `Добавлено: ${match.name}` });
+        } else if (source === "scanner") playScanFeedback(false);
+        return;
+      }
+      if (exact.length > 1) return fail(posError("SCAN_AMBIGUOUS", { code }));
+      // Ручной ввод с несколькими совпадениями по названию — кассир выберет в списке.
+      if (source === "manual" && result.count > 0) return;
+      fail(posError("SCAN_NOT_FOUND", { code }));
     } catch (e) {
-      setError(message(e));
+      fail(toPosUserError(e));
     }
+  };
+
+  /** Код со сканера — сразу в чек, при любом фокусе. */
+  const handleScan = (code: string) => {
+    // Открыто окно (оплата, скидка, выбор варианта): товар в чек не кладём —
+    // иначе сумма поменялась бы прямо во время оплаты.
+    const modalOpen =
+      checkoutOpen ||
+      holdOpen ||
+      list !== null ||
+      saved !== null ||
+      returnTarget !== null ||
+      confirmRequest !== null ||
+      Boolean(document.querySelector(".MuiModal-root:not(.MuiModal-hidden)"));
+    if (modalOpen) {
+      setError(posError("SCAN_BLOCKED_DIALOG"));
+      playScanFeedback(false);
+      return;
+    }
+    setResultsOpen(false);
+    void addByCode(code, "scanner");
   };
   const update = (id: string, change: Partial<CartRow>) => {
     if (!actions.sell || held || pending) return;
@@ -566,15 +753,13 @@ export default function LivePosPage() {
         p.attributes.find((a) => a.role === otherRole)?.id === other
     );
     if (!replacement || Number(replacement.stock) < row.quantity) {
-      setError("Этот вариант недоступен на выбранном складе.");
+      setError(posError("VARIANT_UNAVAILABLE"));
       return;
     }
     if (
       rows.some((item) => item !== row && item.product.id === replacement.id)
     ) {
-      setError(
-        "Этот вариант уже есть в чеке. Измените количество в его строке."
-      );
+      setError(posError("VARIANT_DUPLICATE"));
       return;
     }
     update(id, { product: replacement });
@@ -604,15 +789,20 @@ export default function LivePosPage() {
       setSaved(receipt);
       invalidate();
     });
-  const restore = (receipt: PosSavedReceipt) =>
+  const restore = (receipt: PosSavedReceipt) => {
+    if (!rows.length) {
+      void openHeld(receipt);
+      return;
+    }
+    setConfirmRequest({
+      title: "Открыть отложенный чек?",
+      message: "Текущая корзина будет очищена.",
+      confirmLabel: "Открыть",
+      onConfirm: () => void openHeld(receipt),
+    });
+  };
+  const openHeld = (receipt: PosSavedReceipt) =>
     act(async () => {
-      if (
-        rows.length &&
-        !window.confirm(
-          "Открыть отложенный чек? Текущая корзина будет очищена."
-        )
-      )
-        return;
       setHeld(receipt);
       setWarehouseChoice(receipt.warehouseId);
       setBenefits(emptyBenefits);
@@ -647,62 +837,19 @@ export default function LivePosPage() {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "F2") {
         event.preventDefault();
-        document
-          .querySelector<HTMLInputElement>(
-            'input[placeholder^="Поиск по названию"]'
-          )
-          ?.focus();
+        searchInputRef.current?.focus();
       }
       if (event.key === "F5") {
         event.preventDefault();
-        if (actions.sell && quote && !busy && !list)
+        if (actions.sell && quote && !busy && !list && !lineDiscountIgnored)
           setCheckoutOpen(true);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [actions.sell, quote, busy, list]);
+  }, [actions.sell, quote, busy, list, lineDiscountIgnored]);
 
-  React.useEffect(() => {
-    let buffer = "";
-    let lastDigitAt = 0;
-    let resetTimer: number | undefined;
-
-    const handler = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.matches("input, textarea, select, [contenteditable='true']")
-      )
-        return;
-
-      if (event.key === "Enter") {
-        if (buffer.length >= 3 && /^\d+$/.test(buffer)) {
-          event.preventDefault();
-          const code = buffer;
-          buffer = "";
-          window.clearTimeout(resetTimer);
-          void scanProduct(code);
-        }
-        return;
-      }
-      if (event.key.length !== 1 || !/^\d$/.test(event.key)) return;
-
-      const now = Date.now();
-      if (now - lastDigitAt > 120) buffer = "";
-      buffer += event.key;
-      lastDigitAt = now;
-      window.clearTimeout(resetTimer);
-      resetTimer = window.setTimeout(() => {
-        buffer = "";
-      }, 180);
-    };
-
-    window.addEventListener("keydown", handler);
-    return () => {
-      window.removeEventListener("keydown", handler);
-      window.clearTimeout(resetTimer);
-    };
-  }, [actions.sell, held, pending, scope.branchId, scope.organizationId, warehouseId]);
+  useBarcodeScanner(handleScan, ready && Boolean(data));
 
   if (!ready)
     return (
@@ -717,33 +864,91 @@ export default function LivePosPage() {
   if (bootstrap.isError)
     return (
       <Stack p={3} gap={2}>
-        <Alert severity="error">{message(bootstrap.error)}</Alert>
+        <PosErrorNotice inline error={toPosUserError(bootstrap.error)} />
         <Button onClick={() => bootstrap.refetch()}>Повторить</Button>
       </Stack>
     );
   if (!data) return <LinearProgress />;
   const quoteError =
     quoteQuery.isError && !held ? message(quoteQuery.error) : null;
-  const visibleError =
+  const visibleError: PosUserError | null =
     error ??
     (quoteError && !inlineQuoteErrorField(quoteError)
-      ? quoteError
+      ? toPosUserError(quoteQuery.error)
       : products.isError
-      ? message(products.error)
+      ? toPosUserError(products.error)
       : clients.isError
-      ? message(clients.error)
+      ? toPosUserError(clients.error)
       : null);
   const checkoutLines = quote
     ? quote.lines.map((line) => ({
         name: line.name,
         quantity: line.quantity,
+        discountAmount: Number(line.discountAmount),
         total: Number(line.subtotal) - Number(line.discountAmount),
       }))
     : [];
   const checkoutBenefits = [
-    { label: "Бонусы", value: Number(quote?.bonuses ?? 0), positive: true },
-    { label: "Сертификат", value: Number(quote?.certificateAmount ?? 0), positive: true },
+    { label: "Бонусы", value: Number(quote?.bonuses ?? 0), tone: "bonus" as const },
+    { label: "Сертификат", value: Number(quote?.certificateAmount ?? 0), tone: "certificate" as const },
   ].filter((item) => item.value > 0);
+
+  const dropdownVisible = !held && resultsOpen && canShowProducts;
+  const dropdownLoading = isSearchPending || products.isFetching;
+  const dropdownItems =
+    dropdownVisible && !dropdownLoading && groupedProducts.length > 0
+      ? groupedProducts
+      : null;
+  const dropdown = !dropdownVisible ? null : dropdownLoading ? (
+    <Box sx={{ py: 1.5, px: 1.5 }}>
+      <LinearProgress sx={{ borderRadius: 1 }} />
+      <Typography color="text.secondary" fontSize={12} textAlign="center" sx={{ mt: 1 }}>
+        Ищем товары…
+      </Typography>
+    </Box>
+  ) : products.isError ? null : dropdownItems ? (
+    <>
+      <Typography
+        sx={{
+          px: 1.5,
+          pt: 1,
+          pb: 0.25,
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: ".06em",
+          textTransform: "uppercase",
+          color: c.textDim,
+        }}
+      >
+        Найдено: {dropdownItems.length}
+        {products.data && products.data.count > products.data.results.length
+          ? ` · показаны первые, уточните запрос`
+          : ""}
+      </Typography>
+      <PosProductResults
+        ref={resultsRef}
+        items={dropdownItems}
+        activeIndex={activeResult}
+        onActiveIndexChange={setActiveResult}
+        onAdd={(item, selectedVariant) => {
+          const product =
+            selectedVariant ??
+            products.data?.results.find((candidate) => String(candidate.id) === item.id);
+          if (product) void add(product);
+        }}
+        disabled={!actions.sell || pending}
+      />
+    </>
+  ) : (
+    <Stack direction="row" alignItems="center" justifyContent="center" gap={1} sx={{ px: 2, py: 2.5 }}>
+      <SearchOffOutlined sx={{ color: c.textDim, fontSize: 20 }} />
+      <Typography color="text.secondary" fontSize={13}>
+        {categoryId != null
+          ? "В выбранной категории товары не найдены."
+          : "Товары не найдены. Попробуйте другое название."}
+      </Typography>
+    </Stack>
+  );
 
   return (
     <Box
@@ -761,6 +966,36 @@ export default function LivePosPage() {
         inputRef={searchInputRef}
         search={search}
         onSearchChange={setSearch}
+        onSearchFocus={() => setResultsOpen(true)}
+        onSearchKeyDown={(event) => {
+          if (!dropdownItems) {
+            if (event.key === "Escape" && (search || selectedCategoryId != null)) {
+              setResultsOpen(false);
+              return true;
+            }
+            return false;
+          }
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const step = event.key === "ArrowDown" ? 1 : -1;
+            setActiveResult((index) =>
+              Math.min(Math.max(index + step, 0), dropdownItems.length - 1)
+            );
+            return true;
+          }
+          if (event.key === "Enter" && activeResult >= 0) {
+            event.preventDefault();
+            resultsRef.current?.pick(activeResult);
+            return true;
+          }
+          if (event.key === "Escape") {
+            setResultsOpen(false);
+            return true;
+          }
+          return false;
+        }}
+        dropdown={dropdown}
+        onDropdownClose={() => setResultsOpen(false)}
         categories={data.categories}
         categoryId={selectedCategoryId}
         onCategoryChange={setSelectedCategoryId}
@@ -771,172 +1006,115 @@ export default function LivePosPage() {
         }}
         canSell={actions.sell && !pending}
         canHold={actions.hold}
-        onScan={() => void scanProduct(search)}
+        onScan={() => void addByCode(search, "manual")}
       />
       {visibleError && (
-        <Alert severity="error" onClose={() => setError(null)}>
-          {visibleError}
-        </Alert>
+        <PosErrorNotice error={visibleError} onClose={() => setError(null)} />
       )}
       {!warehouseId && (
-        <Alert severity="warning">
+        <Alert severity="warning" sx={{ borderRadius: 0 }}>
           В этом филиале пока нет склада и товаров для продажи. Добавьте склад в
-          разделе «Склады», затем загрузите каталог и оформите приход. Суммы и
-          товары не подменяются демонстрационными данными.
+          разделе «Склады», затем загрузите каталог и оформите приход.
         </Alert>
       )}
       {held && (
-        <Alert severity="info">
+        <Alert severity="info" sx={{ borderRadius: 0 }}>
           Отложенный чек №{held.number.slice(0, 8)}. Состав и цены сохранены;
           оплатите его или начните новый чек.
         </Alert>
       )}
-      {!held && canShowProducts && (
-        <>
-          {(isSearchPending || products.isFetching) && <LinearProgress />}
-          {!isSearchPending &&
-            !products.isFetching &&
-            products.data?.results.length === 0 && (
-              <Box
-                sx={{
-                  minHeight: 76,
-                  px: 2,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 1,
-                  bgcolor: c.page,
-                  borderBottom: `1px solid ${c.outline}`,
-                }}
-              >
-                <SearchOffOutlined sx={{ color: c.textDim, fontSize: 20 }} />
-                <Typography color="text.secondary" fontSize={13}>
-                  {categoryId != null
-                    ? "В выбранной категории товары не найдены."
-                    : "Товары не найдены. Попробуйте другое название."}
-                </Typography>
-              </Box>
-            )}
-          {!isSearchPending &&
-            !products.isFetching &&
-            groupedProducts.length > 0 && (
-          <PosProductCards
-            items={groupedProducts}
-            onAdd={(item, selectedVariant) => {
-              const product = selectedVariant ?? products.data?.results.find(
-                (candidate) => String(candidate.id) === item.id
-              );
-              if (product) void add(product);
-            }}
-            disabled={!actions.sell || pending}
-          />
-            )}
-        </>
-      )}
       <Box
         sx={{
           flex: 1,
-          minHeight: { xs: 480, lg: 0 },
+          minHeight: { xs: "auto", lg: 0 },
           display: "flex",
           flexDirection: { xs: "column", lg: "row" },
         }}
       >
-        <Stack sx={{ flex: 1, minWidth: 0, px: 1.5, pb: 1.5 }} gap={1.5}>
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 260,
-              display: "flex",
-              overflowX: "auto",
-              "& > div": { minWidth: 780 },
-            }}
-          >
+        <Stack
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: { xs: "auto", lg: 0 },
+            p: { xs: 1.25, md: 1.5 },
+          }}
+          gap={{ xs: 1.25, md: 1.5 }}
+        >
+          <Box sx={{ flex: 1, minHeight: { xs: 200, lg: 0 }, display: "flex" }}>
             <PosReceipt
               number={held?.number.slice(0, 8) ?? "новый"}
-              lines={rows.map((row) => ({
-                ...toLine(row, variants),
-                total: held
-                  ? Number(
-                      held.lines.find(
-                        (line) => line.productId === row.product.id
-                      )?.total ?? row.product.price
-                    )
-                  : quote?.lines.find(
+              lines={rows.map((row) => {
+                const quoted = quoteStale
+                  ? undefined
+                  : serverQuote?.lines.find(
                       (line) => line.productId === row.product.id
-                    )
-                  ? Number(
-                      quote.lines.find(
-                        (line) => line.productId === row.product.id
-                      )!.subtotal
-                    ) -
-                    Number(
-                      quote.lines.find(
-                        (line) => line.productId === row.product.id
-                      )!.discountAmount
-                    )
-                  : undefined,
-              }))}
+                    );
+                const heldLine = held?.lines.find(
+                  (line) => line.productId === row.product.id
+                );
+                return {
+                  ...toLine(row, variants),
+                  ...(heldLine
+                    ? { discountAmount: Number(heldLine.discountAmount ?? 0) }
+                    : {}),
+                  total: held
+                    ? Number(heldLine?.total ?? row.product.price)
+                    : quoted
+                    ? Number(quoted.subtotal) - Number(quoted.discountAmount)
+                    : undefined,
+                };
+              })}
               canHold={actions.hold && !!quote && !held && !busy}
+              canDiscount={Boolean(actions.discount)}
               readOnly={!actions.sell || !!held || pending}
               onChangeColor={(id, value) => variant(id, "color", value)}
               onChangeSize={(id, value) => variant(id, "size", value)}
               onChangeQuantity={(id, quantity) => {
                 const row = rows.find((r) => String(r.product.id) === id);
                 if (row && quantity > Number(row.product.stock)) {
-                  setError("Недостаточно свободного остатка.");
+                  setError(posError("STOCK_LIMIT", { name: row.product.name, stock: Number(row.product.stock) }));
                   return;
                 }
                 update(id, { quantity });
               }}
+              onChangeLineDiscount={(id, discountAmount, discountPercent) =>
+                update(id, { discountAmount, discountPercent })
+              }
               onRemoveLine={(id) => update(id, { removed: true })}
               onRestoreLine={(id) => update(id, { removed: false })}
               onHold={() => setHoldOpen(true)}
               onCancel={newReceipt}
             />
           </Box>
-          {rows.length === 0 && (
-            <Typography textAlign="center" color="text.secondary">
-              Найдите товар по названию или отсканируйте штрихкод, чтобы начать
-              продажу.
-            </Typography>
-          )}
           {actions.clients && (
             <Box
               sx={{
-                overflowX: "auto",
                 opacity: pending ? 0.6 : 1,
                 pointerEvents: pending || held ? "none" : "auto",
-                "& > div": { minWidth: 760 },
               }}
             >
               <PosClientFooter
                 client={client}
                 query={clientQuery}
                 onQueryChange={setClientQuery}
-                onSearch={() => setClientSearch(clientQuery)}
-                results={clientSearch ? clients.data ?? [] : null}
+                results={clientSearch && !clients.isFetching ? clients.data ?? [] : null}
+                searching={Boolean(clientSearch) && clients.isFetching}
                 onSelectClient={(value) => {
                   setClient(value);
+                  setClientQuery("");
+                  setClientSearch("");
                   setBenefits(emptyBenefits);
                 }}
                 canRegister={actions.client_create}
                 canHistory={actions.history}
-                onRegister={(name, phone) =>
-                  void act(async () => {
-                    const result = await posRequest<PosClient>(
-                      scope,
-                      "clients/",
-                      {
-                        method: "POST",
-                        body: { name, phone, branchId: scope.branchId },
-                      }
-                    );
-                    setClient(result);
-                    invalidate();
-                  })
-                }
+                onCreateClient={(query) => {
+                  setClientEditorQuery(query);
+                  setClientEditorOpen(true);
+                }}
                 onChangeClient={() => {
                   setClient(null);
+                  setClientQuery("");
+                  setClientSearch("");
                   setBenefits(emptyBenefits);
                 }}
                 onOpenHistory={() => {
@@ -947,6 +1125,39 @@ export default function LivePosPage() {
               />
             </Box>
           )}
+          <ClientEditorDrawer
+            open={clientEditorOpen}
+            organizationId={scope.organizationId || null}
+            client={null}
+            initialQuery={clientEditorQuery}
+            statuses={clientStatuses.data ?? []}
+            showPhoto={auth.hasPermission("clients.update") || auth.isSuperAdmin()}
+            onClose={() => setClientEditorOpen(false)}
+            onCreate={async (payload: CreateClientPayload, photoFile) => {
+              // Организацию касса передаёт заголовком (posRequest), а ФИО ручка
+              // кассы исторически принимает как `name`.
+              const fields: Partial<CreateClientPayload> = { ...payload };
+              delete fields.fullName;
+              delete fields.organizationId;
+              const result = await posRequest<PosClient>(scope, "clients/", {
+                method: "POST",
+                body: { ...fields, name: payload.fullName, branchId: scope.branchId },
+              });
+              setClient(result);
+              setClientQuery("");
+              setClientSearch("");
+              setBenefits(emptyBenefits);
+              void cache.invalidateQueries({ queryKey: [...prefix, "clients"] });
+              void cache.invalidateQueries({ queryKey: ["clients", scope.organizationId] });
+              if (photoFile) {
+                try {
+                  await uploadClientPhoto(Number(result.id), photoFile);
+                } catch {
+                  setError(posError("CLIENT_PHOTO_NOT_SAVED"));
+                }
+              }
+            }}
+          />
         </Stack>
         <LivePaymentPanel
           actions={actions}
@@ -962,8 +1173,24 @@ export default function LivePosPage() {
           locked={!!held || pending}
           discountKinds={discountKinds}
           discountMode={discountMode}
+          maxPercent={maxDiscountPercent(data.rules)}
+          lineDiscounts={panelLineDiscounts}
+          lineDiscountIgnored={lineDiscountIgnored}
         />
       </Box>
+      <Snackbar
+        key={addedNotice?.key}
+        open={addedNotice !== null}
+        autoHideDuration={1600}
+        onClose={() => setAddedNotice(null)}
+        message={addedNotice?.text}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        ContentProps={{ sx: { fontWeight: 700 } }}
+      />
+      <PosConfirmDialog
+        request={confirmRequest}
+        onClose={() => setConfirmRequest(null)}
+      />
       <PosHoldReceiptDialog
         open={holdOpen}
         onClose={() => setHoldOpen(false)}
@@ -979,7 +1206,7 @@ export default function LivePosPage() {
           discount={Number(quote.discount)}
           benefits={checkoutBenefits}
           pending={pending}
-          error={error}
+          error={error ? formatPosError(error) : null}
           onClose={() => setCheckoutOpen(false)}
           onPay={(payments) => void save(payments)}
         />
@@ -997,7 +1224,7 @@ export default function LivePosPage() {
           <Stack gap={1.5}>
             {receipts.isFetching && <LinearProgress />}
             {receipts.isError && (
-              <Alert severity="error">{message(receipts.error)}</Alert>
+              <PosErrorNotice inline error={toPosUserError(receipts.error)} />
             )}
             {receipts.data?.map((receipt) => (
               <Stack
@@ -1041,21 +1268,23 @@ export default function LivePosPage() {
                   <Button
                     color="error"
                     disabled={pending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          "Отменить чек и освободить резерв товара?"
-                        )
-                      )
-                        void act(async () => {
-                          await posRequest(
-                            scope,
-                            `receipts/${receipt.id}/cancel/`,
-                            { method: "POST" }
-                          );
-                          invalidate();
-                        });
-                    }}
+                    onClick={() =>
+                      setConfirmRequest({
+                        title: "Отменить чек?",
+                        message: "Резерв товара будет освобождён.",
+                        confirmLabel: "Отменить чек",
+                        danger: true,
+                        onConfirm: () =>
+                          void act(async () => {
+                            await posRequest(
+                              scope,
+                              `receipts/${receipt.id}/cancel/`,
+                              { method: "POST" }
+                            );
+                            invalidate();
+                          }),
+                      })
+                    }
                   >
                     Отменить
                   </Button>
@@ -1081,7 +1310,7 @@ export default function LivePosPage() {
             {!receipts.isFetching && receipts.data?.length === 0 && (
               <Typography>Чеков нет.</Typography>
             )}
-            {error && <Alert severity="error">{error}</Alert>}
+            {error && <PosErrorNotice inline error={error} />}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -1123,7 +1352,7 @@ export default function LivePosPage() {
               <Box id="pos-print" sx={{ bgcolor: "#fff", color: "#141722", p: { xs: 2, sm: 2.5 }, borderRadius: 1.5, boxShadow: "0 18px 50px rgba(0,0,0,.35)", minHeight: { md: 470 } }}>
                 <Stack alignItems="center" gap={.25} mb={2}><Typography fontWeight={900} letterSpacing=".12em">{data.organization.name.toUpperCase()}</Typography><Typography variant="caption">{data.branch.name}</Typography><Typography variant="caption" color="#6e7280">Товарный чек · не фискальный</Typography></Stack>
                 <Stack direction="row" justifyContent="space-between" mb={1}><Typography variant="caption">ЧЕК №{saved.number.slice(0, 8)}</Typography><Typography variant="caption">{new Date(saved.createdAt).toLocaleDateString("ru-RU")}</Typography></Stack>
-                <Box sx={{ borderTop: "1px dashed #adb0ba", borderBottom: "1px dashed #adb0ba", py: 1 }}>{saved.lines.map((line) => <Stack key={line.id} direction="row" justifyContent="space-between" gap={1} py={.55}><Box sx={{ minWidth: 0 }}><Typography fontSize={12} fontWeight={600} noWrap>{line.productName}</Typography><Typography fontSize={10} color="#6e7280">{line.quantity} × {Number(line.unitPrice).toLocaleString("ru-RU")} сом</Typography></Box><Typography fontSize={12} fontWeight={700} whiteSpace="nowrap">{Number(line.total).toLocaleString("ru-RU")} сом</Typography></Stack>)}</Box>
+                <Box sx={{ borderTop: "1px dashed #adb0ba", borderBottom: "1px dashed #adb0ba", py: 1 }}>{saved.lines.map((line) => <Stack key={line.id} direction="row" justifyContent="space-between" gap={1} py={.55}><Box sx={{ minWidth: 0 }}><Typography fontSize={12} fontWeight={600} noWrap>{line.productName}</Typography><Typography fontSize={10} color="#6e7280">{line.quantity} × {Number(line.unitPrice).toLocaleString("ru-RU")} сом{Number(line.discountAmount ?? 0) > 0 ? ` · скидка −${Number(line.discountAmount).toLocaleString("ru-RU")} сом` : ""}</Typography></Box><Typography fontSize={12} fontWeight={700} whiteSpace="nowrap">{Number(line.total).toLocaleString("ru-RU")} сом</Typography></Stack>)}</Box>
                 <Stack gap={.5} mt={1.5}><Stack direction="row" justifyContent="space-between"><Typography variant="caption">Подытог</Typography><Typography variant="caption">{Number(saved.subtotal).toLocaleString("ru-RU")} сом</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography variant="caption">Скидка</Typography><Typography variant="caption">− {Number(saved.discountTotal).toLocaleString("ru-RU")} сом</Typography></Stack><Stack direction="row" justifyContent="space-between" mt={.5}><Typography fontWeight={800}>ИТОГО</Typography><Typography fontWeight={900}>{Number(saved.totalAmount).toLocaleString("ru-RU")} сом</Typography></Stack></Stack>
                 <Stack alignItems="center" mt={2}><QrCode2Rounded sx={{ fontSize: 76, color: "#191c26" }} /><Typography fontSize={9} color="#777">Проверить чек</Typography></Stack>
               </Box>
@@ -1161,7 +1390,7 @@ export default function LivePosPage() {
               onChange={(event) => setReason(event.target.value)}
               fullWidth
             />
-            {error && <Alert severity="error">{error}</Alert>}
+            {error && <PosErrorNotice inline error={error} />}
           </Stack>
         </DialogContent>
         <DialogActions>

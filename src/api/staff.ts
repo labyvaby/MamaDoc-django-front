@@ -97,6 +97,19 @@ export interface DjangoEmployee {
   operationalBranches: DjangoEmployeeBranch[];
   createdAt: string;
   updatedAt: string;
+  /**
+   * Кто и когда уволил / восстановил. `null` — сотрудника ни разу не
+   * увольняли; `undefined` — бэк без этого релиза.
+   */
+  employment?: DjangoEmploymentInfo | null;
+}
+
+/** Кто закончил работу сотрудника и кто вернул. */
+export interface DjangoEmploymentInfo {
+  firedAt: string | null;
+  firedBy: string;
+  restoredAt: string | null;
+  restoredBy: string;
 }
 
 /** Compact list item (GET /employees/) */
@@ -379,6 +392,8 @@ export interface GetEmployeesParams {
   search?: string;
   status?: "active" | "inactive" | "fired";
   branchId?: number;
+  /** Все филиалы организации, включая сотрудников без филиала (бэк режет по доступам пользователя). */
+  allBranches?: boolean;
   page?: number;
   pageSize?: number;
   /** Обязателен для суперпользователя/мультиорг-аккаунта (см. useApiOrgId). */
@@ -411,6 +426,7 @@ export function getDjangoEmployees(
   if (params?.search) qs.set("search", params.search);
   if (params?.status) qs.set("status", params.status);
   if (params?.branchId != null) qs.set("branchId", String(params.branchId));
+  if (params?.allBranches) qs.set("allBranches", "1");
   if (params?.page != null) qs.set("page", String(params.page));
   if (params?.pageSize != null) qs.set("pageSize", String(params.pageSize));
   if (params?.organizationId != null) qs.set("organizationId", String(params.organizationId));
@@ -474,6 +490,35 @@ export function fireEmployee(
     method: "POST",
     body: { confirm: true },
   }).then(normalizeEmployee);
+}
+
+/**
+ * Вернуть уволенного в штат — зеркало `fireEmployee`: бэк ставит статус
+ * обратно, включает членство в организации и те услуги, что выключило
+ * увольнение. Отдельная ручка, а не PATCH статуса: PATCH вернул бы только
+ * надпись «Активный», оставив человека без доступа в панель.
+ */
+export function restoreEmployee(
+  employeeId: number,
+): Promise<RestoreEmployeeResult> {
+  return apiRequest<RestoreEmployeeResult>(`/staff/employees/${employeeId}/restore/`, {
+    method: "POST",
+    body: { confirm: true },
+  }).then((result) => ({ ...result, employee: normalizeEmployee(result.employee) }));
+}
+
+/**
+ * Что восстановление реально вернуло. `fromJournal: false` — сотрудника
+ * уволили до появления журнала: вернулся только статус, доступ и услуги
+ * нужно выдать вручную (бэк не знает, что именно выключало увольнение).
+ */
+export interface RestoreEmployeeResult {
+  employee: DjangoEmployee;
+  /** Сотрудник уже не был уволен (вернули в другой вкладке, повторный клик). */
+  alreadyActive: boolean;
+  fromJournal: boolean;
+  accessRestored: boolean;
+  servicesRestored: number;
 }
 
 export function onboardEmployee(

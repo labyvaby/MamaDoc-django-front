@@ -11,12 +11,12 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
-import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
-import ImageOutlined from "@mui/icons-material/ImageOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
 
-import { POS_LAYOUT, POS_RADIUS, posColors } from "./layout";
+import { POS_RADIUS, posColors } from "./layout";
 import type { PosCatalogItem } from "./types";
 import { PosAmount, PosColorDot } from "./ui";
 import type { PosProduct } from "../../api/pos";
@@ -25,10 +25,24 @@ type Props = {
   disabled?: boolean;
   items: PosCatalogItem[];
   onAdd: (item: PosCatalogItem, variant?: PosProduct) => void;
+  /** Подсвеченная строка — её выбирает Enter из поля поиска. */
+  activeIndex?: number;
+  onActiveIndexChange?: (index: number) => void;
 };
+
+/** Ручка списка: Enter в поиске выбирает подсвеченный товар. */
+export type PosProductResultsHandle = { pick: (index: number) => void };
 
 const attribute = (product: PosProduct, role: string) =>
   product.attributes.find((item) => item.role === role);
+
+const plural = (count: number, one: string, few: string, many: string) => {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+};
 
 /** Бейдж бренда — акцентная плашка рядом с названием товара. */
 export const PosBrandBadge: React.FC<{ brand: string }> = ({ brand }) => {
@@ -82,7 +96,7 @@ export const PosSizeChip: React.FC<{ label: string; selected?: boolean; availabl
         px: "6px",
         py: "4px",
         borderRadius: `${POS_RADIUS.chip}px`,
-        bgcolor: c.card,
+        bgcolor: selected ? c.accentBg : c.card,
         border: `1px solid ${selected ? c.accent : c.hairline}`,
         color: available ? c.textSoft : c.textDim,
         opacity: available ? 1 : 0.5,
@@ -99,277 +113,188 @@ export const PosSizeChip: React.FC<{ label: string; selected?: boolean; availabl
   );
 };
 
-/** Горизонтально прокручиваемая лента карточек товаров — над чеком. */
-export const PosProductCards: React.FC<Props> = ({ items, onAdd, disabled = false }) => {
+/** Строка подписи под названием: артикул одиночного товара либо набор вариантов модели. */
+const describe = (item: PosCatalogItem) => {
+  const variants = item.variants ?? [];
+  const parts: string[] = [];
+  if (variants.length <= 1) {
+    const sku = variants[0]?.sku;
+    if (sku) parts.push(sku);
+    const color = item.colors[0]?.label;
+    const size = item.sizes[0]?.label;
+    if (color) parts.push(color);
+    if (size) parts.push(`размер ${size}`);
+    return parts.join(" · ");
+  }
+  if (item.colors.length) parts.push(`${item.colors.length} ${plural(item.colors.length, "цвет", "цвета", "цветов")}`);
+  if (item.sizes.length) {
+    const labels = item.sizes.slice(0, 5).map((size) => size.label).join(", ");
+    parts.push(item.sizes.length > 5 ? `${labels} +${item.sizes.length - 5}` : labels);
+  }
+  if (!parts.length) parts.push(`${variants.length} ${plural(variants.length, "вариант", "варианта", "вариантов")}`);
+  return parts.join(" · ");
+};
+
+/**
+ * Результаты поиска товара — компактный список названий. Модель с вариантами
+ * открывает выбор цвета/размера, одиночный товар сразу ложится в чек.
+ */
+export const PosProductResults = React.forwardRef<PosProductResultsHandle, Props>(function PosProductResults(
+  { items, onAdd, disabled = false, activeIndex = -1, onActiveIndexChange },
+  ref
+) {
   const theme = useTheme();
   const c = posColors(theme);
-  const viewportRef = React.useRef<HTMLDivElement | null>(null);
-  const [scrollState, setScrollState] = React.useState({ left: false, right: false });
-  const [dragging, setDragging] = React.useState(false);
   const [selectedItem, setSelectedItem] = React.useState<PosCatalogItem | null>(null);
   const [selectedColorId, setSelectedColorId] = React.useState<string>("");
   const [selectedSizeId, setSelectedSizeId] = React.useState<string>("");
-  const dragRef = React.useRef({ active: false, moved: false, startX: 0, startScrollLeft: 0 });
+  const [selectedVariantId, setSelectedVariantId] = React.useState<number | null>(null);
+  const listRef = React.useRef<HTMLDivElement | null>(null);
+
+  const variants = React.useMemo(() => selectedItem?.variants ?? [], [selectedItem]);
+  const hasColors = Boolean(selectedItem?.colors.length);
+  const hasSizes = Boolean(selectedItem?.sizes.length);
+  /** У вариантов нет ни цвета, ни размера — выбираем их по названию. */
+  const plainVariants = Boolean(selectedItem) && !hasColors && !hasSizes;
 
   const selectedVariant = React.useMemo(() => {
-    if (!selectedItem?.variants?.length) return undefined;
-    return selectedItem.variants.find((variant) => {
+    if (!variants.length) return undefined;
+    if (plainVariants) return variants.find((variant) => variant.id === selectedVariantId);
+    return variants.find((variant) => {
       const color = attribute(variant, "color");
       const size = attribute(variant, "size");
       return (
-        (!selectedColorId || String(color?.id ?? "") === selectedColorId) &&
-        (!selectedSizeId || String(size?.id ?? "") === selectedSizeId)
+        (!hasColors || String(color?.id ?? "") === selectedColorId) &&
+        (!hasSizes || String(size?.id ?? "") === selectedSizeId)
       );
     });
-  }, [selectedColorId, selectedItem, selectedSizeId]);
+  }, [hasColors, hasSizes, plainVariants, selectedColorId, selectedSizeId, selectedVariantId, variants]);
 
-  const openItem = (item: PosCatalogItem) => {
-    const variants = item.variants ?? [];
-    if (variants.length <= 1) {
-      onAdd(item, variants[0]);
-      return;
-    }
-    const first = variants.find((variant) => Number(variant.stock) > 0) ?? variants[0];
-    setSelectedItem(item);
-    setSelectedColorId(String(attribute(first, "color")?.id ?? ""));
-    setSelectedSizeId(String(attribute(first, "size")?.id ?? ""));
-  };
+  const openItem = React.useCallback(
+    (item: PosCatalogItem) => {
+      if (disabled || item.stock === 0) return;
+      const family = item.variants ?? [];
+      if (family.length <= 1) {
+        onAdd(item, family[0]);
+        return;
+      }
+      const first = family.find((variant) => Number(variant.stock) > 0) ?? family[0];
+      setSelectedItem(item);
+      setSelectedColorId(String(attribute(first, "color")?.id ?? ""));
+      setSelectedSizeId(String(attribute(first, "size")?.id ?? ""));
+      setSelectedVariantId(first.id);
+    },
+    [disabled, onAdd]
+  );
 
-  const closeItem = () => setSelectedItem(null);
-  const variants = selectedItem?.variants ?? [];
-  const selectedColor = selectedItem?.colors.find((color) => color.id === selectedColorId);
-  const availableSizes = selectedItem?.sizes ?? [];
-
-  const updateScrollState = React.useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-    setScrollState({
-      left: viewport.scrollLeft > 1,
-      right: viewport.scrollLeft < maxScrollLeft - 1,
-    });
-  }, []);
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      pick: (index: number) => {
+        const item = items[index];
+        if (item) openItem(item);
+      },
+    }),
+    [items, openItem]
+  );
 
   React.useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    updateScrollState();
-    viewport.addEventListener("scroll", updateScrollState, { passive: true });
-    const observer = new ResizeObserver(updateScrollState);
-    observer.observe(viewport);
-    return () => {
-      viewport.removeEventListener("scroll", updateScrollState);
-      observer.disconnect();
-    };
-  }, [items.length, updateScrollState]);
+    if (activeIndex < 0) return;
+    listRef.current?.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex]);
 
-  const scrollProducts = (direction: -1 | 1) => {
-    viewportRef.current?.scrollBy({
-      left: direction * Math.max(240, (viewportRef.current.clientWidth || 0) * 0.75),
-      behavior: "smooth",
-    });
-  };
+  const closeItem = () => setSelectedItem(null);
+  const selectedColor = selectedItem?.colors.find((color) => color.id === selectedColorId);
 
-  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    dragRef.current = {
-      active: true,
-      moved: false,
-      startX: event.clientX,
-      startScrollLeft: viewport.scrollLeft,
-    };
-    setDragging(true);
-    viewport.setPointerCapture(event.pointerId);
-  };
-
-  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    const viewport = viewportRef.current;
-    if (!drag.active || !viewport) return;
-    const distance = event.clientX - drag.startX;
-    if (Math.abs(distance) > 4) drag.moved = true;
-    viewport.scrollLeft = drag.startScrollLeft - distance;
-  };
-
-  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    const viewport = viewportRef.current;
-    if (viewport?.hasPointerCapture(event.pointerId)) {
-      viewport.releasePointerCapture(event.pointerId);
-    }
-    dragRef.current.active = false;
-    setDragging(false);
-  };
+  const optionSx = (selected: boolean, hasStock: boolean) =>
+    ({
+      px: 1.25,
+      py: 0.9,
+      gap: 1,
+      borderRadius: `${POS_RADIUS.tile}px`,
+      border: `1px solid ${selected ? c.accent : c.hairline}`,
+      bgcolor: selected ? c.accentBg : c.tile,
+      color: hasStock ? c.text : c.textDim,
+      opacity: hasStock ? 1 : 0.45,
+    }) as const;
 
   return (
-    <Box
-      sx={{
-        height: POS_LAYOUT.productCardsHeight,
-        flexShrink: 0,
-        position: "relative",
-        bgcolor: c.page,
-        borderBottom: `1px solid ${c.outline}`,
-      }}
-    >
-      <Box
-        ref={viewportRef}
-        className={dragging ? "is-dragging" : undefined}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onDragStart={(event) => event.preventDefault()}
-        sx={{
-          height: "100%",
-          p: "10px",
-          display: "flex",
-          gap: "10px",
-          overflowX: "auto",
-          overflowY: "hidden",
-          scrollbarWidth: "none",
-          msOverflowStyle: "none",
-          cursor: "grab",
-          userSelect: "none",
-          touchAction: "pan-y",
-          "&.is-dragging": { cursor: "grabbing" },
-          "&::-webkit-scrollbar": { display: "none" },
-        }}
-      >
-        {items.map((item) => (
-          <ButtonBase
-            key={item.id}
-            // The parent viewport uses pointer capture for horizontal dragging.
-            // Keep card clicks inside the card so a normal click adds the item
-            // instead of being mistaken for a drag gesture.
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              if (dragRef.current.moved) {
-                event.preventDefault();
-                event.stopPropagation();
-                dragRef.current.moved = false;
-                return;
-              }
-              openItem(item);
-            }}
-            disabled={disabled || item.stock === 0}
-            sx={{
-              width: POS_LAYOUT.productCardWidth,
-              flexShrink: 0,
-              px: "10px",
-              py: "8px",
-              gap: "8px",
-              alignItems: "stretch",
-              justifyContent: "flex-start",
-              textAlign: "left",
-              bgcolor: c.card,
-              border: `1px solid ${c.hairline}`,
-              borderRadius: `${POS_RADIUS.card}px`,
-              "&:hover": { borderColor: c.accent },
-            }}
-          >
-            <Box
+    <>
+      <Box ref={listRef} role="listbox" aria-label="Найденные товары" sx={{ py: "4px" }}>
+        {items.map((item, index) => {
+          const outOfStock = item.stock === 0;
+          const multi = (item.variants?.length ?? 0) > 1;
+          const active = index === activeIndex;
+          return (
+            <ButtonBase
+              key={item.id}
+              data-index={index}
+              role="option"
+              aria-selected={active}
+              disabled={disabled || outOfStock}
+              onMouseEnter={() => onActiveIndexChange?.(index)}
+              onClick={() => openItem(item)}
               sx={{
-                width: 78,
-                flexShrink: 0,
+                width: "100%",
+                px: "12px",
+                py: "8px",
+                gap: "12px",
+                justifyContent: "flex-start",
+                textAlign: "left",
                 borderRadius: `${POS_RADIUS.tile}px`,
-                bgcolor: c.tile,
-                border: `1px solid ${c.hairline}`,
-                display: "grid",
-                placeItems: "center",
+                bgcolor: active ? c.tile : "transparent",
+                "&.Mui-disabled": { opacity: 0.45 },
               }}
             >
-              {item.imageUrl ? <Box component="img" src={item.imageUrl} alt="" sx={{ width: 78, height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} /> : <ImageOutlined sx={{ fontSize: 28, color: c.textDim, opacity: 0.6 }} />}
-            </Box>
-
-            <Stack gap="8px" sx={{ flex: 1, minWidth: 0 }}>
-              <Stack gap="6px" alignItems="flex-start">
-                <Typography noWrap sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text, maxWidth: "100%" }}>
-                  {item.name}
+              <Stack gap="3px" sx={{ flex: 1, minWidth: 0 }}>
+                <Stack direction="row" alignItems="center" gap="6px" sx={{ minWidth: 0 }}>
+                  <Typography noWrap sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.25, color: c.text }}>
+                    {item.name}
+                  </Typography>
+                  {item.brand ? <PosBrandBadge brand={item.brand} /> : null}
+                </Stack>
+                <Typography noWrap sx={{ fontSize: 12, lineHeight: 1.2, color: c.textDim }}>
+                  {describe(item) || " "}
                 </Typography>
-                {item.brand ? <PosBrandBadge brand={item.brand} /> : null}
-                <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text }}>
+              </Stack>
+              <Stack alignItems="flex-end" gap="3px" sx={{ flexShrink: 0 }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 800, lineHeight: 1.25, color: c.text, whiteSpace: "nowrap" }}>
                   <PosAmount value={item.price} />
-                  {item.stock !== undefined && <Typography component="span" fontSize={11} color="text.secondary"> · {item.stock} шт.</Typography>}
                 </Typography>
+                {item.stock !== undefined && (
+                  <Typography sx={{ fontSize: 11, lineHeight: 1.2, color: outOfStock ? c.danger : c.textDim, whiteSpace: "nowrap" }}>
+                    {outOfStock ? "нет в наличии" : `${item.stock} шт.`}
+                  </Typography>
+                )}
               </Stack>
-
-              <Box sx={{ height: "1px", bgcolor: c.hairline }} />
-
-              <Stack direction="row" alignItems="center" gap="6px">
-                <Stack direction="row" alignItems="center" gap="2px">
-                  {item.colors.slice(0, 2).map((color) => (
-                    <PosColorDot key={color.id} hex={color.hex} size={16} />
-                  ))}
-                  <PosMoreVariants count={Math.max(item.colors.length - 2, 0)} />
-                </Stack>
-                <Box sx={{ width: "1px", height: 15, bgcolor: c.hairline }} />
-                <Stack direction="row" alignItems="center" gap="2px">
-                  {item.sizes.slice(0, 2).map((size) => (
-                    <PosSizeChip key={size.id} label={size.label} available={size.available} small />
-                  ))}
-                  <PosMoreVariants count={Math.max(item.sizes.length - 2, 0)} />
-                </Stack>
-              </Stack>
-            </Stack>
-          </ButtonBase>
-        ))}
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  flexShrink: 0,
+                  borderRadius: "50%",
+                  display: "grid",
+                  placeItems: "center",
+                  bgcolor: active ? c.accent : c.tile,
+                  color: active ? c.onAccent : c.textSoft,
+                }}
+              >
+                {multi ? <ChevronRightOutlined sx={{ fontSize: 18 }} /> : <AddOutlined sx={{ fontSize: 18 }} />}
+              </Box>
+            </ButtonBase>
+          );
+        })}
       </Box>
-
-      {scrollState.left && (
-        <IconButton
-          aria-label="Прокрутить товары влево"
-          onClick={() => scrollProducts(-1)}
-          sx={{
-            position: "absolute",
-            zIndex: 1,
-            left: 10,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 34,
-            height: 34,
-            color: c.text,
-            bgcolor: c.card,
-            border: `1px solid ${c.hairline}`,
-            boxShadow: theme.shadows[4],
-            "&:hover": { bgcolor: c.accent, color: c.onAccent },
-            "& svg": { fontSize: 22 },
-          }}
-        >
-          <ChevronLeftOutlined />
-        </IconButton>
-      )}
-      {scrollState.right && (
-        <IconButton
-          aria-label="Прокрутить товары вправо"
-          onClick={() => scrollProducts(1)}
-          sx={{
-            position: "absolute",
-            zIndex: 1,
-            right: 10,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 34,
-            height: 34,
-            color: c.text,
-            bgcolor: c.card,
-            border: `1px solid ${c.hairline}`,
-            boxShadow: theme.shadows[4],
-            "&:hover": { bgcolor: c.accent, color: c.onAccent },
-            "& svg": { fontSize: 22 },
-          }}
-        >
-          <ChevronRightOutlined />
-        </IconButton>
-      )}
 
       <Dialog
         open={selectedItem !== null}
         onClose={closeItem}
         fullWidth
-        maxWidth="sm"
+        maxWidth="xs"
         PaperProps={{
           sx: {
+            m: { xs: 1.5, md: 4 },
+            width: { xs: "calc(100% - 24px)", md: undefined },
             borderRadius: `${POS_RADIUS.dialog}px`,
             bgcolor: c.card,
             backgroundImage: "none",
@@ -379,135 +304,128 @@ export const PosProductCards: React.FC<Props> = ({ items, onAdd, disabled = fals
       >
         {selectedItem && (
           <>
-            <DialogTitle sx={{ pb: 1.5 }}>
-              <Stack direction="row" gap={1.5} alignItems="center">
-                <Box
-                  component="img"
-                  src={selectedVariant?.imageThumbnailUrl ?? selectedVariant?.imageUrl ?? selectedItem.imageUrl ?? undefined}
-                  alt=""
-                  sx={{
-                    width: 64,
-                    height: 64,
-                    objectFit: "cover",
-                    borderRadius: `${POS_RADIUS.tile}px`,
-                    bgcolor: c.tile,
-                    border: `1px solid ${c.hairline}`,
-                  }}
-                />
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography fontWeight={800} noWrap>{selectedItem.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Выберите цвет и размер
-                  </Typography>
-                </Box>
-              </Stack>
+            <DialogTitle sx={{ pb: 1.5, pr: 6 }}>
+              <Typography fontWeight={800} noWrap>{selectedItem.name}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {plainVariants ? "Выберите вариант" : hasColors && hasSizes ? "Выберите цвет и размер" : hasColors ? "Выберите цвет" : "Выберите размер"}
+              </Typography>
+              <IconButton onClick={closeItem} size="small" sx={{ position: "absolute", right: 12, top: 12, color: c.textDim }} aria-label="Закрыть">
+                <CloseOutlined fontSize="small" />
+              </IconButton>
             </DialogTitle>
-            <DialogContent dividers sx={{ borderColor: c.hairline, py: 2.5 }}>
-              <Stack gap={2.5}>
-                <Box>
-                  <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1 }}>
-                    Цвет{selectedColor ? ` · ${selectedColor.label}` : ""}
-                  </Typography>
-                  <Stack direction="row" gap={1} flexWrap="wrap">
-                    {selectedItem.colors.map((color) => {
-                      const hasStock = variants.some(
-                        (variant) =>
-                          String(attribute(variant, "color")?.id ?? "") === color.id &&
-                          Number(variant.stock) > 0
-                      );
-                      const selected = selectedColorId === color.id;
+            <DialogContent dividers sx={{ borderColor: c.hairline, py: 2 }}>
+              <Stack gap={2}>
+                {plainVariants && (
+                  <Stack gap={0.75}>
+                    {variants.map((variant) => {
+                      const hasStock = Number(variant.stock) > 0;
+                      const selected = variant.id === selectedVariantId;
                       return (
                         <ButtonBase
-                          key={color.id}
+                          key={variant.id}
                           disabled={!hasStock}
-                          onClick={() => {
-                            setSelectedColorId(color.id);
-                            const matchingSize = variants.find(
-                              (variant) =>
-                                String(attribute(variant, "color")?.id ?? "") === color.id &&
-                                String(attribute(variant, "size")?.id ?? "") === selectedSizeId &&
-                                Number(variant.stock) > 0
-                            );
-                            if (!matchingSize) {
-                              const firstSize = variants.find(
+                          onClick={() => setSelectedVariantId(variant.id)}
+                          sx={{ ...optionSx(selected, hasStock), justifyContent: "space-between" }}
+                        >
+                          <Typography variant="body2" fontWeight={700} noWrap>{variant.name}</Typography>
+                          <Typography variant="caption" color="text.secondary" whiteSpace="nowrap">
+                            <PosAmount value={Number(variant.price)} /> · {hasStock ? `${Number(variant.stock)} шт.` : "нет"}
+                          </Typography>
+                        </ButtonBase>
+                      );
+                    })}
+                  </Stack>
+                )}
+
+                {hasColors && (
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1 }}>
+                      Цвет{selectedColor ? ` · ${selectedColor.label}` : ""}
+                    </Typography>
+                    <Stack direction="row" gap={0.75} flexWrap="wrap">
+                      {selectedItem.colors.map((color) => {
+                        const hasStock = variants.some(
+                          (variant) => String(attribute(variant, "color")?.id ?? "") === color.id && Number(variant.stock) > 0
+                        );
+                        const selected = selectedColorId === color.id;
+                        return (
+                          <ButtonBase
+                            key={color.id}
+                            disabled={!hasStock}
+                            onClick={() => {
+                              setSelectedColorId(color.id);
+                              const matchingSize = variants.find(
                                 (variant) =>
                                   String(attribute(variant, "color")?.id ?? "") === color.id &&
+                                  String(attribute(variant, "size")?.id ?? "") === selectedSizeId &&
                                   Number(variant.stock) > 0
                               );
-                              setSelectedSizeId(String(attribute(firstSize ?? variants[0], "size")?.id ?? ""));
-                            }
-                          }}
-                          sx={{
-                            minWidth: 108,
-                            px: 1.25,
-                            py: 1,
-                            gap: 1,
-                            justifyContent: "flex-start",
-                            borderRadius: `${POS_RADIUS.control}px`,
-                            border: `1px solid ${selected ? c.accent : c.hairline}`,
-                            bgcolor: selected ? c.accentBg : c.tile,
-                            color: hasStock ? c.text : c.textDim,
-                            opacity: hasStock ? 1 : 0.45,
-                          }}
-                        >
-                          <PosColorDot hex={color.hex} size={18} />
-                          <Typography variant="body2" fontWeight={700}>{color.label}</Typography>
-                          {selected && <CheckOutlined sx={{ ml: "auto", fontSize: 17, color: c.accentText }} />}
-                        </ButtonBase>
-                      );
-                    })}
-                  </Stack>
-                </Box>
+                              if (!matchingSize) {
+                                const firstSize = variants.find(
+                                  (variant) => String(attribute(variant, "color")?.id ?? "") === color.id && Number(variant.stock) > 0
+                                );
+                                setSelectedSizeId(String(attribute(firstSize ?? variants[0], "size")?.id ?? ""));
+                              }
+                            }}
+                            sx={optionSx(selected, hasStock)}
+                          >
+                            <PosColorDot hex={color.hex} size={16} />
+                            <Typography variant="body2" fontWeight={700}>{color.label}</Typography>
+                            {selected && <CheckOutlined sx={{ fontSize: 16, color: c.accentText }} />}
+                          </ButtonBase>
+                        );
+                      })}
+                    </Stack>
+                  </Box>
+                )}
 
-                <Box>
-                  <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1 }}>
-                    Размер
-                  </Typography>
-                  <Stack direction="row" gap={1} flexWrap="wrap">
-                    {availableSizes.map((size) => {
-                      const matching = variants.find(
-                        (variant) =>
-                          String(attribute(variant, "color")?.id ?? "") === selectedColorId &&
-                          String(attribute(variant, "size")?.id ?? "") === size.id
-                      );
-                      const hasStock = Boolean(matching && Number(matching.stock) > 0);
-                      const selected = selectedSizeId === size.id;
-                      return (
-                        <ButtonBase
-                          key={size.id}
-                          disabled={!hasStock}
-                          onClick={() => setSelectedSizeId(size.id)}
-                          sx={{
-                            minWidth: 58,
-                            px: 1.25,
-                            py: 1,
-                            borderRadius: `${POS_RADIUS.control}px`,
-                            border: `1px solid ${selected ? c.accent : c.hairline}`,
-                            bgcolor: selected ? c.accentBg : c.tile,
-                            color: hasStock ? c.text : c.textDim,
-                            opacity: hasStock ? 1 : 0.45,
-                            textDecoration: hasStock ? "none" : "line-through",
-                          }}
-                        >
-                          <Typography variant="body2" fontWeight={800}>{size.label}</Typography>
-                        </ButtonBase>
-                      );
-                    })}
-                  </Stack>
-                </Box>
+                {hasSizes && (
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 1 }}>
+                      Размер
+                    </Typography>
+                    <Stack direction="row" gap={0.75} flexWrap="wrap">
+                      {selectedItem.sizes.map((size) => {
+                        const matching = variants.find(
+                          (variant) =>
+                            (!hasColors || String(attribute(variant, "color")?.id ?? "") === selectedColorId) &&
+                            String(attribute(variant, "size")?.id ?? "") === size.id
+                        );
+                        const hasStock = Boolean(matching && Number(matching.stock) > 0);
+                        const selected = selectedSizeId === size.id;
+                        return (
+                          <ButtonBase
+                            key={size.id}
+                            disabled={!hasStock}
+                            onClick={() => setSelectedSizeId(size.id)}
+                            sx={{
+                              ...optionSx(selected, hasStock),
+                              minWidth: 52,
+                              textDecoration: hasStock ? "none" : "line-through",
+                            }}
+                          >
+                            <Typography variant="body2" fontWeight={800}>{size.label}</Typography>
+                          </ButtonBase>
+                        );
+                      })}
+                    </Stack>
+                  </Box>
+                )}
 
-                <Box sx={{ p: 1.5, borderRadius: `${POS_RADIUS.control}px`, bgcolor: c.tile }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography variant="body2" color="text.secondary">Цена</Typography>
-                    <Typography fontWeight={800}><PosAmount value={Number(selectedVariant?.price ?? selectedItem.price)} /></Typography>
-                  </Stack>
-                  <Typography variant="caption" color="text.secondary">
-                    {selectedVariant && Number(selectedVariant.stock) > 0 ? `В наличии: ${selectedVariant.stock} шт.` : "Выберите доступный вариант"}
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  sx={{ p: 1.25, borderRadius: `${POS_RADIUS.tile}px`, bgcolor: c.tile }}
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    {selectedVariant && Number(selectedVariant.stock) > 0 ? `В наличии: ${Number(selectedVariant.stock)} шт.` : "Выберите доступный вариант"}
                   </Typography>
-                </Box>
+                  <Typography fontWeight={800}><PosAmount value={Number(selectedVariant?.price ?? selectedItem.price)} /></Typography>
+                </Stack>
               </Stack>
             </DialogContent>
-            <DialogActions sx={{ px: 2.5, py: 2 }}>
+            <DialogActions sx={{ px: 2.5, py: 1.5 }}>
               <Button onClick={closeItem} color="inherit">Отмена</Button>
               <Button
                 variant="contained"
@@ -516,7 +434,7 @@ export const PosProductCards: React.FC<Props> = ({ items, onAdd, disabled = fals
                   onAdd(selectedItem, selectedVariant);
                   closeItem();
                 }}
-                sx={{ minWidth: 180, borderRadius: `${POS_RADIUS.control}px` }}
+                sx={{ minWidth: 160, borderRadius: `${POS_RADIUS.control}px` }}
               >
                 Добавить в чек
               </Button>
@@ -524,6 +442,9 @@ export const PosProductCards: React.FC<Props> = ({ items, onAdd, disabled = fals
           </>
         )}
       </Dialog>
-    </Box>
+    </>
   );
-};
+});
+
+/** Старое имя — им пользуется макетная страница `PosPage`. */
+export const PosProductCards = PosProductResults;

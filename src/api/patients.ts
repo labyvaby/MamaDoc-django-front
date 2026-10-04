@@ -60,6 +60,10 @@ export interface DjangoPatient {
   /** Свидетельство о рождении: номер одной строкой и дата выдачи. */
   birthCertificateNumber?: string;
   birthCertificateIssuedOn?: string | null;
+  /** Почему нет ИНН (нужно для оформления прививки); "" — не указано. */
+  innAbsentReason?: InnAbsentReason | "";
+  /** «Приезжий» — графа формы 5. */
+  isVisitor?: boolean;
   isBlacklisted: boolean;
   blacklistReason: string;
   isActive: boolean;
@@ -86,10 +90,14 @@ export interface CreatePatientPayload {
   source?: string | null;
   inn?: string;
   cardNumber?: string;
+  innAbsentReason?: InnAbsentReason | "";
+  isVisitor?: boolean;
   isBlacklisted?: boolean;
   blacklistReason?: string;
   isActive?: boolean;
 }
+
+export type InnAbsentReason = "newborn" | "foreigner" | "no_documents" | "other";
 
 export type UpdatePatientPayload = Partial<Omit<CreatePatientPayload, "organizationId">>;
 

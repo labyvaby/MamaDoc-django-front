@@ -25,19 +25,21 @@ import { useTheme } from "@mui/material/styles";
 
 import { usePermissions } from "../../hooks/usePermissions";
 import type { RbacBranch, RbacMembership } from "../../api/auth";
+import { activeBranchesOf, isSwitcherInteractive, showsOrgWideItem } from "./contextMenuModel";
 
 /**
  * Compact active organization / active branch switcher.
  *
  * Behavior:
  *  - Hidden entirely outside Django mode.
- *  - When user has 1 membership and no branches — renders read-only chip
- *    (nothing to switch to).
+ *  - When user has 1 membership and no branches, or 1 membership and 1
+ *    branch (unless the session is still org-wide) — renders read-only
+ *    chip (nothing to switch to).
  *  - Otherwise — chip opens a popover menu with organizations grouped,
  *    each listing its accessible branches (plus the org-wide «Все филиалы»
  *    mode). Selecting a branch calls switchContext({ membershipId, branchId }).
- *    Even a single branch needs the menu: a fresh session starts org-wide,
- *    and appointment creation requires a concrete branch.
+ *    A membership with a single branch has no «Все филиалы» item: the
+ *    backend keeps the session in that branch.
  *  - Calls `onSwitched` after a successful switch so the parent can
  *    e.g. close the mobile sidebar.
  */
@@ -61,20 +63,14 @@ export const ActiveContextSwitcher: React.FC<{ onSwitched?: () => void }> = ({
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [error, setError] = React.useState<string | null>(null);
 
-
-  const totalBranches = memberships.reduce(
-    (acc, m) => acc + (m.branches?.length ?? 0),
-    0,
-  );
-
   // Nothing to render at all — user has no orgs/branches assigned.
   if (memberships.length === 0) return null;
 
-  // Меню нужно, как только есть хотя бы один филиал: даже с единственным
-  // филиалом сессия после логина находится в режиме «Все филиалы»
-  // (activeBranch=null), и без меню переключиться в филиал невозможно —
-  // а создание приёма требует конкретный филиал.
-  const isInteractive = memberships.length > 1 || totalBranches >= 1;
+  // Меню нужно, только если есть из чего выбрать. При одном филиале сессия
+  // сама стоит в нём (бэкенд), а «Все филиалы» не показывается. Если бэкенд
+  // старый (или сессия ещё не обновилась) и activeBranch всё ещё пуст —
+  // меню остаётся, чтобы войти в единственный филиал вручную.
+  const isInteractive = isSwitcherInteractive(memberships, activeBranch?.id);
 
   const handleOpen = (e: React.MouseEvent<HTMLElement>) => {
     if (!isInteractive || switching) return;
@@ -332,7 +328,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         // Filter to branches that the backend marked as active/accessible.
         // The backend already filters to memberships the user can use,
         // but we still hide inactive branches here so they can't be selected.
-        const branches = (m.branches ?? []).filter((b) => b.isActive);
+        const branches = activeBranchesOf(m);
 
         return (
           <Box key={m.id}>
@@ -351,23 +347,26 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 
             {/* Режим всей организации: без привязки к филиалу. Нужен, чтобы
                 вернуться из филиального контекста (например, для выдачи
-                операционных филиалов в карточке сотрудника). */}
-            <MenuItem
-              onClick={() => onSelect(m, null)}
-              selected={m.id === activeMembershipId && activeBranchId === null}
-            >
-              <BusinessOutlined
-                fontSize="small"
-                sx={{ mr: 1, color: "text.secondary" }}
-              />
-              <ListItemText
-                primary={branches.length > 0 ? "Все филиалы" : "Без филиала"}
-                primaryTypographyProps={{ variant: "body2" }}
-              />
-              {m.id === activeMembershipId && activeBranchId === null && (
-                <CheckOutlined fontSize="small" color="primary" />
-              )}
-            </MenuItem>
+                операционных филиалов в карточке сотрудника). При одном
+                филиале пункта нет (см. contextMenuModel). */}
+            {showsOrgWideItem(branches.length) && (
+              <MenuItem
+                onClick={() => onSelect(m, null)}
+                selected={m.id === activeMembershipId && activeBranchId === null}
+              >
+                <BusinessOutlined
+                  fontSize="small"
+                  sx={{ mr: 1, color: "text.secondary" }}
+                />
+                <ListItemText
+                  primary={branches.length > 0 ? "Все филиалы" : "Без филиала"}
+                  primaryTypographyProps={{ variant: "body2" }}
+                />
+                {m.id === activeMembershipId && activeBranchId === null && (
+                  <CheckOutlined fontSize="small" color="primary" />
+                )}
+              </MenuItem>
+            )}
             {branches.length > 0 &&
               branches.map((b) => {
                 const isActive =

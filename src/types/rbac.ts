@@ -118,6 +118,15 @@ export interface UserPermissions {
   /** Есть ли у пользователя пароль (из /auth/me/): false → в шапке кнопка
    *  «Установить пароль»; null — бэк поля не прислал (Django-режим). */
   hasPassword?: boolean | null;
+  /** Суперпользователь платформы (Django is_superuser). Не путать с ролью
+   *  «superadmin» организации (`isSuperAdmin`). */
+  isPlatformAdmin?: boolean;
+  /** Модули активной организации (organizationModules из /auth/me/);
+   *  null — бэк поле не прислал. */
+  organizationModules?: string[] | null;
+  /** Режим «Меню как у клиники»: суперпользователь видит модули организации. */
+  viewAsOrganization?: boolean;
+  setViewAsOrganization?: (on: boolean) => void;
 }
 
 // Конфигурация защищенного маршрута
@@ -219,6 +228,9 @@ export const PERMISSIONS = {
   // База знаний (контракт: MamaDoc/backend_tickets_2026-07-13/backend_ticket_knowledge_module.md)
   KNOWLEDGE_VIEW: 'knowledge.view',
   KNOWLEDGE_MANAGE: 'knowledge.manage',
+
+  // Квартиры и шахматка застройщика (модуль бэка realty, test2 28.09.2026)
+  REALESTATE_VIEW: 'realty.view',
 
   // Вакцины (контракт: frontend-vaccinations-guide.md)
   VACCINATIONS_VIEW: 'vaccinations.view',

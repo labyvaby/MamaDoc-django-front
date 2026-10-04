@@ -304,13 +304,26 @@ export interface LabMirrorStats {
   lastSyncedAt: string | null;
 }
 
+/** Состояние фонового обновления зеркала каталога. */
+export interface LabCatalogSync {
+  /** idle — не запускалось, running — идёт, ok — удалось, failed — отказ ЛИС. */
+  state: "idle" | "running" | "ok" | "failed";
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string;
+}
+
 export interface LabConfig {
   configured: boolean;
   lisOrganizationId: number | null;
   lisDoctorId: number | null;
   chargeInstruments: boolean;
+  /** Логин ЛИС виден, пароль — нет: бэкенд отдаёт только признак ниже. */
+  lisUsername: string;
+  hasPassword: boolean;
   branches: LabBranchRegistry[];
   mirror: LabMirrorStats;
+  sync: LabCatalogSync;
 }
 
 export interface LabBranchRegistryInput {
@@ -324,6 +337,9 @@ export interface LabConfigInput {
   lisDoctorId: number;
   chargeInstruments: boolean;
   branches: LabBranchRegistryInput[];
+  lisUsername: string;
+  /** Пустая строка — «пароль не менять»: форма сохранённый не показывает. */
+  lisPassword: string;
 }
 
 export function getLabConfig(signal?: AbortSignal): Promise<LabConfig> {
@@ -332,6 +348,17 @@ export function getLabConfig(signal?: AbortSignal): Promise<LabConfig> {
 
 export function saveLabConfig(body: LabConfigInput): Promise<LabConfig> {
   return apiRequest<LabConfig>("/lab/settings/config/", { method: "PUT", body });
+}
+
+/**
+ * Поставить обновление зеркала каталога в очередь.
+ *
+ * Ответ — та же настройка, что у `getLabConfig`, уже со `sync.state`
+ * «идёт»: обход каталога длится от минут до часа, ждать его в запросе
+ * нечем, поэтому страница показывает состояние и обновляет его опросом.
+ */
+export function startLabCatalogSync(): Promise<LabConfig> {
+  return apiRequest<LabConfig>("/lab/settings/sync/", { method: "POST" });
 }
 
 // ── Заказы ─────────────────────────────────────────────────────────────────

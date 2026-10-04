@@ -1,19 +1,49 @@
 import React from "react";
-import { Alert, Box, Divider, Skeleton, Stack, Typography } from "@mui/material";
-import { useQuery } from "@tanstack/react-query";
+import {
+  Alert,
+  Box,
+  Chip,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  IconButton,
+  Skeleton,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
+import { useSnackbar } from "notistack";
 
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
+import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 
 import { AppButton } from "../../../components/ui";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import { useCanChecker } from "../../../hooks/useCan";
 import { djangoQueryKeys, DJANGO_LIST_STALE_TIME_MS } from "../../../api/queryKeys";
 import {
+  cancelExemption,
+  cancelRecord,
+  cancelRefusal,
+  getExemptions,
   getPatientHistory,
   getPatientSchedule,
+  getRecordAudit,
+  getRefusals,
+  type VaccinationRecord,
   type VaccinationScheduleSlot,
 } from "../../../api/vaccinations";
+import AdministerVaccinationDrawer from "../../../components/vaccinations/AdministerVaccinationDrawer";
+import {
+  ExemptionDialog,
+  RefusalDialog,
+} from "../../../components/vaccinations/ExemptionRefusalDialogs";
+import { ageLabel, patientGaps } from "../../../components/vaccinations/patientGaps";
 import type { DjangoPatient } from "../../../api/patients";
 import {
   RecordStatusChip,
@@ -21,12 +51,41 @@ import {
 } from "../../../components/vaccinations/VaccinationChips";
 import { printVaccinationCertificate } from "../../../components/vaccinations/vaccinationCertificate";
 import { VaccinationHealthNote } from "../../../components/health/VaccinationHealthNote";
-import { injectionSiteLabel, scheduleDateInfo } from "../../vaccinations/meta";
+import { ReactionDialog } from "../../../components/vaccinations/ReactionDialog";
+import { ReactionChecksDialog } from "../../../components/vaccinations/ReactionChecksDialog";
+import { TuberculinSection } from "../../../components/vaccinations/TuberculinSection";
+import {
+  doseLabel,
+  isStrongReaction,
+  reactionSummary,
+} from "../../../components/vaccinations/reactionMeta";
+import {
+  EXEMPTION_KIND_OPTIONS,
+  INN_ABSENT_REASON_OPTIONS,
+  REFUSAL_REASON_OPTIONS,
+  injectionSiteLabel,
+  scheduleDateInfo,
+} from "../../vaccinations/meta";
 
-// Карточка пациента — только просмотр календаря/истории вакцин. Ввод
+// Карточка пациента: календарь и история вакцин, медотводы и отказы. Ввод
 // («со склада») делается из регистратуры по приёму, внешние — в модуле «Вакцины».
 type PatientVaccinationsPanelProps = {
   patient: DjangoPatient | null;
+  /** Открыть правку карточки (заполнить пол / дату рождения / ИНН). */
+  onEditPatient?: () => void;
+};
+
+const GENDER_LABEL: Record<string, string> = { male: "Мужской", female: "Женский" };
+const GAP_LABEL: Record<string, string> = {
+  gender: "пол",
+  birthDate: "дату рождения",
+  inn: "ИНН (или причину, почему его нет)",
+};
+const ACTION_LABEL: Record<string, string> = {
+  created: "Создана",
+  updated: "Изменена",
+  status_changed: "Оформлена",
+  canceled: "Отменена",
 };
 
 const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -91,9 +150,62 @@ function plural(n: number, one: string, few: string, many: string): string {
   return many;
 }
 
-const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ patient }) => {
+const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({
+  patient,
+  onEditPatient,
+}) => {
   const orgId = useApiOrgId();
+  const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
+  const { can } = useCanChecker();
+  const canRecord = can("vaccinations.record");
   const patientId = patient?.id ?? null;
+
+  const [exemptionOpen, setExemptionOpen] = React.useState(false);
+  /** Медотвод из окна реакции — сразу на эту вакцину. */
+  const [exemptionVaccineId, setExemptionVaccineId] = React.useState<number | null>(null);
+  const [refusalOpen, setRefusalOpen] = React.useState(false);
+  const [administerId, setAdministerId] = React.useState<number | null>(null);
+  const [cancelTarget, setCancelTarget] = React.useState<VaccinationRecord | null>(null);
+  const [cancelReason, setCancelReason] = React.useState("");
+  const [reactionTarget, setReactionTarget] = React.useState<VaccinationRecord | null>(null);
+  const [checksTarget, setChecksTarget] = React.useState<VaccinationRecord | null>(null);
+  const [auditId, setAuditId] = React.useState<number | null>(null);
+
+  const exemptionsQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.exemptions({ patientId, orgId }),
+    queryFn: ({ signal }) => getExemptions(patientId!, orgId, signal),
+    enabled: patientId != null,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const refusalsQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.refusals({ patientId, orgId }),
+    queryFn: ({ signal }) => getRefusals(patientId!, orgId, signal),
+    enabled: patientId != null,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+  const auditQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.recordAudit(auditId ?? 0, orgId),
+    queryFn: ({ signal }) => getRecordAudit(auditId!, orgId, signal),
+    enabled: auditId != null,
+  });
+
+  const invalidate = () =>
+    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.vaccinations.all });
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelRecord(cancelTarget!.id, orgId, cancelReason.trim()),
+    onSuccess: () => {
+      setCancelTarget(null);
+      invalidate();
+    },
+  });
+  const liftMutation = useMutation({
+    mutationFn: async (arg: { kind: "exemption" | "refusal"; id: number }): Promise<void> => {
+      if (arg.kind === "exemption") await cancelExemption(arg.id, orgId);
+      else await cancelRefusal(arg.id, orgId);
+    },
+    onSuccess: invalidate,
+  });
 
   const scheduleQuery = useQuery({
     queryKey: djangoQueryKeys.vaccinations.patientSchedule(patientId ?? 0),
@@ -129,8 +241,10 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
   }
 
   const schedule = scheduleQuery.data ?? [];
-  // «План» — ещё не сделанные дозы (planned/overdue); сделанные уходят в историю.
-  const planned = schedule.filter((s) => s.status === "planned" || s.status === "overdue");
+  // «План» — ещё не сделанные дозы (planned/overdue/под медотводом); сделанные уходят в историю.
+  const planned = schedule.filter(
+    (s) => s.status === "planned" || s.status === "overdue" || s.status === "exempt",
+  );
   const other = schedule.filter((s) => s.status === "skipped");
   const history = historyQuery.data ?? [];
 
@@ -138,20 +252,83 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
   const error = scheduleQuery.error ?? historyQuery.error;
 
   const hasVaccData = history.length > 0 || schedule.length > 0;
+  const gaps = patientGaps({
+    gender: patient.gender === "male" || patient.gender === "female" ? patient.gender : "unknown",
+    birthDate: patient.birthDate,
+    inn: patient.inn ?? "",
+    innAbsentReason: patient.innAbsentReason ?? "",
+  });
+  const exemptions = (exemptionsQuery.data ?? []).filter((e) => !e.isCanceled);
+  const refusals = (refusalsQuery.data ?? []).filter((r) => !r.isCanceled);
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {hasVaccData && (
-        <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1.5, flexShrink: 0 }}>
+      {/* ── Данные пациента для отчётов (можно дополнить позже) ── */}
+      <Box sx={{ mb: 1.5, flexShrink: 0 }}>
+        <Typography variant="body2" color="text.secondary">
+          {GENDER_LABEL[patient.gender] ?? "Пол не указан"}
+          {" · "}
+          {patient.birthDate
+            ? `${dayjs(patient.birthDate).format("DD.MM.YYYY")} (${ageLabel(patient.birthDate)})`
+            : "дата рождения не указана"}
+          {" · "}
+          {patient.inn
+            ? `ИНН ${patient.inn}`
+            : INN_ABSENT_REASON_OPTIONS.find((o) => o.value === patient.innAbsentReason)?.label ??
+              "ИНН не указан"}
+        </Typography>
+        {gaps.length > 0 && (
+          <Alert
+            severity="warning"
+            sx={{ mt: 1, py: 0.25 }}
+            action={
+              onEditPatient && (
+                <AppButton size="small" color="inherit" onClick={onEditPatient}>
+                  Заполнить
+                </AppButton>
+              )
+            }
+          >
+            Не заполнено: {gaps.map((g) => GAP_LABEL[g]).join(", ")} — нужно для отчётов по прививкам, можно дополнить позже.
+          </Alert>
+        )}
+      </Box>
+
+      <Stack direction="row" gap={1} justifyContent="flex-end" flexWrap="wrap" sx={{ mb: 1.5, flexShrink: 0 }}>
+        {canRecord && (
+          <>
+            <AppButton
+              variant="outlined"
+              size="small"
+              onClick={() => {
+                setExemptionVaccineId(null);
+                setExemptionOpen(true);
+              }}
+            >
+              Медотвод
+            </AppButton>
+            <AppButton variant="outlined" size="small" onClick={() => setRefusalOpen(true)}>
+              Отказ
+            </AppButton>
+          </>
+        )}
+        {hasVaccData && (
           <AppButton
             variant="outlined"
+            size="small"
             startIcon={<PrintOutlined />}
-            onClick={() => printVaccinationCertificate(patient, history, planned)}
+            onClick={() => {
+              if (!printVaccinationCertificate(patient, history, planned)) {
+                enqueueSnackbar("Разрешите всплывающие окна, чтобы распечатать сертификат", {
+                  variant: "warning",
+                });
+              }
+            }}
           >
             Сертификат
           </AppButton>
-        </Stack>
-      )}
+        )}
+      </Stack>
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", pr: 0.5 }}>
         {error ? (
@@ -166,6 +343,54 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
           </Stack>
         ) : (
           <Stack spacing={2.5}>
+            {(exemptions.length > 0 || refusals.length > 0) && (
+              <Box>
+                <SectionTitle>Медотводы и отказы</SectionTitle>
+                <Stack spacing={1} sx={{ mt: 0.75 }}>
+                  {exemptions.map((e) => (
+                    <Stack key={`e${e.id}`} direction="row" alignItems="center" gap={1}>
+                      <Chip
+                        size="small"
+                        color={e.isActive ? "warning" : "default"}
+                        label={EXEMPTION_KIND_OPTIONS.find((o) => o.value === e.kind)?.label ?? e.kind}
+                      />
+                      <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                        {e.vaccineName ?? "Все прививки"} · с {dayjs(e.startsOn).format("DD.MM.YYYY")}
+                        {e.endsOn ? ` по ${dayjs(e.endsOn).format("DD.MM.YYYY")}` : ""} · {e.reason}
+                      </Typography>
+                      {canRecord && (
+                        <AppButton
+                          size="small"
+                          variant="text"
+                          onClick={() => liftMutation.mutate({ kind: "exemption", id: e.id })}
+                        >
+                          Снять
+                        </AppButton>
+                      )}
+                    </Stack>
+                  ))}
+                  {refusals.map((r) => (
+                    <Stack key={`r${r.id}`} direction="row" alignItems="center" gap={1}>
+                      <Chip size="small" color="error" variant="outlined" label="Отказ" />
+                      <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                        {r.vaccineName ?? "Все прививки"} · {dayjs(r.refusedOn).format("DD.MM.YYYY")} ·{" "}
+                        {REFUSAL_REASON_OPTIONS.find((o) => o.value === r.reason)?.label ?? r.reason}
+                      </Typography>
+                      {canRecord && (
+                        <AppButton
+                          size="small"
+                          variant="text"
+                          onClick={() => liftMutation.mutate({ kind: "refusal", id: r.id })}
+                        >
+                          Снять
+                        </AppButton>
+                      )}
+                    </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+
             {/* ── План ── */}
             <Box>
               {/* Перенесённые инфекции и переливания — к решению о прививках (ТЗ 2026-10-04 §4.3). */}
@@ -173,7 +398,9 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
               <SectionTitle>Календарь вакцин</SectionTitle>
               {planned.length === 0 && other.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  Нет запланированных вакцин.
+                  {patient.birthDate
+                    ? "Нет запланированных вакцин."
+                    : "Календарь строится от даты рождения — укажите её."}
                 </Typography>
               ) : (
                 <Stack spacing={2} sx={{ mt: 0.75 }}>
@@ -217,6 +444,8 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
                                   }}
                                 >
                                   {dayjs(slot.scheduledDate).format("DD.MM.YYYY")} · {info.text}
+                                  {slot.status === "exempt" &&
+                                    ` · медотвод${slot.exemptionUntil ? ` до ${dayjs(slot.exemptionUntil).format("DD.MM.YYYY")}` : ""}`}
                                 </Typography>
                               </Box>
                               <ScheduleStatusChip status={slot.status} />
@@ -246,7 +475,9 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
                       key={rec.id}
                       direction="row"
                       alignItems="center"
-                      gap={1.5}
+                      flexWrap="wrap"
+                      columnGap={1.5}
+                      rowGap={0.5}
                       sx={{
                         px: 1.5,
                         py: 1,
@@ -256,22 +487,84 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
                         bgcolor: "background.paper",
                       }}
                     >
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                      {/* В узкой колонке кнопки уходят строкой ниже, текст не сжимается в ноль. */}
+                      <Box sx={{ flex: "1 1 220px", minWidth: 0 }}>
                         <Typography variant="body2" fontWeight={500} noWrap>
-                          {rec.vaccineName} · доза {rec.doseNumber}
+                          {rec.vaccineName}
+                          {rec.doseNumber != null ? ` · доза ${rec.doseNumber}` : ""}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>
+                        <Typography variant="caption" color="text.secondary" noWrap display="block">
                           {dayjs(rec.administeredAt).format("DD.MM.YYYY")} ·{" "}
-                          {rec.isExternal ? "внешняя" : "со склада"} · {injectionSiteLabel(rec.injectionSite)}
+                          {rec.isExternal ? "внешняя" : "со склада"}
+                          {rec.injectionSite ? ` · ${injectionSiteLabel(rec.injectionSite)}` : ""}
                           {rec.administeredBy ? ` · ${rec.administeredBy.fullName}` : ""}
+                          {rec.doseMl ? ` · ${doseLabel(rec.doseMl)}` : ""}
                         </Typography>
+                        {(reactionSummary(rec.localReaction, rec.generalReaction) || rec.reactionNotes) && (
+                          <Typography
+                            variant="caption"
+                            noWrap
+                            display="block"
+                            color={isStrongReaction(rec.localReaction, rec.generalReaction) ? "error.main" : "text.secondary"}
+                            fontWeight={isStrongReaction(rec.localReaction, rec.generalReaction) ? 600 : 400}
+                          >
+                            Реакция:{" "}
+                            {[reactionSummary(rec.localReaction, rec.generalReaction), rec.reactionNotes]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </Typography>
+                        )}
                       </Box>
-                      <RecordStatusChip status={rec.status} />
+                      <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.5}>
+                        <RecordStatusChip status={rec.status} />
+                        {canRecord && rec.status === "draft" && (
+                          <AppButton size="small" variant="contained" onClick={() => setAdministerId(rec.id)}>
+                            Оформить
+                          </AppButton>
+                        )}
+                        {rec.status === "pending" && rec.hasFollowupChecks && (
+                          <AppButton size="small" variant="text" onClick={() => setChecksTarget(rec)}>
+                            Сетка
+                          </AppButton>
+                        )}
+                        {canRecord && rec.status === "pending" && (
+                          <>
+                            <AppButton size="small" variant="text" onClick={() => setReactionTarget(rec)}>
+                              Реакция
+                            </AppButton>
+                            <AppButton
+                              size="small"
+                              variant="text"
+                              color="error"
+                              onClick={() => {
+                                setCancelReason("");
+                                setCancelTarget(rec);
+                              }}
+                            >
+                              Отменить
+                            </AppButton>
+                          </>
+                        )}
+                        <Tooltip title="История правок">
+                          <IconButton size="small" onClick={() => setAuditId(rec.id)}>
+                            <HistoryOutlined fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
                     </Stack>
                   ))}
                 </Stack>
               )}
             </Box>
+
+            <Divider />
+
+            <TuberculinSection
+              patientId={patient.id}
+              birthDate={patient.birthDate ?? null}
+              canRecord={canRecord}
+              renderTitle={(title) => <SectionTitle>{title}</SectionTitle>}
+            />
           </Stack>
         )}
       </Box>
@@ -282,6 +575,96 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
           <VaccinesOutlined sx={{ fontSize: 44, color: "text.disabled" }} />
         </Stack>
       )}
+
+      <ExemptionDialog
+        open={exemptionOpen}
+        onClose={() => setExemptionOpen(false)}
+        patientId={patientId}
+        vaccineId={exemptionVaccineId}
+      />
+      <RefusalDialog open={refusalOpen} onClose={() => setRefusalOpen(false)} patientId={patientId} />
+      <AdministerVaccinationDrawer
+        open={administerId != null}
+        recordId={administerId}
+        onClose={() => setAdministerId(null)}
+      />
+
+      <Dialog open={cancelTarget != null} onClose={() => setCancelTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Отменить прививку?</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            {cancelMutation.isError && <Alert severity="error">Не удалось отменить</Alert>}
+            <Typography variant="body2">
+              {cancelTarget?.vaccineName} от {cancelTarget ? dayjs(cancelTarget.administeredAt).format("DD.MM.YYYY") : ""}.
+              Продажа в приёме останется — её отменяют в самом приёме.
+            </Typography>
+            <TextField
+              size="small"
+              label="Причина *"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              autoFocus
+            />
+          </Stack>
+        </DialogContent>
+        <Stack direction="row" spacing={1.5} sx={{ px: 3, pb: 2, justifyContent: "flex-end" }}>
+          <AppButton variant="outlined" onClick={() => setCancelTarget(null)}>
+            Нет
+          </AppButton>
+          <AppButton
+            variant="contained"
+            color="error"
+            disabled={!cancelReason.trim() || cancelMutation.isPending}
+            onClick={() => cancelMutation.mutate()}
+          >
+            Отменить прививку
+          </AppButton>
+        </Stack>
+      </Dialog>
+
+      <ReactionDialog
+        record={reactionTarget}
+        onClose={() => setReactionTarget(null)}
+        onExemption={(rec) => {
+          setExemptionVaccineId(rec.vaccineId);
+          setExemptionOpen(true);
+        }}
+      />
+      <ReactionChecksDialog
+        record={checksTarget}
+        canRecord={canRecord}
+        onClose={() => setChecksTarget(null)}
+      />
+
+      <Dialog open={auditId != null} onClose={() => setAuditId(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>История правок</DialogTitle>
+        <DialogContent>
+          {auditQuery.isLoading ? (
+            <Skeleton variant="rounded" height={80} />
+          ) : (auditQuery.data ?? []).length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              Правок ещё не было.
+            </Typography>
+          ) : (
+            <Stack spacing={1.25}>
+              {(auditQuery.data ?? []).map((entry) => (
+                <Box key={entry.id}>
+                  <Typography variant="body2" fontWeight={600}>
+                    {ACTION_LABEL[entry.action] ?? entry.action} ·{" "}
+                    {dayjs(entry.createdAt).format("DD.MM.YYYY HH:mm")}
+                    {entry.userName ? ` · ${entry.userName}` : ""}
+                  </Typography>
+                  {Object.entries(entry.changes).map(([field, [from, to]]) => (
+                    <Typography key={field} variant="caption" color="text.secondary" display="block">
+                      {field}: {String(from ?? "—")} → {String(to ?? "—")}
+                    </Typography>
+                  ))}
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 };

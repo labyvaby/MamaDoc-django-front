@@ -1,10 +1,10 @@
 import dayjs from "dayjs";
 
-import { getAppointment, type DjangoAppointment } from "../../api/appointments";
-import { getPatient } from "../../api/patients";
 import {
+  getConclusionContext,
   getConclusionSlots,
   slotConclusions,
+  type ConclusionContext,
   type ConclusionSlot,
   type MedicalConclusion,
 } from "../../api/medical";
@@ -16,11 +16,15 @@ import {
  * ``lineId`` (serviceLineId). When omitted, falls back to the first slot that
  * has a conclusion. A line may carry several conclusions (documents, since
  * 22.09.2026): ``conclusionId`` picks one, without it the first is printed.
- * Patient DOB is fetched separately — the appointment's short patient shape
- * does not carry birthDate.
+ *
+ * ⚠ Patient, date and complaints come from ``conclusion-context``, never from
+ * the appointment card: a doctor without ``appointments.view_all`` is refused
+ * a colleague's card (404 «Appointment not found» — it carries prices), yet
+ * may read and print that colleague's conclusion from the patient's history.
+ * Loading the card broke exactly that print (24.09.2026).
  */
 export interface DjangoPrintData {
-  appt: DjangoAppointment;
+  visit: ConclusionContext;
   slot: ConclusionSlot | undefined;
   conclusion: MedicalConclusion | null;
   patientFio: string;
@@ -43,8 +47,8 @@ export async function loadDjangoPrintData(
   lineId: number | null,
   conclusionId: number | null = null,
 ): Promise<DjangoPrintData> {
-  const [appt, slots] = await Promise.all([
-    getAppointment(appointmentId),
+  const [visit, slots] = await Promise.all([
+    getConclusionContext(appointmentId),
     getConclusionSlots(appointmentId),
   ]);
 
@@ -61,23 +65,14 @@ export async function loadDjangoPrintData(
     slots.find((s) => s.conclusion != null) ??
     slots[0];
 
-  let patientDob = "—";
-  const patientId = appt.patient?.id;
-  if (patientId != null) {
-    try {
-      const p = await getPatient(patientId);
-      patientDob = p.birthDate ? dayjs(p.birthDate).format("DD.MM.YYYY") : "—";
-    } catch {
-      patientDob = "—";
-    }
-  }
+  const birthDate = visit.patient?.birthDate;
 
   return {
-    appt,
+    visit,
     slot,
     conclusion: picked?.conclusion ?? slot?.conclusion ?? null,
-    patientFio: appt.patient?.fullName ?? "Неизвестно",
-    patientDob,
+    patientFio: visit.patient?.fullName ?? "Неизвестно",
+    patientDob: birthDate ? dayjs(birthDate).format("DD.MM.YYYY") : "—",
     doctorFio: slot?.doctor?.fullName ?? "Не указан",
   };
 }

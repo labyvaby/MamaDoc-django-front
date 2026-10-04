@@ -12,6 +12,7 @@ import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 
 import type { PosQuote } from "../../api/pos";
 import type { DiscountKind } from "../../api/promotions";
+import { QUICK_DISCOUNT_PERCENTS, normalizeManualDiscount, normalizeManualPercent } from "./discountInput";
 import { POS_LAYOUT, POS_RADIUS, posColors } from "./layout";
 import { PosAmount } from "./ui";
 
@@ -23,7 +24,10 @@ import { PosAmount } from "./ui";
  */
 
 export type Benefits = {
+  /** Ручная скидка на чек суммой, в сомах. Вместе с процентом не бывает — одно из двух. */
   discount: string;
+  /** Ручная скидка на чек процентом. */
+  discountPercent: string;
   discountKindId: number | null;
   clientDiscount: boolean;
   bonuses: boolean;
@@ -33,21 +37,13 @@ export type Benefits = {
 };
 export const emptyBenefits: Benefits = {
   discount: "0",
+  discountPercent: "0",
   discountKindId: null,
   clientDiscount: false,
   bonuses: false,
   promotions: false,
   promoCode: "",
   certificateCode: "",
-};
-
-/** Ручная скидка всегда остаётся в допустимом диапазоне 0–100%. */
-const normalizeManualDiscount = (value: string): string => {
-  const normalized = value.replace(",", ".").replace(/[^\d.]/g, "");
-  const [whole = "", fraction = ""] = normalized.split(".");
-  const numeric = Number(`${whole || "0"}.${fraction.slice(0, 2)}`);
-  if (!Number.isFinite(numeric)) return "0";
-  return String(Math.min(100, Math.max(0, numeric)));
 };
 
 /**
@@ -180,6 +176,45 @@ const FieldError: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
+/** Поле ручной скидки на чек — проценты или сомы; обводка акцентом, пока в нём есть значение. */
+const DiscountField: React.FC<{
+  value: string;
+  unit: "%" | "сом";
+  label: string;
+  placeholder?: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}> = ({ value, unit, label, placeholder = "0", disabled, onChange }) => {
+  const c = posColors(useTheme());
+  const active = Number(value) > 0;
+  return (
+    <InputBase
+      value={value === "0" ? "" : value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      disabled={disabled}
+      inputProps={{ inputMode: "decimal", "aria-label": label, style: { textAlign: "right" } }}
+      endAdornment={<Box component="span" sx={{ pl: "4px", color: c.textDim }}>{unit}</Box>}
+      sx={{
+        flex: 1,
+        minWidth: 0,
+        // Тема задаёт InputBase minHeight 40, поэтому одной height мало.
+        height: 32,
+        minHeight: 32,
+        px: "12px",
+        bgcolor: c.page,
+        border: `1px solid ${active ? c.accent : c.hairline}`,
+        borderRadius: `${POS_RADIUS.pill}px`,
+        fontSize: 12,
+        fontWeight: 600,
+        color: c.text,
+        "& input::placeholder": { color: c.textDim, opacity: 1 },
+        "&.Mui-disabled": { opacity: 0.45 },
+      }}
+    />
+  );
+};
+
 /** Поле-«таблетка» с кнопкой «Применить»: промокод, сертификат. */
 const CodeField: React.FC<{
   label: string;
@@ -256,12 +291,13 @@ const CodeField: React.FC<{
 };
 
 /** Строка блока итогов. */
-const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "accent" | "positive" }> = ({ label, value, tone }) => {
+const SummaryLine: React.FC<{ label: string; value: React.ReactNode; tone?: "discount" | "bonus" | "cashback" | "certificate" }> = ({ label, value, tone }) => {
   const c = posColors(useTheme());
+  const toneColor = tone === "discount" ? c.discount : tone === "bonus" ? c.bonus : tone === "cashback" ? c.cashback : tone === "certificate" ? c.certificate : c.textSoft;
   return (
     <Stack direction="row" alignItems="center" justifyContent="space-between">
       <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{label}</Typography>
-      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: tone === "positive" ? c.positive : tone === "accent" ? c.accentText : c.textSoft }}>
+      <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: toneColor }}>
         {value}
       </Typography>
     </Stack>
@@ -284,6 +320,9 @@ export function LivePaymentPanel({
   locked,
   discountKinds,
   discountMode,
+  maxPercent = 100,
+  lineDiscounts = [],
+  lineDiscountIgnored = false,
 }: {
   actions: Record<string, boolean>;
   benefits: Benefits;
@@ -299,6 +338,12 @@ export function LivePaymentPanel({
   locked: boolean;
   discountKinds: DiscountKind[];
   discountMode: "manual" | "kinds" | "both";
+  /** Лимит ручной скидки процентом — `max_discount_percent` организации; сервер проверяет его же. */
+  maxPercent?: number;
+  /** Скидки, заданные кассиром на отдельные позиции чека. */
+  lineDiscounts?: Array<{ id: string; name: string; label: string; amount: number }>;
+  /** Сервер вернул итог без скидок на позиции (старый бэкенд) — предупреждаем. */
+  lineDiscountIgnored?: boolean;
 }) {
   const c = posColors(useTheme());
   const [kindsOpen, setKindsOpen] = React.useState(false);
@@ -310,7 +355,15 @@ export function LivePaymentPanel({
   const certificateError = errorField === "certificate" ? quoteError : null;
 
   const selectedKind = discountKinds.find((kind) => kind.id === benefits.discountKindId) ?? null;
-  const manualPercent = Number(benefits.discount) > 0;
+  const manualPercent = Number(benefits.discountPercent) || 0;
+  const manualActive = manualPercent > 0 || Number(benefits.discount) > 0;
+  // Ручная скидка — процентом или суммой, не обеими сразу; вид из справочника с ними тоже не сочетается.
+  // Соседнее поле сбрасываем, только когда в этом появилось значение: лишний символ в пустом поле
+  // не должен убирать уже введённую скидку.
+  const setManualPercent = (value: string) =>
+    patch({ discountPercent: value, discountKindId: null, ...(Number(value) > 0 ? { discount: "0" } : {}) });
+  const setManualSum = (value: string) =>
+    patch({ discount: value, discountKindId: null, ...(Number(value) > 0 ? { discountPercent: "0" } : {}) });
   const showKinds = discountMode !== "manual" && discountKinds.length > 0;
   const showManual = discountMode !== "kinds";
   const showDiscountCard = actions.client_discount || (actions.discount && (showKinds || showManual));
@@ -322,10 +375,20 @@ export function LivePaymentPanel({
     border: `1px solid ${c.hairline}`,
   } as const;
 
+  const lineDiscountTotal = lineDiscountIgnored
+    ? 0
+    : Math.min(
+        lineDiscounts.reduce((total, line) => total + line.amount, 0),
+        amount(quote?.discount)
+      );
   const summary = [
-    { label: "Скидка", value: amount(quote?.discount) },
-    { label: "Бонусы", value: amount(quote?.bonuses), tone: "accent" as const },
-    { label: "Сертификат", value: amount(quote?.certificateAmount), tone: "positive" as const },
+    {
+      label: lineDiscountTotal > 0 ? "Скидка на чек" : "Скидка",
+      value: Math.round((amount(quote?.discount) - lineDiscountTotal) * 100) / 100,
+      tone: "discount" as const,
+    },
+    { label: "Бонусы", value: amount(quote?.bonuses), tone: "bonus" as const },
+    { label: "Сертификат", value: amount(quote?.certificateAmount), tone: "certificate" as const },
   ].filter((line) => line.value > 0);
 
   return (
@@ -382,7 +445,7 @@ export function LivePaymentPanel({
                 <Stack gap="5px">
                   <ButtonBase
                     onClick={() => setKindsOpen((open) => !open)}
-                    disabled={frozen || manualPercent}
+                    disabled={frozen || manualActive}
                     sx={{
                       px: "12px",
                       py: "6px",
@@ -411,7 +474,7 @@ export function LivePaymentPanel({
                           <ButtonBase
                             key={kind.id}
                             onClick={() => {
-                              patch({ discount: "0", clientDiscount: false, discountKindId: selected ? null : kind.id });
+                              patch({ discount: "0", discountPercent: "0", clientDiscount: false, discountKindId: selected ? null : kind.id });
                               setKindsOpen(false);
                             }}
                             sx={{
@@ -450,36 +513,57 @@ export function LivePaymentPanel({
               )}
 
               {actions.discount && showManual && (
-                <Stack direction="row" alignItems="center" gap="8px">
-                  <Typography sx={{ flex: 1, fontSize: 12, lineHeight: 1.2, color: c.textDim }}>
-                    {showKinds ? "или свой процент" : "Своя скидка"}
-                  </Typography>
-                  <InputBase
-                    value={benefits.discount === "0" ? "" : benefits.discount}
-                    onChange={(event) => patch({
-                      discount: event.target.value ? normalizeManualDiscount(event.target.value) : "0",
-                      discountKindId: null,
+                <Stack gap="6px">
+                  {/* Quote refetches after every edit. Keep the inputs and chips enabled
+                      during that request (`locked`, not `frozen`), or only the first digit is accepted. */}
+                  <Stack direction="row" alignItems="center" gap="8px">
+                    <Typography sx={{ flexShrink: 0, fontSize: 12, lineHeight: 1.2, whiteSpace: "nowrap", color: c.textDim }}>
+                      {showKinds ? "Своя скидка" : "Скидка на чек"}
+                    </Typography>
+                    <DiscountField
+                      value={benefits.discountPercent}
+                      unit="%"
+                      label="Скидка на чек, проценты"
+                      // Лимит организации — в подсказке поля: отдельная строка под него съела бы место у кнопки оплаты.
+                      placeholder={maxPercent < 100 ? `до ${maxPercent}` : "0"}
+                      disabled={locked || selectedKind !== null}
+                      onChange={(value) => setManualPercent(normalizeManualPercent(value, maxPercent))}
+                    />
+                    <DiscountField
+                      value={benefits.discount}
+                      unit="сом"
+                      label="Скидка на чек, сумма в сомах"
+                      disabled={locked || selectedKind !== null}
+                      onChange={(value) => setManualSum(normalizeManualDiscount(value))}
+                    />
+                  </Stack>
+
+                  <Stack direction="row" gap="6px">
+                    {QUICK_DISCOUNT_PERCENTS.map((percent) => {
+                      const selected = manualPercent === percent;
+                      return (
+                        <ButtonBase
+                          key={percent}
+                          onClick={() => setManualPercent(selected ? "0" : String(percent))}
+                          disabled={locked || selectedKind !== null || percent > maxPercent}
+                          aria-pressed={selected}
+                          sx={{
+                            flex: 1,
+                            height: 26,
+                            borderRadius: `${POS_RADIUS.pill}px`,
+                            bgcolor: selected ? c.accent : c.page,
+                            border: `1px solid ${selected ? c.accent : c.hairline}`,
+                            color: selected ? c.onAccent : c.textSoft,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            "&.Mui-disabled": { opacity: 0.45 },
+                          }}
+                        >
+                          {percent}%
+                        </ButtonBase>
+                      );
                     })}
-                    placeholder="0"
-                    // Quote refetches after every edit. Keep this input enabled
-                    // during that request, or only the first digit is accepted.
-                    disabled={locked || selectedKind !== null}
-                    inputProps={{ inputMode: "decimal", max: 100, style: { textAlign: "right" } }}
-                    endAdornment={<Box component="span" sx={{ pl: "4px", color: c.textDim }}>%</Box>}
-                    sx={{
-                      width: 96,
-                      height: 32,
-                      px: "12px",
-                      bgcolor: c.page,
-                      border: `1px solid ${manualPercent ? c.accent : c.hairline}`,
-                      borderRadius: `${POS_RADIUS.pill}px`,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: c.text,
-                      "& input::placeholder": { color: c.textDim, opacity: 1 },
-                      "&.Mui-disabled": { opacity: 0.45 },
-                    }}
-                  />
+                  </Stack>
                 </Stack>
               )}
             </Box>
@@ -544,9 +628,32 @@ export function LivePaymentPanel({
       <Stack gap="10px" sx={{ ...cardSx, border: "none", flexShrink: 0 }}>
         <Stack gap="4px" sx={{ pb: "10px", borderBottom: `1px solid ${c.hairline}` }}>
           <SummaryLine label="Подытог" value={quote ? <PosAmount value={amount(quote.subtotal)} /> : "—"} />
+          {lineDiscountTotal > 0 && (
+            <>
+              <SummaryLine label="Скидки на товары" value={<PosAmount value={lineDiscountTotal} negative />} tone="discount" />
+              <Stack gap="3px" sx={{ pl: "10px", ml: "2px", borderLeft: `2px solid ${c.hairline}` }}>
+                {lineDiscounts.map((line) => (
+                  <Stack key={line.id} direction="row" alignItems="center" justifyContent="space-between" gap="8px">
+                    <Typography noWrap sx={{ minWidth: 0, fontSize: 12, lineHeight: 1.3, color: c.textDim }}>
+                      {line.name}
+                      {line.label ? <Box component="span" sx={{ color: c.discount }}> · −{line.label}</Box> : null}
+                    </Typography>
+                    <Typography sx={{ flexShrink: 0, fontSize: 12, lineHeight: 1.3, color: c.discount }}>
+                      <PosAmount value={line.amount} negative />
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
+            </>
+          )}
           {summary.map((line) => (
             <SummaryLine key={line.label} label={line.label} value={<PosAmount value={line.value} negative />} tone={line.tone} />
           ))}
+          {lineDiscountIgnored && (
+            <Typography sx={{ mt: "4px", p: "8px", borderRadius: `${POS_RADIUS.tile}px`, bgcolor: c.dangerBg, color: c.danger, fontSize: 12, lineHeight: 1.35 }}>
+              Сервер не применил скидку на товар — итог посчитан без неё. Уберите скидку с позиции или обновите бэкенд кассы.
+            </Typography>
+          )}
         </Stack>
 
         <Stack gap="16px">
@@ -560,7 +667,8 @@ export function LivePaymentPanel({
           {actions.sell && (
             <ButtonBase
               onClick={onCheckout}
-              disabled={busy || !quote}
+              // Не даём пробить чек дороже, чем показано в строках.
+              disabled={busy || !quote || lineDiscountIgnored}
               sx={{
                 px: "20px",
                 py: "16px",

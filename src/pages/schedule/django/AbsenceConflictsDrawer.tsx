@@ -68,6 +68,7 @@ import { getStatusChipSx, getStatusLabel } from "../../../config/appointmentStat
 import { formatKGS } from "../../../utility/format";
 import { subtleBg } from "../../../theme/uiHelpers";
 import { isConflictsQueryOfEmployees } from "./scheduleInvalidation";
+import { appointmentNetPaid } from "../../appointments/components/paymentCancelGuard";
 import { appointmentHitsAbsence, isUnreviewed } from "./useAbsenceConflicts";
 
 /** Отсутствие, из-за которого поднялся разбор. */
@@ -153,8 +154,7 @@ function needsCall(appt: ScheduleConflictAppointment): boolean {
 }
 
 function paidAmount(appt: ScheduleConflictAppointment): number {
-  const paid = Number(appt.paidTotal ?? 0);
-  return Number.isFinite(paid) ? paid : 0;
+  return appointmentNetPaid(appt);
 }
 
 /** «Разобрано · Иванова · 10.09.2026 12:30» — кто снял запись со счётчика. */
@@ -286,6 +286,10 @@ export const AbsenceConflictsDrawer: React.FC<{
     [conflicts, selected],
   );
   const prepaidSelected = selectedList.filter((appt) => paidAmount(appt) > 0);
+  // Оплаченный приём не отменяют, пока не вернули деньги: в отмену уходят
+  // только приёмы без оплаты, остальные пропускаем (правило 29.09.2026).
+  const actionList =
+    mode === "cancel" ? selectedList.filter((appt) => paidAmount(appt) <= 0) : selectedList;
   const callSelected = selectedList.filter(needsCall);
   // Разобранные из списка не убираем: иначе непонятно, почему в расписании
   // чипа уже нет, а пациенты на это время всё ещё записаны. Из счётчика —
@@ -300,7 +304,7 @@ export const AbsenceConflictsDrawer: React.FC<{
     mutationFn: async () => {
       // Кнопка без выбранного действия недоступна; проверка сужает тип.
       if (mode === "") return { results: [] };
-      const items: AppointmentBulkItem[] = selectedList.map((appt) =>
+      const items: AppointmentBulkItem[] = actionList.map((appt) =>
         mode === "reassign"
           ? {
               id: appt.id,
@@ -324,7 +328,7 @@ export const AbsenceConflictsDrawer: React.FC<{
       // Задачу ставим только на то, что действительно применилось: обзванивать
       // пациента, у которого приём остался на месте, незачем.
       const okIds = new Set(response.results.filter((r) => r.ok).map((r) => r.id));
-      const toCall = selectedList.filter((appt) => okIds.has(appt.id));
+      const toCall = actionList.filter((appt) => okIds.has(appt.id));
       if (
         withCallTask &&
         changesAppointment(mode) &&
@@ -416,7 +420,7 @@ export const AbsenceConflictsDrawer: React.FC<{
 
   const canApply =
     mode !== "" &&
-    selectedList.length > 0 &&
+    actionList.length > 0 &&
     !busy &&
     (mode === "cancel"
       ? canCancelAppointments && canUpdateAppointments
@@ -806,7 +810,8 @@ export const AbsenceConflictsDrawer: React.FC<{
                 По {prepaidSelected.length}{" "}
                 {prepaidSelected.length === 1 ? "приёму" : "приёмам"} есть оплата на{" "}
                 {formatKGS(prepaidSelected.reduce((sum, appt) => sum + paidAmount(appt), 0))} —
-                отмена деньги не возвращает, возврат оформляется отдельно.
+                оплаченный приём отменить нельзя, отмена их пропустит. Оформите возврат
+                в карточке приёма или передайте приём коллеге.
               </Alert>
             )}
               </>
@@ -835,7 +840,7 @@ export const AbsenceConflictsDrawer: React.FC<{
                 ? "Применяем…"
                 : mode === ""
                   ? "Выберите действие"
-                  : `${MODE_BUTTON[mode]} (${selectedList.length})`}
+                  : `${MODE_BUTTON[mode]} (${actionList.length})`}
             </Button>
           </Stack>
         </Box>

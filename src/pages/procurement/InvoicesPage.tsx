@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Box, Button, Stack, Tooltip, useMediaQuery } from "@mui/material";
+import { Alert, Box, Stack, useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
@@ -9,7 +9,6 @@ import UndoOutlined from "@mui/icons-material/UndoOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
-import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
 
 import { getErrorMessage } from "../../api/client";
 import {
@@ -43,7 +42,7 @@ import { AppBottomSheet, MonthNavigation, PageHeader, ReasonDialog, SegmentedTab
 import { PaymentsList, ReturnsList } from "../../components/procurement/DocumentLists";
 import { ProcurementStatTiles } from "../../components/procurement/ProcurementStatTiles";
 import { ReceiptDetails } from "../../components/procurement/ReceiptDetails";
-import { ReceiptFormDrawer } from "../../components/procurement/ReceiptFormDrawer";
+import { ReceiptFormDialog } from "../../components/procurement/ReceiptFormDialog";
 import { ReceiptHeaderDialog } from "../../components/procurement/ReceiptHeaderDialog";
 import { ReceiptList } from "../../components/procurement/ReceiptList";
 import { SupplierFormDrawer } from "../../components/procurement/SupplierFormDrawer";
@@ -99,6 +98,7 @@ const InvoicesPage: React.FC = () => {
     cancel: can([P.receiptCancel, P.manage]),
     photos: can([P.receiptPhotos, P.manage]),
     recognize: can([P.receiptRecognize, P.manage]),
+    createProducts: can([P.receiptCreateProducts, P.manage]),
     returns: can([P.returnCreate, P.manage]),
     suppliers: can([P.suppliersManage, P.manage]),
     pay: can(P.paymentsManage),
@@ -161,6 +161,22 @@ const InvoicesPage: React.FC = () => {
       ),
     enabled: scopeReady && tab === "invoices",
     placeholderData: keepPreviousData,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+
+  // Месяц пуст, а накладные у организации есть — значит, у них другая дата
+  // прихода (распознавание берёт её с фото документа поставщика). Показываем
+  // последние из других месяцев, иначе накладная выглядит пропавшей.
+  const allTime = summaryQuery.data;
+  const hasReceiptsAnyTime = allTime
+    ? allTime.statusCounts.unpaid + allTime.statusCounts.partial + allTime.statusCounts.paid + allTime.canceledCount > 0
+    : false;
+  const monthIsEmpty = receiptsQuery.isSuccess && !receiptsQuery.isPlaceholderData && (receiptsQuery.data?.length ?? 0) === 0;
+  const plainView = status === "all" && supplierFilter == null && warehouseFilter == null && !debouncedSearch;
+  const elsewhereQuery = useQuery({
+    queryKey: djangoQueryKeys.procurement.receipts({ ...keyScope, elsewhere: true }),
+    queryFn: ({ signal }) => getReceipts({ withLines: false, limit: 3 }, scope, signal),
+    enabled: scopeReady && tab === "invoices" && monthIsEmpty && plainView && hasReceiptsAnyTime,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 
@@ -353,15 +369,6 @@ const InvoicesPage: React.FC = () => {
         onAdd={canAdd ? handleAdd : undefined}
         addButtonText={ADD_LABEL[tab]}
         addButtonIcon={tab === "payments" ? <PaymentsOutlined /> : <AddOutlined />}
-        actions={
-          tab === "invoices" && perms.create && recognitionEnabled ? (
-            <Tooltip title="Сфотографировать накладную — форма заполнится сама">
-              <Button variant="outlined" startIcon={<AddAPhotoOutlined />} onClick={() => setReceiptFormOpen(true)} sx={{ whiteSpace: "nowrap" }}>
-                По фото
-              </Button>
-            </Tooltip>
-          ) : undefined
-        }
       />
 
       <Stack spacing={1.5} sx={{ px: 2, pb: 2, flex: 1, minHeight: 0 }}>
@@ -401,6 +408,11 @@ const InvoicesPage: React.FC = () => {
                 periodLabel={periodLabel}
                 scopeLabel={scopeLabel}
                 onAdd={perms.create ? () => setReceiptFormOpen(true) : undefined}
+                elsewhere={monthIsEmpty && plainView ? elsewhereQuery.data ?? [] : []}
+                onOpenElsewhere={(receipt) => {
+                  setMonth(dayjs(receipt.receivedAt).startOf("month"));
+                  openReceipt(receipt.id);
+                }}
               />
             </Box>
             {!isMobile && (
@@ -466,7 +478,7 @@ const InvoicesPage: React.FC = () => {
         </AppBottomSheet>
       )}
 
-      <ReceiptFormDrawer
+      <ReceiptFormDialog
         open={receiptFormOpen}
         onClose={() => setReceiptFormOpen(false)}
         onCreated={(created) => {
@@ -480,7 +492,9 @@ const InvoicesPage: React.FC = () => {
         suppliers={suppliers}
         recognitionEnabled={recognitionEnabled}
         recognitionHint={recognitionHint}
-        onCreateSupplier={perms.suppliers ? () => setSupplierForm({ open: true, supplier: null }) : undefined}
+        canCreateSupplier={perms.suppliers}
+        canCreateProducts={perms.createProducts}
+        foreignCurrency={settings?.foreignCurrency ?? true}
       />
 
       <SupplierReturnDrawer

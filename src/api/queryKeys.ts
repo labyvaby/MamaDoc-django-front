@@ -67,12 +67,18 @@ export const djangoQueryKeys = {
       ["django", "appointments", appointmentId, "payments"] as const,
     conclusionSlots: (appointmentId: number) =>
       ["django", "appointments", appointmentId, "conclusion-slots"] as const,
+    /** Шапка заключения: пациент и время приёма (см. getConclusionContext). */
+    conclusionContext: (appointmentId: number) =>
+      ["django", "appointments", appointmentId, "conclusion-context"] as const,
   },
 
   patients: {
     detail: (patientId: number) => ["django", "patients", patientId] as const,
     balance: (patientId: number) =>
       ["django", "patients", patientId, "balance"] as const,
+    /** Живые заключения пациента (patient-conclusions) — «как в прошлый раз». */
+    conclusions: (patientId: number) =>
+      ["django", "patients", patientId, "conclusions"] as const,
     // Root key — use for invalidateQueries to bust all pages.
     transactions: (patientId: number) =>
       ["django", "patients", patientId, "balance-transactions"] as const,
@@ -159,6 +165,12 @@ export const djangoQueryKeys = {
       ["django", "cashbox", "summary", filters] as const,
     entries: (entryType: string, filters: Record<string, unknown>) =>
       ["django", "cashbox", "entries", entryType, filters] as const,
+  },
+
+  dashboard: {
+    all: ["django", "dashboard"] as const,
+    summary: (params: Record<string, unknown>) =>
+      ["django", "dashboard", "summary", params] as const,
   },
 
   reports: {
@@ -278,6 +290,14 @@ export const djangoQueryKeys = {
       ["django", "reviews", "settings", organizationId ?? null] as const,
     byAppointment: (appointmentId: number) =>
       ["django", "reviews", "appointment", appointmentId] as const,
+    staff: (params: Record<string, unknown>) =>
+      ["django", "reviews", "staff", params] as const,
+    tags: (params: Record<string, unknown>) =>
+      ["django", "reviews", "tags", params] as const,
+    mapClicks: (params: Record<string, unknown>) =>
+      ["django", "reviews", "map-clicks", params] as const,
+    external: (params: Record<string, unknown>) =>
+      ["django", "reviews", "external", params] as const,
   },
 
   tasks: {
@@ -417,6 +437,8 @@ export const djangoQueryKeys = {
       ["django", "vaccinations", "batches", batchId, "write-offs"] as const,
     records: (params: Record<string, unknown>) =>
       ["django", "vaccinations", "records", params] as const,
+    recordsSummary: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "records-summary", params] as const,
     record: (id: number) => ["django", "vaccinations", "records", id] as const,
     // Дашборд «кому пора» (по всем пациентам филиала).
     schedule: (params: Record<string, unknown>) =>
@@ -432,6 +454,27 @@ export const djangoQueryKeys = {
     // Месячный отчёт по календарю.
     monthlyReport: (params: Record<string, unknown>) =>
       ["django", "vaccinations", "monthly-report", params] as const,
+    // Бейдж «Не оформлено».
+    draftCount: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "records", "draft-count", params] as const,
+    recordAudit: (id: number, orgId?: number) =>
+      ["django", "vaccinations", "records", id, "audit", orgId] as const,
+    exemptions: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "exemptions", params] as const,
+    refusals: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "refusals", params] as const,
+    form5Rows: (orgId?: number) => ["django", "vaccinations", "form5-rows", orgId] as const,
+    krPositions: (orgId?: number) => ["django", "vaccinations", "kr-positions", orgId] as const,
+    patientCalendar: (patientId: number, orgId?: number) =>
+      ["django", "vaccinations", "patients", patientId, "calendar", orgId] as const,
+    form5: (params: Record<string, unknown>) => ["django", "vaccinations", "form5", params] as const,
+    // Книжка ребёнка, этап 2в: пробы и сетка БЦЖ.
+    tuberculinTests: (patientId: number, orgId?: number) =>
+      ["django", "vaccinations", "patients", patientId, "tuberculin", orgId] as const,
+    tuberculinThresholds: (orgId?: number) =>
+      ["django", "vaccinations", "tuberculin-thresholds", orgId] as const,
+    reactionChecks: (recordId: number, orgId?: number) =>
+      ["django", "vaccinations", "records", recordId, "reaction-checks", orgId] as const,
   },
 
   staff: {
@@ -473,6 +516,15 @@ export const djangoQueryKeys = {
         branchId ?? null,
         includeInactive === true,
       ] as const,
+  },
+
+  diagnoses: {
+    /**
+     * «Частые у меня» — топ кодов текущего врача. Организация в ключе: счётчик
+     * считается по её каталогу, у другой орг он свой.
+     */
+    frequent: (organizationId: number | null | undefined) =>
+      ["django", "diagnoses", "frequent", organizationId ?? null] as const,
   },
 
   conclusionForms: {
@@ -529,6 +581,21 @@ export const djangoQueryKeys = {
     cabinetDoctors: (branchId: number) =>
       ["django", "odoctor", "cabinet-doctors", branchId] as const,
   },
+  altegio: {
+    // Подключение одно на организацию.
+    settings: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "settings", organizationId ?? null] as const,
+    // Списки из самого Altegio — не кешируются надолго: запрос уходит во
+    // внешнюю систему, вчерашний список специалистов выдавал бы ушедших.
+    locations: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "locations", organizationId ?? null] as const,
+    staff: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "staff", organizationId ?? null, altegioLocationId] as const,
+    services: (organizationId: number | null | undefined, altegioLocationId: number) =>
+      ["django", "altegio", "services", organizationId ?? null, altegioLocationId] as const,
+    journal: (organizationId: number | null | undefined) =>
+      ["django", "altegio", "journal", organizationId ?? null] as const,
+  },
 
   scheduling: {
     rules: (params: Record<string, unknown>) =>
@@ -561,6 +628,23 @@ export const djangoQueryKeys = {
     employees: ["django", "reference", "employees"] as const,
     services: (context: { orgId?: number | null; branchId?: number | null } = {}) =>
       ["django", "reference", "services", context] as const,
+  },
+
+  tenancy: {
+    all: ["django", "tenancy"] as const,
+    // Витрина «Модули» — у каждой организации своя: после смены организации
+    // кнопки бьют в новую, значит и карточки должны быть её.
+    catalog: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "catalog", organizationId ?? null] as const,
+    // Открытые заявки на подключение с витрины — тоже у каждой организации свои.
+    requests: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "requests", organizationId ?? null] as const,
+    // Чем из товаров без модуля (запись, сайт, страховые…) организация уже пользуется.
+    features: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "features", organizationId ?? null] as const,
+    // Товары витрины, скрытые от клиник («Неактивен»).
+    inactive: (organizationId: number | null | undefined) =>
+      ["django", "tenancy", "inactive", organizationId ?? null] as const,
   },
 
   lab: {

@@ -16,6 +16,20 @@ export interface NotificationSettings {
   branchEnabled: boolean;
   variables: string[];
   rules: NotificationRule[];
+  credentials: MessagingCredentials;
+}
+
+export interface MessagingCredentials {
+  ravenKeyConfigured: boolean;
+  ravenClientId: string;
+  ravenClientCreated: boolean;
+  smsLogin: string;
+  smsSender: string;
+  smsConfigured: boolean;
+  whatsappLogin: string;
+  whatsappConfigured: boolean;
+  chatwootSource: string;
+  chatwootConfigured: boolean;
 }
 
 export interface NotificationRuleInput {
@@ -31,7 +45,24 @@ export interface NotificationSettingsInput {
   branchEnabled: boolean;
   rules: NotificationRuleInput[];
   organizationId?: number;
-  branchId: number;
+  branchId?: number | null;
+  credentials?: MessagingCredentialsInput;
+}
+
+export interface MessagingCredentialsInput {
+  ravenClientId?: string;
+  ravenApiKey?: string;
+  ravenApiKeyClear?: boolean;
+  smsLogin?: string;
+  smsPassword?: string;
+  smsSender?: string;
+  smsPasswordClear?: boolean;
+  whatsappLogin?: string;
+  whatsappPassword?: string;
+  whatsappPasswordClear?: boolean;
+  chatwootSource?: string;
+  chatwootToken?: string;
+  chatwootTokenClear?: boolean;
 }
 
 /** Один филиал организации и его переключатель отправки. */
@@ -109,6 +140,17 @@ export function saveNotificationSettings(
 ): Promise<NotificationSettings> {
   return apiRequest<NotificationSettings>("/notifications/settings/", {
     method: "PUT",
+    body: input,
+    signal,
+  });
+}
+
+export function createRavenClient(
+  input: { organizationId?: number } = {},
+  signal?: AbortSignal,
+): Promise<NotificationSettings> {
+  return apiRequest<NotificationSettings>("/notifications/settings/raven-client/", {
+    method: "POST",
     body: input,
     signal,
   });

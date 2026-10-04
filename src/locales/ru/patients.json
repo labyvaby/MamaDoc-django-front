@@ -10,7 +10,8 @@
     "historyFull": "История {{visit.genPl}}",
     "old": "Заключения",
     "oldFull": "{{conclusion.nomPl, capitalize}}",
-    "vaccinations": "{{vaccine.nomPl, capitalize}}"
+    "vaccinations": "{{vaccine.nomPl, capitalize}}",
+    "vaccineCalendar": "Календарь прививок"
   },
   "placeholders": {
     "noSelection": "Выберите {{patient.acc}} слева",
@@ -76,7 +77,7 @@
     "bonuses": "Бонусы",
     "amountWithCurrency": "{{amount}} сом",
     "ageYearsMonths": "({{years}} {{yearWord}} и {{months}} {{monthWord}})",
-    "lastVisit": "Последний {{visit.nom}}",
+    "lastVisit": "{{visit.gender, gender(m: Последний; f: Последняя; n: Последнее)}} {{visit.nom}}",
     "serviceLabel": "{{service.nom, capitalize}}:",
     "complaintsLabel": "{{complaint.nomPl, capitalize}}:",
     "notes": "Примечания",

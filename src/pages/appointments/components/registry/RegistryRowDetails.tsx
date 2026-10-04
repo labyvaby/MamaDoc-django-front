@@ -22,6 +22,7 @@ import { formatQuantity } from "../../../../utility/format";
 import { formatPhoneDisplay } from "../../../../utility/phone";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { serviceLineTotal } from "../listFilters";
+import { isAppointmentClosedForPayment } from "../paymentCancelGuard";
 import { formatSom } from "./registryFormat";
 import { moneyOf } from "./registryStats";
 import { hasAcceptedPayment } from "../../../../components/appointments/appointmentInvoice";
@@ -246,7 +247,7 @@ export const RegistryRowDetails: React.FC<Props> = ({
 
         <Section title={t("journal.details.actions")}>
           <Stack gap={0.75}>
-            {canManageFinance && rest > 0 && (
+            {canManageFinance && rest > 0 && !isAppointmentClosedForPayment(appt.status) && (
               <Button
                 variant="contained"
                 size="small"

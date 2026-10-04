@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
 import { getErrorMessage } from "../../api/client";
-import { getPatientConclusions } from "../../api/medical";
+import { getPatientConclusionRows } from "../../api/medical";
 import { DJANGO_DETAIL_STALE_TIME_MS, djangoQueryKeys } from "../../api/queryKeys";
 import { orgWide } from "../../api/scope";
 import type { ActiveScope } from "../../hooks/useActiveScope";
@@ -16,7 +16,7 @@ import DjangoConclusionSlotsPanel from "../appointments/DjangoConclusionSlotsPan
 import { VisitHistory } from "./visits/VisitHistory";
 
 const NO_APPOINTMENTS: DjangoAppointment[] = [];
-const NO_CONCLUSIONS: Awaited<ReturnType<typeof getPatientConclusions>> = [];
+const NO_CONCLUSIONS: Awaited<ReturnType<typeof getPatientConclusionRows>> = [];
 
 interface BookAppointmentsProps {
   patientId: number;
@@ -47,7 +47,7 @@ export const BookAppointments: React.FC<BookAppointmentsProps> = ({ patientId, b
   });
   const conclusions = useQuery({
     queryKey: djangoQueryKeys.health.visitConclusions(patientId, scope.organizationId ?? undefined),
-    queryFn: ({ signal }) => getPatientConclusions(patientId, signal),
+    queryFn: ({ signal }) => getPatientConclusionRows(patientId, signal),
     enabled: scope.isReady && scope.orgReady && canViewConclusions,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     retry: false,
