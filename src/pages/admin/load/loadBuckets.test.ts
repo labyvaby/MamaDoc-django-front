@@ -128,6 +128,18 @@ describe("employeeMeta", () => {
         { ...base, scheduleMinutes: 2820, busyMinutes: 2040, outsideMinutes: 360, attendanceUtilizationPct: 80 },
         "18 приёмов",
       ),
-    ).toBe("18 приёмов · 34 из 47 ч · СКУД 80% · +6 ч вне графика");
+    ).toBe("18 приёмов · 34 из 47 ч · СКУД 80% · +13% вне графика");
+  });
+
+  it("вне графика — процент от времени по графику, может быть больше 100", () => {
+    const sched = { ...base, scheduleMinutes: 9 * 60, busyMinutes: 8 * 60 };
+    expect(employeeMeta({ ...sched, outsideMinutes: 70 * 60 }, "437 приёмов")).toBe(
+      "437 приёмов · 8 из 9 ч · +778% вне графика",
+    );
+    expect(employeeMeta({ ...sched, outsideMinutes: 3 }, "5 приёмов")).toBe("5 приёмов · 8 из 9 ч · +<1% вне графика");
+  });
+
+  it("без графика процент не от чего — часы", () => {
+    expect(employeeMeta({ ...base, outsideMinutes: 90 }, "3 приёма")).toBe("3 приёма · +1,5 ч вне графика");
   });
 });
