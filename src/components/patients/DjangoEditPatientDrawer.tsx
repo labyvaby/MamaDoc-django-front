@@ -58,6 +58,7 @@ import {
   type PatientGender,
 } from "../../api/patients";
 import PatientFamilyField from "./PatientFamilyField";
+import { PatientRecordingConsent } from "./PatientRecordingConsent";
 import type { DjangoFamily } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
 import PatientPhotoUploader from "./PatientPhotoUploader";
@@ -701,6 +702,13 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                 />
               </Stack>
             </MotionBox>
+
+            {/* ── Согласие на аудиозапись приёма (ИИ-запись; сохраняется сразу) ── */}
+            {patient && (
+              <MotionBox variants={cascadeItem}>
+                <PatientRecordingConsent patientId={patient.id} disabled={busy} />
+              </MotionBox>
+            )}
 
             {/* ── Чёрный список (role-gated) ── */}
             {canManageBlacklist && (
