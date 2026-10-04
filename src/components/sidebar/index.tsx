@@ -30,6 +30,7 @@ import { useT } from "../../i18n/VerticalProvider";
 
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
+import PaidOutlined from "@mui/icons-material/PaidOutlined";
 import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
@@ -559,6 +560,7 @@ const SidebarSecondary: React.FC = () => {
     reports: can(PAGE_PERMISSIONS.reports),
     cashbox: can(PAGE_PERMISSIONS.cashbox),
     load: !isRetail && can(PAGE_PERMISSIONS.reports),
+    doctorProfit: !isRetail && can(PAGE_PERMISSIONS.doctorProfit),
     notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
   };
@@ -736,7 +738,7 @@ const SidebarSecondary: React.FC = () => {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.realestate || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
-    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.notifications || can_.settings,
+    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.load || can_.doctorProfit || can_.notifications || can_.settings,
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -1079,6 +1081,11 @@ const SidebarSecondary: React.FC = () => {
         {/* Нагрузка */}
         {show("management") && can_.load && (
           <SidebarMenuItem to="/load" icon={<AnalyticsOutlined />} label="Нагрузка" collapsed={siderCollapsed} />
+        )}
+
+        {/* Прибыль по врачам */}
+        {show("management") && can_.doctorProfit && (
+          <SidebarMenuItem to="/doctor-profit" icon={<PaidOutlined />} label="Прибыль по врачам" collapsed={siderCollapsed} />
         )}
 
         {/* Уведомления */}
