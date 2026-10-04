@@ -903,7 +903,7 @@ const RoomForm: React.FC<RoomFormProps> = ({ propertyId, editing, roomTypes, mea
             </Box>
             <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
               <Typography variant="body2">Состояние:</Typography>
-              <RoomStateControl roomId={editing.id} state={editing.state} />
+              <RoomStateControl roomId={editing.id} state={editing.state} returnsOn={editing.returnsOn} />
               <Typography variant="caption" color="text.secondary">
                 Убрано, грязно, проверено или ремонт. Меняется сразу, без кнопки «Сохранить».
               </Typography>

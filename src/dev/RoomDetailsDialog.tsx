@@ -499,7 +499,7 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
                     </Typography>
                   </Stack>
                 )}
-                <RoomStateControl roomId={roomId} state={room.state} />
+                <RoomStateControl roomId={roomId} state={room.state} returnsOn={room.returnsOn} />
               </Stack>
               {canCreateBooking && (
                 <Button
@@ -667,7 +667,13 @@ export const RoomDetailsDialog: React.FC<RoomDetailsDialogProps> = ({ roomId, ro
                 )}
 
                 <Box sx={{ mt: 3.5 }}>
-                  <RoomBlocksSection roomId={room.id} roomNumber={room.number} blocks={availability.blocks} focusBlock={focusBlock} />
+                  <RoomBlocksSection
+                    roomId={room.id}
+                    roomNumber={room.number}
+                    blocks={availability.blocks}
+                    focusBlock={focusBlock}
+                    repairReturnsOn={room.state === "repair" ? room.returnsOn : null}
+                  />
                 </Box>
               </Box>
             </Box>

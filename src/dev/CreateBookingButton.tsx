@@ -470,18 +470,71 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     setScannedDocumentType(null);
   };
 
-  // Дубли по телефону — предупреждение, не блокировка: тот же принцип, что
-  // getSimilarPatients в реальном МамаДоктор. Не считаем дублем уже
-  // выбранного гостя (selectedClientId).
+  // Такой гость уже есть — предупреждение, не блокировка. Как в «Новом госте»:
+  // дубль — совпадение телефона, ИНН или номера документа; одинаковые ФИО у разных
+  // людей — норма (заказчик). Раньше форма смотрела только телефон и прятала
+  // как раз точный дубль — тот же телефон с тем же именем. Уже выбранного из базы
+  // гостя (selectedClientId) дублем не считаем.
   const phoneDigits = guestPhone.replace(/\D/g, "");
-  const dupQuery = useQuery({
-    queryKey: ["hotel", "guests", "search", "dup", phoneDigits],
+  const innDigits = guestType === "resident" ? inn.replace(/\D/g, "") : "";
+  const documentQuery = (guestType === "resident" ? idNumber : passportNumber).trim();
+  const phoneDupQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", "dup-phone", phoneDigits],
     queryFn: ({ signal }) => searchGuests(phoneDigits, signal),
     enabled: open && phoneDigits.length >= 6 && selectedClientId == null,
   });
-  const duplicateMatches = (dupQuery.data ?? []).filter(
-    (g) => g.phone.replace(/\D/g, "").includes(phoneDigits) && g.fullName !== guestName.trim(),
-  );
+  const innDupQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", "dup-inn", innDigits],
+    queryFn: ({ signal }) => searchGuests(innDigits, signal),
+    enabled: open && innDigits.length >= 8 && selectedClientId == null,
+  });
+  const documentDupQuery = useQuery({
+    queryKey: ["hotel", "guests", "search", "dup-document", documentQuery],
+    queryFn: ({ signal }) => searchGuests(documentQuery, signal),
+    enabled: open && documentQuery.length >= 6 && selectedClientId == null,
+  });
+  const duplicateMatches = React.useMemo(() => {
+    const map = new Map<number, { guest: HotelGuestSearchResult; matchedBy: Set<string> }>();
+    for (const rows of [phoneDupQuery.data, innDupQuery.data, documentDupQuery.data]) {
+      for (const g of rows ?? []) {
+        const reasons = g.matchedBy.filter((m) => m !== "name");
+        if (reasons.length === 0) continue;
+        const known = map.get(g.clientId);
+        if (known) reasons.forEach((m) => known.matchedBy.add(m));
+        else map.set(g.clientId, { guest: g, matchedBy: new Set(reasons) });
+      }
+    }
+    return [...map.values()].map(({ guest, matchedBy }) => ({ guest, matchedBy: [...matchedBy] }));
+  }, [phoneDupQuery.data, innDupQuery.data, documentDupQuery.data]);
+  const pickDuplicate = (g: HotelGuestSearchResult) => {
+    setGuestName(g.fullName);
+    setGuestPhone(g.phone);
+    setSelectedClientId(g.clientId);
+  };
+  const duplicateAlert = (where: "guest" | "document") =>
+    duplicateMatches.length === 0 || (where === "document" && !duplicateMatches.some((d) => d.matchedBy.some((m) => m !== "phone"))) ? null : (
+      <Alert severity="warning" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
+        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+          {duplicateMatches.length === 1 ? "Такой гость уже есть в базе" : "Похожие гости уже есть в базе"} — выберите его, чтобы не завести дубль
+        </Typography>
+        <Stack gap={0.5} sx={{ mt: 0.5 }}>
+          {duplicateMatches.slice(0, 3).map(({ guest: g, matchedBy }) => (
+            <Stack key={g.clientId} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+              <Typography variant="body2" sx={{ minWidth: 0 }}>
+                {g.fullName} — {g.phone}
+                <Typography component="span" variant="caption" color="text.secondary">
+                  {" "}
+                  · совпадение по {formatGuestMatchedBy(matchedBy)}
+                </Typography>
+              </Typography>
+              <Button size="small" onClick={() => pickDuplicate(g)} sx={{ flexShrink: 0 }}>
+                Использовать
+              </Button>
+            </Stack>
+          ))}
+        </Stack>
+      </Alert>
+    );
 
   // «Быстрая бронь»: клик по свободной ячейке RoomBookingGrid кладёт сюда
   // номер (строкой) + дату — находим номер по строке в уже загруженном
@@ -1562,32 +1615,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 />
               </Stack>
 
-              {duplicateMatches.length > 0 && (
-                <Alert severity="warning" variant="outlined" sx={{ mt: 1, py: 0.25 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    С этим номером телефона уже есть {duplicateMatches.length === 1 ? "гость" : "гости"} в базе
-                  </Typography>
-                  <Stack gap={0.5} sx={{ mt: 0.5 }}>
-                    {duplicateMatches.map((g) => (
-                      <Stack key={g.clientId} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-                        <Typography variant="body2">
-                          {g.fullName} — {g.phone}
-                        </Typography>
-                        <Button
-                          size="small"
-                          onClick={() => {
-                            setGuestName(g.fullName);
-                            setGuestPhone(g.phone);
-                            setSelectedClientId(g.clientId);
-                          }}
-                        >
-                          Использовать
-                        </Button>
-                      </Stack>
-                    ))}
-                  </Stack>
-                </Alert>
-              )}
+              {duplicateAlert("guest")}
             </DrawerSection>
 
             {/* Как в реальной форме секция услуг открывается только с выбранным
@@ -1861,6 +1889,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         )}
                       </Stack>
                     </Collapse>
+                    {/* Совпал ИНН или документ — предупреждаем здесь же, где их вводят. */}
+                    {duplicateAlert("document")}
                 </DrawerSection>
 
                 <DrawerSection label="Дополнительно · необязательно">
