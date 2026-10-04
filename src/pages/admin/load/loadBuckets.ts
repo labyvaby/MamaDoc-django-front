@@ -12,20 +12,67 @@ export interface LoadBucket {
   count: number;
   scheduleMinutes: number;
   busyMinutes: number;
-  /** Загрузка по графику 0–100; null — в отрезке нет смен. */
+  outsideMinutes: number;
+  /** Загрузка: приёмы в смену и сверх графика ÷ время по графику, % (бывает
+   *  больше 100); null — в отрезке нет смен. */
   utilization: number | null;
 }
 
-type Point = Pick<DayPoint, "count" | "scheduleMinutes" | "busyMinutes">;
+type Point = Pick<DayPoint, "count" | "scheduleMinutes" | "busyMinutes"> & { outsideMinutes?: number };
 
 const MONTHS = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const COARSE_TO_FINE: LoadGranularity[] = ["monthly", "weekly", "daily", "hourly"];
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-export function utilizationPct(busyMinutes: number, scheduleMinutes: number): number | null {
+/** Загрузка: время приёмов ÷ время по графику, %. Больше 100 — работа сверх
+ *  графика; null — смен нет, считать не от чего. */
+export function loadPct(occupiedMinutes: number, scheduleMinutes: number): number | null {
   if (scheduleMinutes <= 0) return null;
-  return Math.min(100, Math.round((busyMinutes * 100) / scheduleMinutes));
+  return Math.round((occupiedMinutes * 100) / scheduleMinutes);
+}
+
+/** Загрузка врача с учётом приёмов вне графика. */
+export function employeeLoadPct(row: Pick<EmployeeLoad, "scheduleMinutes" | "busyMinutes" | "outsideMinutes">): number | null {
+  return loadPct(row.busyMinutes + row.outsideMinutes, row.scheduleMinutes);
+}
+
+export interface LoadBarSegments {
+  /** Ширина части «в смену», % ширины полосы. */
+  inside: number;
+  /** Ширина части «сверх графика», % ширины полосы. */
+  outside: number;
+  /** Где кончается график, % ширины полосы; null — загрузка не больше 100%. */
+  marker: number | null;
+}
+
+/**
+ * Полоса врача. До 100% шкала — время по графику: основной цвет — приёмы в
+ * смену, следом оранжевый — сверх графика. Больше 100% — полоса заполнена
+ * целиком, шкала растягивается до общей загрузки, а черта отмечает конец
+ * графика.
+ */
+export function loadBarSegments(
+  row: Pick<EmployeeLoad, "scheduleMinutes" | "busyMinutes" | "outsideMinutes">,
+): LoadBarSegments {
+  if (row.scheduleMinutes <= 0) return { inside: 0, outside: 0, marker: null };
+  const inside = (row.busyMinutes * 100) / row.scheduleMinutes;
+  const outside = (row.outsideMinutes * 100) / row.scheduleMinutes;
+  const scale = Math.max(100, inside + outside);
+  return {
+    inside: (inside * 100) / scale,
+    outside: (outside * 100) / scale,
+    marker: inside + outside > 100 ? 10000 / scale : null,
+  };
+}
+
+/** Самые загруженные сверху; без графика — в конце, по числу приёмов. */
+export function sortByLoad(rows: EmployeeLoad[]): EmployeeLoad[] {
+  const key = (r: EmployeeLoad) =>
+    r.scheduleMinutes > 0 ? (r.busyMinutes + r.outsideMinutes) / r.scheduleMinutes : -1;
+  return [...rows].sort(
+    (a, b) => key(b) - key(a) || b.appointments - a.appointments || a.fullName.localeCompare(b.fullName, "ru"),
+  );
 }
 
 /** Минуты → часы для подписи: «47», «12,5», «1 457». */
@@ -62,13 +109,16 @@ function toBucket(label: string, title: string, points: Point[]): LoadBucket {
   const count = points.reduce((s, p) => s + p.count, 0);
   const scheduleMinutes = points.reduce((s, p) => s + p.scheduleMinutes, 0);
   const busyMinutes = points.reduce((s, p) => s + p.busyMinutes, 0);
+  // ?? 0 — бэк без поля (выложен позже фронта) не должен давать NaN.
+  const outsideMinutes = points.reduce((s, p) => s + (p.outsideMinutes ?? 0), 0);
   return {
     label,
     title,
     count,
     scheduleMinutes,
     busyMinutes,
-    utilization: utilizationPct(busyMinutes, scheduleMinutes),
+    outsideMinutes,
+    utilization: loadPct(busyMinutes + outsideMinutes, scheduleMinutes),
   };
 }
 
@@ -121,7 +171,7 @@ export function buildBuckets(granularity: LoadGranularity, hourly: HourPoint[], 
  * врачей с разной длиной смен (может быть больше 100%). Без графика процент
  * не от чего — тогда часы.
  */
-function outsideShare(outsideMinutes: number, scheduleMinutes: number): string {
+export function outsideShare(outsideMinutes: number, scheduleMinutes: number): string {
   if (scheduleMinutes <= 0) return `${formatHours(outsideMinutes)} ч`;
   const pct = (outsideMinutes * 100) / scheduleMinutes;
   return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
