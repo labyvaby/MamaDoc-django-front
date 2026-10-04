@@ -33,6 +33,7 @@ import {
   type RecorderAction,
   type RecorderState,
 } from "./recorderMachine";
+import { staleGuard } from "./staleGuard";
 import { waitFor, type WaitResult } from "./waitFor";
 
 const SLICE_MS = 15_000;
@@ -290,6 +291,9 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
       const phase = stateRef.current.phase;
       if (phase !== "idle" && phase !== "error") return;
       send({ type: "start" });
+      // Между ожиданиями (микрофон, сервер) запись могли сбросить — «выйти без
+      // досылки», отмена — или провайдер размонтировали: тогда старт бросаем.
+      const stale = staleGuard(epoch, alive);
       const fail = (code: string, message?: string) => {
         send({ type: "failed", error: code });
         const text =
@@ -302,10 +306,10 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         media = await openMicrophone();
       } catch (err) {
-        if (!alive.current) return;
+        if (stale()) return;
         return fail((err as { scribeCode?: MicErrorCode }).scribeCode ?? micErrorCode(err));
       }
-      if (!alive.current) {
+      if (stale()) {
         media.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -329,13 +333,15 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
         });
       } catch (err) {
         media.getTracks().forEach((track) => track.stop());
-        if (!alive.current) return;
+        if (stale()) return;
         return fail(getErrorCode(err) ?? "start_failed", getErrorMessage(err, tRef.current("errors.start_failed")));
       }
-      if (!alive.current) {
-        // Пока ждали сервер, провайдер размонтировали (сессия истекла):
-        // микрофон не держим, лишних запросов не шлём.
+      if (stale()) {
+        // Пока ждали сервер, запись сбросили или провайдер размонтировали:
+        // микрофон не держим, а созданную на сервере запись отменяем, не
+        // дожидаясь ответа, — иначе она повисла бы «незавершённой».
         media.getTracks().forEach((track) => track.stop());
+        void cancelScribeRecording(recording.id).catch(() => undefined);
         return;
       }
       stream.current = media;
