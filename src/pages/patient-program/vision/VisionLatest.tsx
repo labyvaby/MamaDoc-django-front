@@ -12,29 +12,56 @@ import { acuityNorm, acuityStatus, ageInMonths, parseAcuity } from "./visionNorm
 import { acuityTrend, type VisionSignal } from "./visionSignals";
 import { signalText } from "./visionUi";
 
-/** «Следующий осмотр — дата» и «Провести». */
+/** «Следующий осмотр — дата» и «Провести»; дата прошла — красная пометка «просрочен». */
 export const NextCheckLine: React.FC<{
   planned: ProgramModuleRecord;
   canManage: boolean;
   onConduct: (record: ProgramModuleRecord) => void;
-}> = ({ planned, canManage, onConduct }) => (
-  <Stack
-    direction="row"
-    gap={1}
-    alignItems="center"
-    sx={(theme) => ({ px: 1.5, py: 1, borderRadius: "12px", bgcolor: alpha(theme.palette.info.main, 0.08) })}
-  >
-    <EventOutlined fontSize="small" color="info" />
-    <Typography variant="body2" sx={{ flex: 1 }}>
-      Следующий осмотр — {dayjs(planned.occurredAt).format("DD.MM.YYYY")}
-    </Typography>
-    {canManage && (
-      <Button size="small" onClick={() => onConduct(planned)} sx={{ textTransform: "none" }}>
-        Провести
-      </Button>
-    )}
-  </Stack>
-);
+  /** «Следующий осмотр до …» вместо «— …». */
+  until?: boolean;
+  /** Подсказка под строкой: срок по 211н. */
+  hint?: React.ReactNode;
+}> = ({ planned, canManage, onConduct, until = false, hint }) => {
+  const overdue = dayjs(planned.occurredAt).isBefore(dayjs(), "day");
+  return (
+    <Stack
+      direction="row"
+      gap={1}
+      alignItems="center"
+      sx={(theme) => ({
+        px: 1.5,
+        py: 1,
+        borderRadius: "12px",
+        bgcolor: alpha(overdue ? theme.palette.error.main : theme.palette.info.main, 0.08),
+      })}
+    >
+      <EventOutlined fontSize="small" color={overdue ? "error" : "info"} />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="body2">
+          Следующий осмотр {until ? "до" : "—"} {dayjs(planned.occurredAt).format("DD.MM.YYYY")}
+          {overdue && (
+            <Chip
+              size="small"
+              color="error"
+              label="просрочен"
+              sx={{ ml: 1, height: 20, borderRadius: "6px", fontWeight: 600, verticalAlign: "text-bottom" }}
+            />
+          )}
+        </Typography>
+        {hint && (
+          <Typography variant="caption" color="text.secondary" display="block">
+            {hint}
+          </Typography>
+        )}
+      </Box>
+      {canManage && (
+        <Button size="small" onClick={() => onConduct(planned)} sx={{ textTransform: "none" }}>
+          Провести
+        </Button>
+      )}
+    </Stack>
+  );
+};
 
 interface VisionLatestProps {
   latest: VisionExam;
