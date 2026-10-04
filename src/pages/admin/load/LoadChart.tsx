@@ -8,6 +8,7 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  ReferenceLine,
 } from "recharts";
 
 import { useT } from "../../../i18n/VerticalProvider";
@@ -35,6 +36,15 @@ export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
   // Подписи недель («28.09–04.10») шире точки: без отступа крайние
   // срезаются краем графика.
   const wideLabels = data.some((d) => d.label.length > 6);
+  // Загрузка бывает больше 100% (приёмы сверх графика): шкала растёт до
+  // ближайших 25% выше пика, пунктир отмечает 100% — сам график.
+  const utilizationStep = peakValue <= 150 ? 25 : peakValue <= 300 ? 50 : 100;
+  const utilizationTop = Math.max(100, Math.ceil(peakValue / utilizationStep) * utilizationStep);
+  // Ровные деления, среди которых обязательно есть 100%.
+  const utilizationTicks = Array.from(
+    { length: utilizationTop / utilizationStep + 1 },
+    (_, i) => i * utilizationStep,
+  );
 
   const primaryColor = theme.palette.primary.main;
   const peakColor = theme.palette.error.main;
@@ -60,8 +70,9 @@ export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
   const formatValue = (value: unknown, point: ChartPoint | undefined): [string | number, string] => {
     if (!isUtilization) return [typeof value === "number" ? value : 0, t("chartTooltipLabel")];
     if (value == null || !point) return ["нет смен", "Загрузка"];
+    const outside = point.outsideMinutes > 0 ? ` (+${formatHours(point.outsideMinutes)} ч вне графика)` : "";
     return [
-      `${value}% · ${formatHours(point.busyMinutes)} ч из ${formatHours(point.scheduleMinutes)} ч`,
+      `${value}% · ${formatHours(point.busyMinutes)} из ${formatHours(point.scheduleMinutes)} ч${outside}`,
       "Загрузка",
     ];
   };
@@ -90,9 +101,18 @@ export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
           tick={{ fontSize: isMobile ? 10 : 12, fill: theme.palette.text.secondary }}
           allowDecimals={false}
           width={isMobile ? 32 : 44}
-          domain={isUtilization ? [0, 100] : undefined}
+          domain={isUtilization ? [0, utilizationTop] : undefined}
+          ticks={isUtilization ? utilizationTicks : undefined}
           tickFormatter={isUtilization ? (v: number) => `${v}%` : undefined}
         />
+        {isUtilization && utilizationTop > 100 && (
+          <ReferenceLine
+            y={100}
+            stroke={theme.palette.warning.main}
+            strokeDasharray="6 4"
+            label={{ value: "график", position: "insideTopRight", fill: theme.palette.warning.main, fontSize: 11 }}
+          />
+        )}
         <Tooltip
           contentStyle={{
             borderRadius: 10,
