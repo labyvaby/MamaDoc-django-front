@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createIdentityStamper,
+  doctorDayStatus,
+  freeOnSummaryDay,
   idsInRange,
   sameIdSet,
   visibleColumnRange,
@@ -116,5 +118,49 @@ describe("createIdentityStamper", () => {
     const stamp = createIdentityStamper();
     expect(stamp(undefined)).toBe(0);
     expect(stamp(null)).toBe(0);
+  });
+});
+
+describe("doctorDayStatus", () => {
+  const day = (date: string, freeCount: number) => ({
+    date,
+    scheduled: true,
+    dayOff: false,
+    freeCount,
+    slots: [],
+    appointments: [],
+  });
+  const emp = (days: ReturnType<typeof day>[], nearest: { date: string; start: string } | null) => ({
+    employeeId: 1,
+    fullName: "Врач",
+    nearestFree: nearest,
+    days,
+  });
+
+  it("есть свободные окна в выбранный день — зелёный", () => {
+    expect(doctorDayStatus(emp([day("2026-09-28", 3)], { date: "2026-09-26", start: "10:00" }), "2026-09-28")).toBe("free");
+  });
+
+  it("в выбранный день окон нет, но есть в другой — оранжевый", () => {
+    expect(doctorDayStatus(emp([day("2026-09-28", 0)], { date: "2026-09-30", start: "10:00" }), "2026-09-28")).toBe("later");
+  });
+
+  it("окна сегодня не делают врача зелёным в другой выбранный день", () => {
+    expect(doctorDayStatus(emp([day("2026-09-26", 5), day("2026-09-28", 0)], { date: "2026-09-26", start: "10:00" }), "2026-09-28")).toBe("later");
+  });
+
+  it("дня нет в выдаче и окон нигде нет — серый", () => {
+    expect(doctorDayStatus(emp([], null), "2026-09-28")).toBe("none");
+  });
+});
+
+describe("freeOnSummaryDay", () => {
+  it("прошедший день — свободных нет, что бы ни прислал бэк", () => {
+    expect(freeOnSummaryDay(5, "2026-09-25", "2026-09-26")).toBe(0);
+  });
+
+  it("сегодня и будущие дни — как прислал бэк", () => {
+    expect(freeOnSummaryDay(4, "2026-09-26", "2026-09-26")).toBe(4);
+    expect(freeOnSummaryDay(6, "2026-09-28", "2026-09-26")).toBe(6);
   });
 });

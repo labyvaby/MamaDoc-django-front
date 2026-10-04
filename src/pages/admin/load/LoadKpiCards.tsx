@@ -6,10 +6,12 @@ import BarChartOutlined from "@mui/icons-material/BarChartOutlined";
 import CalendarViewWeekOutlined from "@mui/icons-material/CalendarViewWeekOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import TrendingDownOutlined from "@mui/icons-material/TrendingDownOutlined";
+import WorkHistoryOutlined from "@mui/icons-material/WorkHistoryOutlined";
 
 import { subtleBg } from "../../../theme/uiHelpers";
 import type { LoadKpi } from "../../../api/load";
 import { useT } from "../../../i18n/VerticalProvider";
+import { formatHours } from "./loadBuckets";
 
 const WEEKDAYS = [
   "Понедельник",
@@ -80,8 +82,10 @@ const Tile: React.FC<{
       <Typography variant="body1" fontWeight={600} noWrap>
         {value}
       </Typography>
+      {/* Перенос, а не многоточие: при меню слева плитки узкие, и хвост
+          подписи («· СКУД 45%») иначе пропадал. */}
       {sub && (
-        <Typography variant="caption" color="text.disabled" display="block" noWrap>
+        <Typography variant="caption" color="text.disabled" display="block">
           {sub}
         </Typography>
       )}
@@ -103,9 +107,23 @@ const LoadKpiCards: React.FC<LoadKpiCardsProps> = ({ kpi, daysCount }) => {
     kpi.deltaPct == null
       ? "—"
       : `${deltaUp ? "+" : ""}${kpi.deltaPct.toLocaleString("ru-RU")}%`;
+  const utilizationSub = [
+    kpi.scheduleMinutes > 0
+      ? `${formatHours(kpi.busyMinutes)} из ${formatHours(kpi.scheduleMinutes)} ч`
+      : "нет графика",
+    kpi.attendanceUtilizationPct != null ? `СКУД ${kpi.attendanceUtilizationPct}%` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap">
+      <Tile
+        icon={<WorkHistoryOutlined />}
+        label="Загрузка по графику"
+        value={kpi.utilizationPct == null ? "—" : `${kpi.utilizationPct}%`}
+        sub={utilizationSub}
+      />
       <Tile
         icon={<SpeedOutlined />}
         label="Пиковый час"
