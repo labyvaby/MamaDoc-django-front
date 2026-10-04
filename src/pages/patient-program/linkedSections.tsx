@@ -10,13 +10,14 @@ import { AllergiesSection } from "../../components/health/AllergiesSection";
 import { BirthHistorySection } from "../../components/health/BirthHistorySection";
 import { ConditionsSection } from "../../components/health/ConditionsSection";
 import { FamilySection } from "../../components/health/FamilySection";
+import { LifeAnamnesisSection } from "../../components/health/anamnesis/LifeAnamnesisSection";
 import { MedicationsSection } from "../../components/health/MedicationsSection";
 import { useHealthAccess } from "../../components/health/useHealth";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import PatientVaccinationsPanel from "../patients/components/PatientVaccinationsPanel";
 import { BookAppointments } from "./BookAppointments";
 import { GrowthSection } from "./growth/GrowthSection";
-import { systemType } from "./linkedSectionTypes";
+import { systemType, type SystemSectionType } from "./linkedSectionTypes";
 import { ModuleRecords } from "./ModuleRecords";
 
 /** Записи, внесённые в раздел, пока он был разделом конструктора, — только просмотр. */
@@ -55,6 +56,9 @@ interface LinkedSectionProps {
   enrollmentId: number;
   scope: ActiveScope;
   icon: React.ReactNode;
+  /** Перейти в другой раздел книжки (ссылки из «Анамнеза жизни»). */
+  openSection?: (type: SystemSectionType) => void;
+  hasSection?: (type: SystemSectionType) => boolean;
 }
 
 /** Содержимое связанного раздела: компонент медкарты, прививок или приёмов. */
@@ -64,6 +68,8 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
   enrollmentId,
   scope,
   icon,
+  openSection,
+  hasSection,
 }) => {
   const { canManage } = useHealthAccess();
   const type = systemType(module);
@@ -92,6 +98,16 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
       break;
     case "visits":
       content = <BookAppointments patientId={patient.id} birthDate={patient.birthDate ?? null} scope={scope} />;
+      break;
+    case "life_anamnesis":
+      content = (
+        <LifeAnamnesisSection
+          patientId={patient.id}
+          title={module.name}
+          openSection={openSection ? (type) => openSection(type as SystemSectionType) : undefined}
+          hasSection={hasSection ? (type) => hasSection(type as SystemSectionType) : undefined}
+        />
+      );
       break;
     default:
       content = <Alert severity="info">Раздел «{module.name}» появится на следующих этапах.</Alert>;

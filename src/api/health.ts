@@ -15,13 +15,38 @@ export type AllergySeverity = "mild" | "moderate" | "severe" | "anaphylaxis" | "
 export type AllergyStatus = "active" | "resolved" | "refuted";
 export type ConditionStatus = "active" | "remission" | "resolved" | "refuted";
 export type DispensaryEndReason = "recovered" | "moved" | "other" | "";
-export type FamilyRelation = "mother" | "father" | "sibling" | "other";
+/** Родство в «Паспорте семьи»; с «Анамнезом жизни» — вся родословная (ТЗ §2.4). */
+export type FamilyRelation =
+  | "mother"
+  | "father"
+  | "sibling"
+  | "half_sibling"
+  | "grandmother"
+  | "grandfather"
+  | "aunt"
+  | "uncle"
+  | "cousin"
+  | "great_grandparent"
+  | "stepfather"
+  | "stepmother"
+  | "guardian"
+  | "other";
 export type DeliveryType = "natural" | "cesarean" | "other" | "";
 export type HealthGroup = "1" | "2" | "3" | "4" | "5" | "";
 export type PeGroup = "main" | "preparatory" | "special" | "exempt" | "";
 export type BloodGroup = "0" | "A" | "B" | "AB" | "";
 export type RhFactor = "positive" | "negative" | "";
-export type RiskGroup = "cns" | "infection" | "trophic_endocrine" | "malformations" | "allergic" | "social";
+export type RiskGroup =
+  | "cns"
+  | "infection"
+  | "trophic_endocrine"
+  | "malformations"
+  | "allergic"
+  | "social"
+  | "hearing"
+  | "anemia"
+  | "sids"
+  | "frequent_ari";
 
 export interface EmployeeRef {
   id: number;
@@ -161,12 +186,47 @@ export interface HospitalizationInput {
   notes: string;
 }
 
+export type FamilyLine = "maternal" | "paternal" | "";
+export type PersonSex = "male" | "female" | "";
+export type VitalStatus = "alive" | "deceased" | "";
+export type RelativeHealth = "healthy" | "ill" | "unknown";
+export type ParentEducation = "incomplete_secondary" | "secondary" | "vocational" | "higher" | "";
+export type ParentEmployment = "working" | "maternity_leave" | "not_working" | "studying" | "abroad" | "retired" | "";
+export type ParentHabit = "smoking" | "alcohol" | "drugs";
+export type FamilyDiseaseGroup =
+  | "allergic"
+  | "cardiovascular"
+  | "digestive"
+  | "endocrine"
+  | "renal"
+  | "neuro"
+  | "blood"
+  | "oncology"
+  | "respiratory"
+  | "musculoskeletal"
+  | "hereditary"
+  | "eye"
+  | "hearing"
+  | "other";
+
+/** Болезнь родственника: код каталога фронта (`familyDiseases.ts`) или `other`. */
+export interface FamilyDisease {
+  code: string;
+  title: string;
+  group: FamilyDiseaseGroup;
+  /** Моногенная или хромосомная. */
+  hereditary: boolean;
+  /** Причина смерти — только у умершего, не больше одной. */
+  causeOfDeath: boolean;
+}
+
 export interface FamilyMember {
   id: number;
   relation: FamilyRelation;
   relative: PatientRef | null;
   fullName: string;
   birthDate: string | null;
+  /** Прежняя запись болезней текстом: показывается «Записано текстом», в расчёты не идёт. */
   conditions: string;
   therapistExamOn: string | null;
   gynecologistExamOn: string | null;
@@ -174,6 +234,21 @@ export interface FamilyMember {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  // Поля «Анамнеза жизни» (ТЗ §2.4). Старый сервер их не отдаёт — `getFamily` ставит значения по умолчанию.
+  line: FamilyLine;
+  sex: PersonSex;
+  vitalStatus: VitalStatus;
+  deathYear: number | null;
+  deathAge: number | null;
+  healthStatus: RelativeHealth;
+  diseases: FamilyDisease[];
+  education: ParentEducation;
+  employment: ParentEmployment;
+  occupation: string;
+  hasOccupationalHazards: boolean | null;
+  occupationalHazards: string;
+  /** null — неизвестно, [] — привычек нет. */
+  habits: ParentHabit[] | null;
 }
 
 export interface FamilyMemberInput {
@@ -186,6 +261,39 @@ export interface FamilyMemberInput {
   gynecologistExamOn: string | null;
   fluorographyOn: string | null;
   notes: string;
+  line: FamilyLine;
+  sex: PersonSex;
+  vitalStatus: VitalStatus;
+  deathYear: number | null;
+  deathAge: number | null;
+  healthStatus: RelativeHealth;
+  diseases: FamilyDisease[];
+  education: ParentEducation;
+  employment: ParentEmployment;
+  occupation: string;
+  hasOccupationalHazards: boolean | null;
+  occupationalHazards: string;
+  habits: ParentHabit[] | null;
+}
+
+/** Строка паспорта с полями по умолчанию: старый ответ сервера не знает родословной. */
+export function normalizeFamilyMember(member: FamilyMember): FamilyMember {
+  return {
+    ...member,
+    line: member.line ?? "",
+    sex: member.sex ?? (member.relation === "mother" ? "female" : member.relation === "father" ? "male" : ""),
+    vitalStatus: member.vitalStatus ?? "",
+    deathYear: member.deathYear ?? null,
+    deathAge: member.deathAge ?? null,
+    healthStatus: member.healthStatus ?? "unknown",
+    diseases: member.diseases ?? [],
+    education: member.education ?? "",
+    employment: member.employment ?? "",
+    occupation: member.occupation ?? "",
+    hasOccupationalHazards: member.hasOccupationalHazards ?? null,
+    occupationalHazards: member.occupationalHazards ?? "",
+    habits: member.habits === undefined ? null : member.habits,
+  };
 }
 
 export interface FamilySuggestion {
@@ -349,7 +457,9 @@ export function updateHospitalization(
 }
 
 export function getFamily(scope: Scope, patientId: number, signal?: AbortSignal): Promise<FamilyMember[]> {
-  return apiRequest<FamilyMember[]>(patientPath(scope, patientId, "family/"), { signal });
+  return apiRequest<FamilyMember[]>(patientPath(scope, patientId, "family/"), { signal }).then((rows) =>
+    rows.map(normalizeFamilyMember),
+  );
 }
 
 export function getFamilySuggestions(scope: Scope, patientId: number, signal?: AbortSignal): Promise<FamilySuggestion[]> {
@@ -374,6 +484,407 @@ export function updateFamilyMember(
 
 export function deleteFamilyMember(scope: Scope, patientId: number, memberId: number): Promise<void> {
   return apiRequest<void>(patientPath(scope, patientId, `family/${memberId}/`), { method: "DELETE" });
+}
+
+// ── Анамнез жизни (раздел книжки `life_anamnesis`) ──────────────────────────
+// ТЗ docs/specs/2026-10-04-book-life-anamnesis-design.md §2.2–2.9. Да/нет — три
+// состояния (null — неизвестно); списки: null — не спрашивали, [] — врач
+// подтвердил «нет»; выбор: "" — не указано.
+
+export type Trimester = 1 | 2 | 3;
+export type ConceptionKind = "natural" | "induced" | "art" | "";
+export type ComplicationCode =
+  | "toxicosis"
+  | "miscarriage_threat"
+  | "preeclampsia"
+  | "anemia"
+  | "placental_insufficiency"
+  | "fgr"
+  | "fetal_hypoxia"
+  | "polyhydramnios"
+  | "oligohydramnios"
+  | "cervical_insufficiency"
+  | "isoimmunization"
+  | "gestational_diabetes"
+  | "other";
+export type ComplicationSeverity = "mild" | "moderate" | "severe";
+export type PregnancyInfectionCode =
+  | "arvi"
+  | "flu"
+  | "fever"
+  | "rubella"
+  | "cmv"
+  | "toxoplasmosis"
+  | "herpes"
+  | "uti"
+  | "colpitis"
+  | "gbs"
+  | "other";
+export type MaternalDiseaseCode =
+  | "hypertension"
+  | "heart_defect"
+  | "diabetes"
+  | "thyroid"
+  | "kidney"
+  | "obesity"
+  | "neuro"
+  | "chronic_infection"
+  | "other";
+export type PrenatalTestKind = "screening" | "ultrasound" | "other";
+export type PrenatalTestResult = "normal" | "abnormal" | "";
+export type PerinatalInformant = "exchange_card" | "discharge_summary" | "mother" | "father" | "other" | "";
+export type CesareanKind = "planned" | "emergency" | "";
+export type ObstetricAid = "vacuum" | "forceps" | "breech_aid";
+export type Presentation = "cephalic" | "breech" | "other" | "";
+export type DeliveryComplication =
+  | "weak_labor"
+  | "stimulation"
+  | "early_rupture"
+  | "placental_abruption"
+  | "cord_entanglement"
+  | "bleeding"
+  | "abnormal_fluid"
+  | "maternal_fever"
+  | "chorioamnionitis"
+  | "other";
+export type BirthPlace = "maternity" | "perinatal_center" | "home" | "in_transit" | "";
+export type FirstCry = "immediately" | "after_stimulation" | "after_resuscitation" | "";
+export type JaundiceKind = "none" | "physiological" | "prolonged" | "pathological" | "";
+export type NeonatalTransfer = "none" | "icu" | "second_stage" | "";
+
+export interface PregnancyComplication {
+  code: ComplicationCode;
+  fromWeek: number | null;
+  toWeek: number | null;
+  /** Только когда недель нет. */
+  trimester: Trimester | null;
+  /** Только у токсикоза и анемии. */
+  severity: ComplicationSeverity | null;
+  note: string;
+}
+
+export interface PregnancyInfection {
+  code: PregnancyInfectionCode;
+  week: number | null;
+  trimester: Trimester | null;
+  note: string;
+}
+
+export interface MaternalDisease {
+  code: MaternalDiseaseCode;
+  note: string;
+}
+
+export interface PrenatalTest {
+  kind: PrenatalTestKind;
+  week: number | null;
+  result: PrenatalTestResult;
+  note: string;
+}
+
+/** Беременность, роды и новорождённость: одна запись на ребёнка (ТЗ §2.2). */
+export interface PerinatalHistory {
+  /** false — ещё не сохраняли, значения по умолчанию. */
+  exists: boolean;
+  pregnancyNumber: number | null;
+  birthNumber: number | null;
+  conception: ConceptionKind;
+  multiplePregnancy: boolean | null;
+  fetusCount: number | null;
+  fetusOrder: number | null;
+  complications: PregnancyComplication[] | null;
+  infections: PregnancyInfection[] | null;
+  maternalDiseases: MaternalDisease[] | null;
+  prenatalTests: PrenatalTest[] | null;
+  motherSmoking: boolean | null;
+  motherCigarettesPerDay: number | null;
+  motherAlcohol: boolean | null;
+  motherDrugs: boolean | null;
+  informant: PerinatalInformant;
+  cesareanKind: CesareanKind;
+  cesareanIndication: string;
+  obstetricAids: ObstetricAid[] | null;
+  presentation: Presentation;
+  laborDurationHours: number | null;
+  ruptureIntervalHours: number | null;
+  deliveryComplications: DeliveryComplication[] | null;
+  deliveryComplicationsNote: string;
+  birthPlace: BirthPlace;
+  firstCry: FirstCry;
+  resuscitation: boolean | null;
+  resuscitationNote: string;
+  apgar10min: number | null;
+  birthChestCircumferenceCm: number | null;
+  dischargeWeightG: number | null;
+  firstLatchHours: number | null;
+  jaundice: JaundiceKind;
+  jaundiceFirstDay: boolean | null;
+  jaundiceUntilDay: number | null;
+  maxBilirubinUmol: number | null;
+  phototherapy: boolean | null;
+  neonatalTransfer: NeonatalTransfer;
+  dischargeDiagnosis: string;
+  updatedAt: string | null;
+  updatedBy: EmployeeRef | null;
+}
+
+/** Поля рождения профиля, которые окна раздела пишут тем же запросом. */
+export type ProfileBirthFields = Pick<
+  HealthProfile,
+  | "gestationalAgeWeeks"
+  | "gestationalAgeDays"
+  | "birthWeightG"
+  | "birthLengthCm"
+  | "birthHeadCircumferenceCm"
+  | "apgar1min"
+  | "apgar5min"
+  | "deliveryType"
+  | "maternityHospital"
+  | "maternityDischargedOn"
+  | "perinatalNotes"
+>;
+
+export type PerinatalUpdate = Partial<Omit<PerinatalHistory, "exists" | "updatedAt" | "updatedBy"> & ProfileBirthFields>;
+
+export type FamilyComposition = "full" | "single_mother" | "single_father" | "guardian" | "foster" | "institution" | "";
+export type HousingKind = "apartment" | "house" | "rented" | "room" | "dormitory" | "none" | "";
+export type IncomeLevel = "sufficient" | "insufficient" | "";
+export type FamilyClimate = "favorable" | "tense" | "conflict" | "";
+export type SanitaryState = "satisfactory" | "unsatisfactory" | "";
+export type PetKind = "cat" | "dog" | "birds" | "fish" | "rodents" | "other";
+export type SocialInformant = "mother" | "father" | "other_representative" | "medical_record" | "";
+
+/** Семья и быт, общие сведения о семье, ручные оценки врача (ТЗ §2.5). */
+export interface LifeAnamnesisSocial {
+  exists: boolean;
+  familyComposition: FamilyComposition;
+  housing: HousingKind;
+  rooms: number | null;
+  income: IncomeLevel;
+  familyClimate: FamilyClimate;
+  childWanted: boolean | null;
+  sanitary: SanitaryState;
+  smokingAtHome: boolean | null;
+  pets: PetKind[] | null;
+  parentsConsanguineous: boolean | null;
+  consanguinityNote: string;
+  infantDeathInFamily: boolean | null;
+  infantDeathNote: string;
+  assessedOn: string | null;
+  informant: SocialInformant;
+  /** Уровень шкалы или "" — считать автоматически; причина обязательна при уровне. */
+  genealogicalLevel: string;
+  genealogicalReason: string;
+  biologicalLevel: string;
+  biologicalReason: string;
+  socialLevel: string;
+  socialReason: string;
+  updatedAt: string | null;
+  updatedBy: EmployeeRef | null;
+}
+
+export type LifeSocialUpdate = Partial<
+  Omit<
+    LifeAnamnesisSocial,
+    | "exists"
+    | "updatedAt"
+    | "updatedBy"
+    | "genealogicalLevel"
+    | "genealogicalReason"
+    | "biologicalLevel"
+    | "biologicalReason"
+    | "socialLevel"
+    | "socialReason"
+  >
+>;
+
+export type LifeAssessmentUpdate = Partial<
+  Pick<
+    LifeAnamnesisSocial,
+    "genealogicalLevel" | "genealogicalReason" | "biologicalLevel" | "biologicalReason" | "socialLevel" | "socialReason"
+  >
+>;
+
+export type MarkerResult = "negative" | "positive" | "";
+export type TbContact = "no" | "yes" | "";
+export type TbContactPlace = "family" | "household" | "other" | "";
+export type HouseholdInfection = "hepatitis_b" | "hepatitis_c" | "hiv" | "syphilis" | "herpes";
+
+/** Закрытые сведения (ТЗ §2.6): только при праве `medical.health.sensitive.view`. */
+export interface SensitiveHistory {
+  exists?: boolean;
+  motherHbsag: MarkerResult;
+  motherHcv: MarkerResult;
+  motherHiv: MarkerResult;
+  motherSyphilis: MarkerResult;
+  tbContact: TbContact;
+  tbContactPlace: TbContactPlace;
+  tbContactFrom: string | null;
+  tbContactTo: string | null;
+  tbSourceBacillary: boolean | null;
+  tbPreventiveTherapy: boolean | null;
+  tbPreventiveFrom: string | null;
+  tbPreventiveTo: string | null;
+  householdInfections: HouseholdInfection[] | null;
+  asocialFamily: boolean | null;
+  asocialNote: string;
+  notes: string;
+}
+
+export type SensitiveUpdate = Partial<Omit<SensitiveHistory, "exists">>;
+
+export type ScreeningKind = "neonatal" | "hearing";
+export type ScreeningResult = "normal" | "retest" | "positive" | "not_done" | "refused" | "";
+export type HearingStage = "maternity" | "primary_care" | "abr" | "";
+export type HearingMethod = "oae" | "aabr" | "abr" | "";
+export type EarResult = "pass" | "refer" | "not_done" | "";
+
+/** Скрининг новорождённого (ТЗ §2.3): их бывает несколько — повтор ОАЭ, повторный забор. */
+export interface NeonatalScreening {
+  id: number;
+  kind: ScreeningKind;
+  performedOn: string | null;
+  result: ScreeningResult;
+  program: string;
+  stage: HearingStage;
+  method: HearingMethod;
+  rightEar: EarResult;
+  leftEar: EarResult;
+  reason: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ScreeningInput = Omit<NeonatalScreening, "id" | "createdAt" | "updatedAt">;
+
+export type RiskGroupStatus = "active" | "removed" | "realized" | "declined" | "refuted";
+export type RiskGroupSource = "suggested" | "manual" | "legacy";
+export type RiskReviewDecision = "keep" | "remove" | "realized";
+
+export interface RiskGroupReview {
+  id: number;
+  reviewedOn: string;
+  decision: RiskReviewDecision;
+  note: string;
+  reviewedBy: EmployeeRef | null;
+  createdAt?: string;
+}
+
+/** Группа риска записью (ТЗ §2.7): ставит и снимает врач, система только предлагает. */
+export interface RiskGroupRecord {
+  id: number;
+  group: RiskGroup;
+  status: RiskGroupStatus;
+  establishedOn: string | null;
+  /** Коды факторов; без права на закрытые сведения коды `sensitive.*` заменены одним `sensitive`. */
+  basis: string[];
+  basisNote: string;
+  source: RiskGroupSource;
+  closedOn: string | null;
+  outcomeCondition: { id: number; title: string; diagnosisCode?: string } | null;
+  outcomeNote: string;
+  establishedBy: EmployeeRef | null;
+  reviews: RiskGroupReview[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RiskGroupCreate {
+  group: RiskGroup;
+  status: "active" | "declined";
+  establishedOn: string;
+  basis: string[];
+  basisNote: string;
+  source: RiskGroupSource;
+}
+
+export interface RiskGroupUpdate {
+  establishedOn?: string;
+  basis?: string[];
+  basisNote?: string;
+  /** refuted — ошибочно внесена; active у закрытой — вернуть в работу. */
+  status?: "refuted" | "active";
+}
+
+export interface RiskReviewInput {
+  reviewedOn: string;
+  decision: RiskReviewDecision;
+  note: string;
+  outcomeConditionId: number | null;
+  outcomeNote: string;
+}
+
+/** Всё для раздела одним ответом; любая запись под `life-anamnesis/` отвечает тем же телом. */
+export interface LifeAnamnesis {
+  perinatal: PerinatalHistory;
+  social: LifeAnamnesisSocial;
+  sensitiveAccess: boolean;
+  /** Есть ли запись закрытых сведений — её наличие ничего не раскрывает. */
+  sensitiveFilled: boolean;
+  sensitive: SensitiveHistory | null;
+  screenings: NeonatalScreening[];
+  riskGroups: RiskGroupRecord[];
+  lastChange: { at: string; by: EmployeeRef | null } | null;
+}
+
+const lifePath = (scope: Scope, patientId: number, rest = "") => patientPath(scope, patientId, `life-anamnesis/${rest}`);
+
+export function getLifeAnamnesis(scope: Scope, patientId: number, signal?: AbortSignal): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId), { signal });
+}
+
+export function updatePerinatal(scope: Scope, patientId: number, payload: PerinatalUpdate): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId, "perinatal/"), { method: "PATCH", body: payload });
+}
+
+export function updateLifeSocial(scope: Scope, patientId: number, payload: LifeSocialUpdate): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId, "social/"), { method: "PATCH", body: payload });
+}
+
+export function updateLifeAssessment(scope: Scope, patientId: number, payload: LifeAssessmentUpdate): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId, "assessment/"), { method: "PATCH", body: payload });
+}
+
+export function updateSensitiveHistory(scope: Scope, patientId: number, payload: SensitiveUpdate): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId, "sensitive/"), { method: "PATCH", body: payload });
+}
+
+export function createScreening(scope: Scope, patientId: number, payload: ScreeningInput): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId, "screenings/"), { method: "POST", body: payload });
+}
+
+export function updateScreening(
+  scope: Scope,
+  patientId: number,
+  screeningId: number,
+  payload: Partial<ScreeningInput>,
+): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId, `screenings/${screeningId}/`), { method: "PATCH", body: payload });
+}
+
+export function deleteScreening(scope: Scope, patientId: number, screeningId: number): Promise<LifeAnamnesis | void> {
+  return apiRequest<LifeAnamnesis | void>(lifePath(scope, patientId, `screenings/${screeningId}/`), { method: "DELETE" });
+}
+
+export function createRiskGroup(scope: Scope, patientId: number, payload: RiskGroupCreate): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId, "risk-groups/"), { method: "POST", body: payload });
+}
+
+export function updateRiskGroup(scope: Scope, patientId: number, riskGroupId: number, payload: RiskGroupUpdate): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId, `risk-groups/${riskGroupId}/`), { method: "PATCH", body: payload });
+}
+
+export function createRiskGroupReview(
+  scope: Scope,
+  patientId: number,
+  riskGroupId: number,
+  payload: RiskReviewInput,
+): Promise<LifeAnamnesis> {
+  return apiRequest<LifeAnamnesis>(lifePath(scope, patientId, `risk-groups/${riskGroupId}/reviews/`), {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export function getOnboarding(scope: Scope, enrollmentId: number, signal?: AbortSignal): Promise<Onboarding> {

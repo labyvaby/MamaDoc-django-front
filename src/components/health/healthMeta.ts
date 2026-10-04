@@ -148,14 +148,18 @@ export const DELIVERY_TYPES: Option<Exclude<DeliveryType, "">>[] = [
   { value: "other", label: "Другое" },
 ];
 
-/** Группы риска формы 112/у. */
+/** Группы риска формы 112/у и «Анамнеза жизни» (ТЗ анамнеза §2.7). */
 export const RISK_GROUPS: Option<RiskGroup>[] = [
   { value: "cns", label: "Патология ЦНС" },
   { value: "infection", label: "Внутриутробное инфицирование" },
-  { value: "trophic_endocrine", label: "Трофические и эндокринные нарушения" },
-  { value: "malformations", label: "Врождённые пороки" },
+  { value: "trophic_endocrine", label: "Трофические нарушения и эндокринопатии" },
+  { value: "malformations", label: "Врождённые пороки и наследственные болезни" },
   { value: "allergic", label: "Аллергия" },
   { value: "social", label: "Социальный риск" },
+  { value: "hearing", label: "Тугоухость и глухота" },
+  { value: "anemia", label: "Анемия" },
+  { value: "sids", label: "Синдром внезапной смерти" },
+  { value: "frequent_ari", label: "Частые ОРИ" },
 ];
 
 export const FAMILY_RELATIONS: Option<FamilyRelation>[] = [
