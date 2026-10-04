@@ -162,6 +162,7 @@ export const VisionModule: React.FC<VisionModuleProps> = ({ enrollmentId, module
         birthDate={birthDate}
         record={exam.record}
         diagnoses={records.diagnoses}
+        knownEyeColor={records.exams.find((item) => item.eyeColor)?.eyeColor ?? null}
         onClose={() => setExam(CLOSED)}
         onSaved={refresh}
       />

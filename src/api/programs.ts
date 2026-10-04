@@ -5,6 +5,9 @@ import { Scope, scopeParams } from "./scope";
 export type ProgramState = "draft" | "active" | "archived";
 export type EnrollmentState = "draft" | "active" | "paused" | "cancelled" | "expired";
 
+/** records — раздел конструктора; linked — данные из медкарты, прививок, приёмов; plan — план этапа 3. */
+export type ProgramModuleKind = "records" | "linked" | "plan";
+
 export interface EffectiveProgramModule {
   id: number;
   code: string;
@@ -12,6 +15,10 @@ export interface EffectiveProgramModule {
   moduleType: string;
   sortOrder: number;
   settings: Record<string, unknown>;
+  /** С сервера этапа 2; у старых ответов нет — считать по типу раздела. */
+  kind?: ProgramModuleKind;
+  /** Право просмотра связанного раздела (вместе с модулем — через canAccess). */
+  viewPermission?: string | null;
 }
 
 export interface Program {
@@ -77,6 +84,8 @@ export interface ProgramEnrollment {
   paymentState: PaymentState;
   createdAt: string;
   updatedAt: string;
+  /** Последний день оплаченного срока, который ещё идёт; до него снять с учёта нельзя. */
+  paidUntil?: string | null;
 }
 
 /** Учётная программа: медицинская и с пакетами — её видят мастер и реестр. */

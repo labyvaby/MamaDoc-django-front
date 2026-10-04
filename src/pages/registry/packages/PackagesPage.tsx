@@ -127,7 +127,14 @@ const PackagesPage: React.FC = () => {
               </Stack>
               <Collapse in={settingsFor === program.id} unmountOnExit>
                 <Box sx={{ mt: 1.5 }}>
-                  <ProgramProductSettings program={program} scope={scope} onSaved={refresh} />
+                  <ProgramProductSettings
+                    program={program}
+                    scope={scope}
+                    onSaved={() => {
+                      setSettingsFor(null);
+                      refresh();
+                    }}
+                  />
                 </Box>
               </Collapse>
               <Stack gap={1} sx={{ mt: 1.5 }}>

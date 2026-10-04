@@ -111,6 +111,7 @@ export const EnrollmentActionsDrawer: React.FC<EnrollmentActionsDrawerProps> = (
         scope={scope}
         enrollmentId={enrollment.id}
         patientName={enrollment.patient.fullName}
+        paidUntil={enrollment.paidUntil}
         onClose={() => setCancelOpen(false)}
         onDone={(updated) => {
           setCancelOpen(false);

@@ -221,6 +221,7 @@ const RegistryPage: React.FC = () => {
           enrollmentId={dialog.row.enrollmentId}
           patientName={dialog.row.patient.fullName}
           defaultReason={tab === "inactive" ? "not_visiting" : undefined}
+          paidUntil={dialog.row.paidUntil}
           onClose={closeDialog}
           onDone={doneDialog}
         />

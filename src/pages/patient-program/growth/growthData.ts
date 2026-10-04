@@ -1,32 +1,82 @@
 import dayjs from "dayjs";
 
-import type { EffectiveProgramModule, ProgramModuleRecord } from "../../../api/programs";
+import type { GrowthData, GrowthMeasurement, MeasurementInput, MeasurementPosition } from "../../../api/health";
 import { ageMonths, assess, bmi, type GrowthAssessment, type GrowthIndicator, type GrowthSex } from "./growthNorms";
 
 /**
- * Замеры раздела «Рост и развитие» — общие записи модуля конструктора
- * (`heightCm`, `weightKg`, `headCircumferenceCm`; новое — `chestCircumferenceCm`).
+ * Замеры «Роста и питания» — из медпрофиля пациента (этап 2б): ручные,
+ * из заключений приёмов и из архива. Оценки ВОЗ считаются здесь, в браузере.
  */
 
-export function isGrowthModule(module: Pick<EffectiveProgramModule, "code" | "moduleType">): boolean {
-  const key = `${module.code} ${module.moduleType}`.toLowerCase();
-  return ["growth", "measure", "anthrop"].some((part) => key.includes(part));
-}
+const DAYS_PER_MONTH = 30.4375;
+/** До двух лет недоношенным считают скорректированный возраст. */
+const CORRECTION_LIMIT_DAYS = 730;
 
 export function growthSex(gender: string | null | undefined): GrowthSex | null {
   return gender === "male" || gender === "female" ? gender : null;
 }
 
+/** Срок гестации из профиля (для скорректированного возраста). */
+export interface Gestation {
+  weeks: number | null;
+  days: number | null;
+}
+
+/**
+ * Возраст для норм ВОЗ: родившимся раньше 37 недель до двух лет —
+ * скорректированный (минус недоношенные дни). Раньше срока доношенности —
+ * оценок нет (`months: null`).
+ */
+export function normsAge(
+  birthDate: string | null | undefined,
+  at: string,
+  gestation?: Gestation | null,
+): { months: number | null; corrected: boolean } {
+  const months = ageMonths(birthDate, at);
+  const weeks = gestation?.weeks ?? null;
+  if (months == null || weeks == null || weeks >= 37) return { months, corrected: false };
+  const days = Math.round(months * DAYS_PER_MONTH);
+  if (days >= CORRECTION_LIMIT_DAYS) return { months, corrected: false };
+  const premature = 280 - (weeks * 7 + (gestation?.days ?? 0));
+  const corrected = days - premature;
+  return { months: corrected < 0 ? null : corrected / DAYS_PER_MONTH, corrected: true };
+}
+
+/** Длина лёжа до двух лет, рост стоя после: другой способ — поправка 0,7 см (ВОЗ). */
+export function heightForNorms(heightCm: number | null, position: MeasurementPosition, months: number | null): number | null {
+  if (heightCm == null || months == null) return heightCm;
+  if (months < 24 && position === "standing") return Math.round((heightCm + 0.7) * 10) / 10;
+  if (months >= 24 && position === "recumbent") return Math.round((heightCm - 0.7) * 10) / 10;
+  return heightCm;
+}
+
+/** Как мерить по возрасту: до двух лет — лёжа. */
+export function defaultPosition(months: number | null): MeasurementPosition {
+  return months == null || months < 24 ? "recumbent" : "standing";
+}
+
 export interface Measurement {
-  record: ProgramModuleRecord;
+  key: string;
+  /** Номер замера на сервере; у точки рождения — null. */
+  id: number | null;
   at: string;
-  /** Возраст на дату замера, месяцы с долями. */
+  /** Возраст для норм (скорректированный у недоношенных), месяцы с долями. */
   months: number | null;
+  corrected: boolean;
   heightCm: number | null;
+  /** Рост для сравнения с ВОЗ (с поправкой лёжа/стоя). */
+  heightNormsCm: number | null;
+  position: MeasurementPosition;
   weightKg: number | null;
   headCm: number | null;
   chestCm: number | null;
   bmi: number | null;
+  author: string;
+  /** Ручной замер: правится в разделе. Из заключения — в заключении. */
+  editable: boolean;
+  sourceLabel: string;
+  appointmentId: number | null;
+  notes: string;
 }
 
 export type MeasureKey = "heightCm" | "weightKg" | "headCm" | "bmi";
@@ -38,37 +88,73 @@ export const INDICATOR_OF: Record<MeasureKey, GrowthIndicator> = {
   bmi: "bmi",
 };
 
-/** Положительное число из записи: число или строка «123,5»; иначе null. */
-function positive(value: unknown): number | null {
-  const parsed = typeof value === "string" ? Number(value.trim().replace(",", ".")) : value;
-  return typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
+const SOURCE_LABELS: Record<GrowthMeasurement["source"], string> = {
+  manual: "",
+  conclusion: "из заключения приёма",
+  import: "из архива заключений",
+};
 
-export function readMeasurement(record: ProgramModuleRecord, birthDate: string | null): Measurement {
-  const heightCm = positive(record.data.heightCm);
-  const weightKg = positive(record.data.weightKg);
+export function fromApiMeasurement(
+  row: GrowthMeasurement,
+  birthDate: string | null,
+  gestation?: Gestation | null,
+): Measurement {
+  const { months, corrected } = normsAge(birthDate, row.measuredOn, gestation);
   return {
-    record,
-    at: record.occurredAt,
-    months: ageMonths(birthDate, record.occurredAt),
-    heightCm,
-    weightKg,
-    headCm: positive(record.data.headCircumferenceCm),
-    chestCm: positive(record.data.chestCircumferenceCm),
-    bmi: bmi(weightKg, heightCm),
+    key: `m-${row.id}`,
+    id: row.id,
+    at: row.measuredOn,
+    months,
+    corrected,
+    heightCm: row.lengthHeightCm,
+    heightNormsCm: heightForNorms(row.lengthHeightCm, row.position, months),
+    position: row.position,
+    weightKg: row.weightKg,
+    headCm: row.headCircumferenceCm,
+    chestCm: row.chestCircumferenceCm,
+    bmi: bmi(row.weightKg, row.lengthHeightCm),
+    author: row.createdBy?.fullName ?? "",
+    editable: row.source === "manual",
+    sourceLabel: SOURCE_LABELS[row.source],
+    appointmentId: row.appointmentId,
+    notes: row.notes,
   };
 }
 
-/** Замеры от новых к старым; запланированные записи — не замеры. */
-export function readMeasurements(records: ReadonlyArray<ProgramModuleRecord>, birthDate: string | null): Measurement[] {
-  return records
-    .filter((record) => record.status !== "planned")
-    .map((record) => readMeasurement(record, birthDate))
-    .sort((a, b) => dayjs(b.at).valueOf() - dayjs(a.at).valueOf());
+/** Замеры от новых к старым и точка рождения из профиля последней. */
+export function readGrowth(data: GrowthData): Measurement[] {
+  const gestation = { weeks: data.gestationalAgeWeeks, days: data.gestationalAgeDays };
+  const list = data.measurements
+    .map((row) => fromApiMeasurement(row, data.birthDate, gestation))
+    .sort((a, b) => dayjs(b.at).valueOf() - dayjs(a.at).valueOf() || (b.id ?? 0) - (a.id ?? 0));
+  if (data.birth && data.birthDate) {
+    const { months, corrected } = normsAge(data.birthDate, data.birthDate, gestation);
+    list.push({
+      key: "birth",
+      id: null,
+      at: data.birthDate,
+      months,
+      corrected,
+      heightCm: data.birth.lengthCm,
+      heightNormsCm: data.birth.lengthCm,
+      position: "recumbent",
+      weightKg: data.birth.weightKg,
+      headCm: data.birth.headCircumferenceCm,
+      chestCm: null,
+      bmi: bmi(data.birth.weightKg, data.birth.lengthCm),
+      author: "",
+      editable: false,
+      sourceLabel: "при рождении",
+      appointmentId: null,
+      notes: "",
+    });
+  }
+  return list;
 }
 
 export function assessMeasurement(item: Measurement, key: MeasureKey, sex: GrowthSex | null): GrowthAssessment | null {
-  return assess(INDICATOR_OF[key], sex, item.months, item[key]);
+  const value = key === "heightCm" ? item.heightNormsCm : item[key];
+  return assess(INDICATOR_OF[key], sex, item.months, value);
 }
 
 /** Ближайший более ранний замер, где показатель есть. */
@@ -87,12 +173,14 @@ export function deltaLabel(current: number, previous: number, unit: string, from
     days < 45
       ? `${Math.max(1, Math.round(days / 7))} нед.`
       : days < 730
-        ? `${Math.round(days / 30.4375)} мес.`
+        ? `${Math.round(days / DAYS_PER_MONTH)} мес.`
         : `${(days / 365.25).toFixed(1).replace(".", ",")} г.`;
   return `${sign}${amount} ${unit} за ${span}`;
 }
 
 export interface GrowthForm {
+  measuredOn: string;
+  position: MeasurementPosition;
   heightCm: string;
   weightKg: string;
   headCm: string;
@@ -100,54 +188,81 @@ export interface GrowthForm {
   notes: string;
 }
 
-export function emptyGrowthForm(): GrowthForm {
-  return { heightCm: "", weightKg: "", headCm: "", chestCm: "", notes: "" };
+export function emptyGrowthForm(measuredOn: string, position: MeasurementPosition): GrowthForm {
+  return { measuredOn, position, heightCm: "", weightKg: "", headCm: "", chestCm: "", notes: "" };
 }
 
 const text = (value: number | null): string => (value == null ? "" : String(value));
 
 export function growthToForm(item: Measurement): GrowthForm {
   return {
+    measuredOn: item.at,
+    position: item.position,
     heightCm: text(item.heightCm),
     weightKg: text(item.weightKg),
     headCm: text(item.headCm),
     chestCm: text(item.chestCm),
-    notes: item.record.notes,
+    notes: item.notes,
   };
 }
 
-/** «123,5» → 123.5; пусто и не больше нуля → null. */
+/** Положительное число: «123,5» → 123.5; пусто и не больше нуля → null. */
 export function parseMeasure(raw: string): number | null {
-  return positive(raw);
+  const parsed = Number(raw.trim().replace(",", "."));
+  return raw.trim() && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-const MEASURE_KEYS: ReadonlySet<string> = new Set(["heightCm", "weightKg", "headCircumferenceCm", "chestCircumferenceCm"]);
+export type MeasureField = "heightCm" | "weightKg" | "headCm" | "chestCm";
 
-/**
- * Данные записи: замеры — только заполненные, числами; прочие поля раздела
- * (клиника могла добавить их в конструкторе) при правке не теряются.
- */
-export function buildGrowthData(form: GrowthForm, previous: Record<string, unknown> = {}): Record<string, unknown> {
-  const data: Record<string, unknown> = Object.fromEntries(Object.entries(previous).filter(([key]) => !MEASURE_KEYS.has(key)));
-  const put = (key: string, raw: string) => {
-    const value = parseMeasure(raw);
-    if (value != null) data[key] = value;
-  };
-  put("heightCm", form.heightCm);
-  put("weightKg", form.weightKg);
-  put("headCircumferenceCm", form.headCm);
-  put("chestCircumferenceCm", form.chestCm);
-  return data;
+/** Пределы, как на сервере (модель замера): вне их значение не сохранить. */
+export const MEASURE_LIMITS: Record<MeasureField, { min: number; max: number; unit: string }> = {
+  heightCm: { min: 30, max: 250, unit: "см" },
+  weightKg: { min: 0.3, max: 250, unit: "кг" },
+  headCm: { min: 20, max: 70, unit: "см" },
+  chestCm: { min: 25, max: 130, unit: "см" },
+};
+
+const decimal = (value: number): string => String(value).replace(".", ",");
+
+/** Ошибка поля замера для подсказки под ним; пусто или в пределах — null. */
+export function measureError(field: MeasureField, raw: string): string | null {
+  const text = raw.trim();
+  if (!text) return null;
+  const value = Number(text.replace(",", "."));
+  if (!Number.isFinite(value)) return "Нужно число";
+  const { min, max, unit } = MEASURE_LIMITS[field];
+  return value < min || value > max ? `От ${decimal(min)} до ${decimal(max)} ${unit}` : null;
 }
 
-/** Рост и вес обязательны — так в схеме конструктора. */
+const MEASURE_FIELDS: ReadonlyArray<MeasureField> = ["heightCm", "weightKg", "headCm", "chestCm"];
+
+/** Нужна дата, хотя бы одно значение и все значения в пределах. */
 export function growthFormValid(form: GrowthForm): boolean {
-  return parseMeasure(form.heightCm) != null && parseMeasure(form.weightKg) != null;
+  const values = MEASURE_FIELDS.map((field) => parseMeasure(form[field]));
+  return (
+    Boolean(form.measuredOn) &&
+    values.some((value) => value != null) &&
+    MEASURE_FIELDS.every((field) => measureError(field, form[field]) == null)
+  );
+}
+
+/** Тело запроса замера: числа, длина или рост — с положением. */
+export function buildMeasurementInput(form: GrowthForm): MeasurementInput {
+  const height = parseMeasure(form.heightCm);
+  return {
+    measuredOn: form.measuredOn,
+    weightKg: parseMeasure(form.weightKg),
+    lengthHeightCm: height,
+    position: height == null ? "" : form.position,
+    headCircumferenceCm: parseMeasure(form.headCm),
+    chestCircumferenceCm: parseMeasure(form.chestCm),
+    notes: form.notes.trim(),
+  };
 }
 
 /** Кнопки ±: шаг от текущего значения, не меньше нуля. */
 export function stepValue(raw: string, delta: number, digits: number): string {
-  const current = positive(raw) ?? 0;
+  const current = parseMeasure(raw) ?? 0;
   const next = Math.max(0, Math.round((current + delta) * 10 ** digits) / 10 ** digits);
   return String(next);
 }

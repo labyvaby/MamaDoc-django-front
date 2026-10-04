@@ -53,6 +53,7 @@ import PatientOldConclusionsPanel from "./components/PatientOldConclusionsPanel"
 import OldConclusionDetailsCard from "./components/OldConclusionDetailsCard";
 import { useOldConclusions } from "./useOldConclusions";
 import { PatientRegistryBlock } from "../../components/patients/PatientRegistryBlock";
+import { PatientHealthPanel } from "../../components/health/PatientHealthPanel";
 import { IntakeWizard } from "../registry/intake/IntakeWizard";
 import type { ExistingPerson } from "../registry/intake/intakeState";
 import { toExistingPerson } from "../registry/registryConstants";
@@ -62,7 +63,7 @@ import type { OldConclusion } from "./useOldConclusions";
 
 const MotionBox = motion(Box);
 
-type RightTabKey = "card" | "history" | "old" | "vaccinations" | "lab";
+type RightTabKey = "card" | "history" | "old" | "vaccinations" | "lab" | "health";
 
 const DjangoPatientsPage: React.FC = () => {
   const { t } = useT("patients");
@@ -99,6 +100,9 @@ const DjangoPatientsPage: React.FC = () => {
   // права, и при выключенном у организации модуле lab, одной проверкой
   // (usePermissions().canAccess уже сверяет оба условия по moduleMapping.ts).
   const canViewLab = useCan("lab.view");
+  // Медпрофиль (книжка ребёнка, этап 2): только клиника; canAccess сверяет и
+  // право, и модуль «Приёмы», на котором висят права medical.*.
+  const canViewHealth = isClinic && canAccess("medical.health.view");
   const defaultBranchId = activeBranch?.id ?? null;
 
   // ── List data ──────────────────────────────────────────────────────────────
@@ -456,6 +460,8 @@ const DjangoPatientsPage: React.FC = () => {
     <PatientVaccinationsPanel patient={selected} />
   );
 
+  const healthNode = <PatientHealthPanel patient={selected} />;
+
   const labOrdersNode = (
     <PatientLabOrdersPanel
       selected={!!selected}
@@ -507,6 +513,7 @@ const DjangoPatientsPage: React.FC = () => {
   // vertical-словарь (useT) заточен под термины вакцинации/приёмов/заключений
   // и лишней сущности для лаборатории не заводил.
   const LAB_TAB_LABEL = "Анализы";
+  const HEALTH_TAB_LABEL = "Здоровье";
 
   const fullTabDefs: { key: RightTabKey; label: string }[] = [
     { key: "card", label: t("tabs.card") },
@@ -514,6 +521,7 @@ const DjangoPatientsPage: React.FC = () => {
     { key: "old", label: t("tabs.old") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
     ...(canViewLab ? [{ key: "lab" as const, label: LAB_TAB_LABEL }] : []),
+    ...(canViewHealth ? [{ key: "health" as const, label: HEALTH_TAB_LABEL }] : []),
   ];
 
   // Десктоп: карточка уже отдельной колонкой, правая колонка — история/архив.
@@ -522,6 +530,7 @@ const DjangoPatientsPage: React.FC = () => {
     { key: "old", label: t("tabs.oldFull") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
     ...(canViewLab ? [{ key: "lab" as const, label: LAB_TAB_LABEL }] : []),
+    ...(canViewHealth ? [{ key: "health" as const, label: HEALTH_TAB_LABEL }] : []),
   ];
 
   return (
@@ -572,6 +581,7 @@ const DjangoPatientsPage: React.FC = () => {
                   {tabletTab === "old" && oldConclusionsNode}
                   {tabletTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
                   {tabletTab === "lab" && canViewLab && labOrdersNode}
+                  {tabletTab === "health" && canViewHealth && healthNode}
                 </Box>
               </>
             ) : (
@@ -599,6 +609,7 @@ const DjangoPatientsPage: React.FC = () => {
                 {desktopRightTab === "old" && oldConclusionsNode}
                 {desktopRightTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
                 {desktopRightTab === "lab" && canViewLab && labOrdersNode}
+                {desktopRightTab === "health" && canViewHealth && healthNode}
               </Box>
             </MotionBox>
           </>
@@ -622,6 +633,7 @@ const DjangoPatientsPage: React.FC = () => {
             {mobileTab === "old" && oldConclusionsNode}
             {mobileTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
             {mobileTab === "lab" && canViewLab && labOrdersNode}
+            {mobileTab === "health" && canViewHealth && healthNode}
           </Box>
         </AppBottomSheet>
       )}

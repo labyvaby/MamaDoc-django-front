@@ -201,6 +201,8 @@ export interface RegistryRow {
   lastInteraction: { occurredAt: string; channel: string; outcome: string } | null;
   /** Последний приём, где ребёнок был (пришёл / на приёме / завершён); `null` — визитов нет. */
   lastVisitAt: string | null;
+  /** Последний день оплаченного срока, который ещё идёт; до него снять с учёта нельзя. */
+  paidUntil?: string | null;
 }
 
 export type RegistryCounts = Record<RegistryTab, number>;

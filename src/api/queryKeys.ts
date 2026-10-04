@@ -114,6 +114,37 @@ export const djangoQueryKeys = {
       ["django", "programs", "price-quote", scope, params] as const,
   },
 
+  // Медпрофиль пациента (книжка ребёнка, этап 2). orgId — организация скоупа:
+  // пациент ищется в скоупе пациентов сотрудника, филиал не нужен.
+  health: {
+    all: ["django", "health"] as const,
+    patient: (patientId: number) => ["django", "health", "patient", patientId] as const,
+    summary: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "summary", orgId] as const,
+    alert: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "alert", orgId] as const,
+    allergies: (patientId: number, status: string, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "allergies", status, orgId] as const,
+    conditions: (patientId: number, params: unknown, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "conditions", params, orgId] as const,
+    hospitalizations: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "hospitalizations", orgId] as const,
+    family: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "family", orgId] as const,
+    familySuggestions: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "family-suggestions", orgId] as const,
+    growth: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "growth", orgId] as const,
+    visitConclusions: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "visit-conclusions", orgId] as const,
+    medications: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "medications", orgId] as const,
+    changes: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "changes", orgId] as const,
+    onboarding: (enrollmentId: number, orgId: number | undefined) =>
+      ["django", "health", "onboarding", enrollmentId, orgId] as const,
+  },
+
   cashbox: {
     summary: (filters: Record<string, unknown>) =>
       ["django", "cashbox", "summary", filters] as const,

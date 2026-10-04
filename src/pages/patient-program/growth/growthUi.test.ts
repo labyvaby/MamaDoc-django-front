@@ -27,3 +27,16 @@ describe("growth ui helpers", () => {
     expect(formatNumber(15.86, 1)).toBe("15,9");
   });
 });
+
+describe("valueAxis", () => {
+  it("охватывает коридор ВОЗ и странную точку, деления круглые", async () => {
+    const { valueAxis } = await import("./growthUi");
+    expect(valueAxis([])).toBeNull();
+    const axis = valueAxis([44, 96]);
+    expect(axis?.domain).toEqual([40, 100]);
+    expect(axis?.ticks).toEqual([40, 50, 60, 70, 80, 90, 100]);
+    const wide = valueAxis([76, 90, 173]);
+    expect(wide?.domain[0]).toBeLessThanOrEqual(76);
+    expect(wide?.domain[1]).toBeGreaterThanOrEqual(173);
+  });
+});
