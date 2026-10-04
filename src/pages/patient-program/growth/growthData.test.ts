@@ -48,6 +48,7 @@ const DATA: GrowthData = {
     row(2, "2026-03-26", { lengthHeightCm: 75.7, weightKg: 9.6, source: "conclusion", appointmentId: 44 }),
   ],
   feeding: [],
+  foods: [],
 };
 
 describe("growthData", () => {

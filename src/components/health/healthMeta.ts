@@ -45,6 +45,7 @@ export const ALLERGEN_PRESETS: Record<AllergyCategory, string[]> = {
   food: [
     "Белок коровьего молока",
     "Куриное яйцо",
+    "Перепелиное яйцо",
     "Арахис",
     "Орехи",
     "Рыба",
