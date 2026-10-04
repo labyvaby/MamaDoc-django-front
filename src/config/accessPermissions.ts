@@ -51,6 +51,10 @@ export const PAGE_PERMISSIONS = {
   pos: "pos.view",
   // Застройщик (AIVIO): бэк пускает в биллинг по treasury.view или realty.view.
   billing: ["treasury.view", "realty.view"],
+  // ЭДО застройщика: реестр, договоры, шаблоны, архив — edo.view (менять — edo.manage).
+  edo: "edo.view",
+  // «Документы (CRM)» — файлы сделок модуля продаж.
+  salesDocuments: "realty.view",
   // Просмотр истории и незавершённых пересчётов доступен вместе со складом;
   // операции открытия/сканирования/завершения дополнительно проверяет API.
   inventory: "warehouse.view",

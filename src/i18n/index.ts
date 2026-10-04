@@ -25,6 +25,7 @@ import waitlist from "../locales/ru/waitlist.json";
 import deals from "../locales/ru/deals.json";
 import realestate from "../locales/ru/realestate.json";
 import billing from "../locales/ru/billing.json";
+import edo from "../locales/ru/edo.json";
 import { capitalize, genderForm, lower, prepForm } from "./formatters";
 
 /**
@@ -33,7 +34,7 @@ import { capitalize, genderForm, lower, prepForm } from "./formatters";
  * Новый модуль: добавить JSON в src/locales/ru/ и ключ сюда.
  */
 export const resources = {
-  ru: { common, patients, appointments, settings, employees, salaryReports, sales, vaccinations, reviews, cashbox, load, doctor, reports, sidebar, bookings, client, publicBooking, landing, print, services, waitlist, deals, realestate, billing },
+  ru: { common, patients, appointments, settings, employees, salaryReports, sales, vaccinations, reviews, cashbox, load, doctor, reports, sidebar, bookings, client, publicBooking, landing, print, services, waitlist, deals, realestate, billing, edo },
 } as const;
 
 export type Namespace = keyof (typeof resources)["ru"];

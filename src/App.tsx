@@ -104,6 +104,9 @@ const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
 const BillingPage = lazy(() => import("./pages/billing"));
+const EdoRegistryPage = lazy(() => import("./pages/edo/EdoRegistryPage"));
+const EdoTemplatesPage = lazy(() => import("./pages/edo/TemplatesPage"));
+const SalesDocumentsPage = lazy(() => import("./pages/edo/SalesDocumentsPage"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ReviewShortLinkPage = lazy(() => import("./pages/reviews/ShortLinkPage"));
@@ -1261,6 +1264,40 @@ function App() {
                                 <RequirePermission permission={PAGE_PERMISSIONS.billing}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <BillingPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            {/* Документы застройщика (AIVIO): ЭДО, реестр договоров, архив — один экран-реестр со срезом. */}
+                            {(["edo", "contracts", "archive"] as const).map((view) => (
+                              <Route
+                                key={view}
+                                path={`docs/${view}`}
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.edo}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <EdoRegistryPage scope={view} />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
+                            <Route
+                              path="docs/templates"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.edo}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <EdoTemplatesPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="realestate/documents"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.salesDocuments}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <SalesDocumentsPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

@@ -31,6 +31,7 @@ import { ApiError, isModuleDisabled } from "../../api/client";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { pillSx } from "../../components/ui";
 import { useCanChecker } from "../../hooks/useCan";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { useT } from "../../i18n/VerticalProvider";
@@ -58,15 +59,6 @@ export default function BillingPage() {
 
 const cardSx = { border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" } as const;
 
-function useDebounced<T>(value: T, ms = 350): T {
-  const [debounced, setDebounced] = React.useState(value);
-  React.useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), ms);
-    return () => clearTimeout(id);
-  }, [value, ms]);
-  return debounced;
-}
-
 function BillingScreen() {
   const { t } = useT("billing");
   const theme = useTheme();
@@ -91,7 +83,7 @@ function BillingScreen() {
 
   const [filter, setFilter] = React.useState<BillingFilter>("all");
   const [search, setSearch] = React.useState("");
-  const debouncedSearch = useDebounced(search);
+  const debouncedSearch = useDebouncedValue(search);
   const [createOpen, setCreateOpen] = React.useState(false);
   const listParams = React.useMemo(() => ({ filter, search: debouncedSearch }), [filter, debouncedSearch]);
 

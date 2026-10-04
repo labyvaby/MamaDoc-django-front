@@ -58,6 +58,9 @@ import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
+import DrawOutlined from "@mui/icons-material/DrawOutlined";
+import HandshakeOutlined from "@mui/icons-material/HandshakeOutlined";
+import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
@@ -416,6 +419,16 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canEmployees = can(PAGE_PERMISSIONS.employees);
   const canExpenses = can(PAGE_PERMISSIONS.expenses);
   const canBilling = can(PAGE_PERMISSIONS.billing) && seen("billing");
+  const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
+  const canEdo = can(PAGE_PERMISSIONS.edo);
+  const docsItems = canEdo
+    ? ([
+        ["edo", "/docs/edo", "ЭДО", <DrawOutlined key="i" />],
+        ["contracts", "/docs/contracts", "Договоры", <HandshakeOutlined key="i" />],
+        ["templates", "/docs/templates", "Шаблоны", <ContentCopyOutlined key="i" />],
+        ["archive", "/docs/archive", "Архив", <Inventory2Outlined key="i" />],
+      ] as const).filter(([screen]) => seen(screen))
+    : [];
 
   // Бейдж «Задачи» — тот же запрос и ключ, что в клиничном меню (кэш общий):
   // открытые задачи филиала, красный — если есть просроченные.
@@ -444,6 +457,7 @@ const RealEstateSidebarMenu: React.FC = () => {
   return (
     <List sx={{ py: 0, mt: 0.5 }}>
       {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
+      {canSalesDocs && <SidebarMenuItem to="/realestate/documents" icon={<FolderOutlined />} label="Документы CRM" collapsed={siderCollapsed} />}
       {canDeals && <SidebarMenuItem to="/deals" icon={<FilterAltOutlined />} label="Воронка продаж" collapsed={siderCollapsed} />}
       {canTasks && (
         <SidebarMenuItem to="/tasks" icon={<AssignmentOutlined />} label="Задачи" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
@@ -451,6 +465,11 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canBuyers && <SidebarMenuItem to="/patients" icon={<SearchOutlined />} label={t("allPatients")} collapsed={siderCollapsed} />}
       {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
       {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
+
+      {docsItems.length > 0 && sectionLabel("Документы")}
+      {docsItems.map(([screen, to, label, icon]) => (
+        <SidebarMenuItem key={screen} to={to} icon={icon} label={label} collapsed={siderCollapsed} />
+      ))}
 
       {canBilling && sectionLabel("Финансы")}
       {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
