@@ -54,7 +54,6 @@ import { useSnackbar } from "notistack";
 import { ApiError, getErrorMessage } from "../api/client";
 import { createExpense, createExpenseCategory, getExpenseCategories, voidExpense, type ExpenseCategory } from "../api/expenses";
 import { getReservation, getShiftNote, saveShiftNote, type HotelReservation } from "../api/hotel";
-import { getAllDjangoEmployees } from "../api/staff";
 import { useCan } from "../hooks/useCan";
 import { usePermissions } from "../hooks/usePermissions";
 import { subtleBg } from "../theme/uiHelpers";
@@ -79,6 +78,7 @@ import { fmtMoney } from "./hotelReportFormat";
 import { ReportEmpty, ReportFilters, ReportKpi, ReportLink, ReportSection, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { buildShiftReportHtml, type ShiftArrivalLine, type ShiftCounters, type ShiftExpenseLine, type ShiftPaymentLine } from "./hotelShiftPrint";
 import { DateStepper, useHotelTableSx } from "./hotelUi";
+import { useHotelEmployees } from "./useHotelEmployees";
 import { downloadXlsx, xlsxFileName } from "./hotelXlsx";
 
 const D = (d: dayjs.Dayjs) => d.format("YYYY-MM-DD");
@@ -395,11 +395,7 @@ export const HotelShiftReport: React.FC<{
     enabled: canManageExpenses && orgId != null,
   });
   const categories = (categoriesQuery.data ?? []).filter((c) => c.isActive);
-  const employeesQuery = useQuery({
-    queryKey: ["staff", "employees", "all", "active"],
-    queryFn: ({ signal }) => getAllDjangoEmployees({ status: "active" }, signal),
-    enabled: canManageExpenses,
-  });
+  const employeesQuery = useHotelEmployees(canManageExpenses);
   const [form, setForm] = React.useState<{ amount: string; name: string; categoryId: number | ""; method: "cash" | "card"; employeeId: number | "" }>({
     amount: "",
     name: "",

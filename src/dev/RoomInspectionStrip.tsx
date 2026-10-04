@@ -11,11 +11,10 @@ import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import HourglassTopOutlined from "@mui/icons-material/HourglassTopOutlined";
-import { useQuery } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 
 import { getErrorMessage } from "../api/client";
-import { getAllDjangoEmployees } from "../api/staff";
+import { useHotelEmployees } from "./useHotelEmployees";
 import type { RoomInspection } from "./useRoomInspection";
 
 export const RoomInspectionStrip: React.FC<{ inspection: RoomInspection; roomNumber: string | null; onAddCharge?: () => void }> = ({
@@ -26,13 +25,7 @@ export const RoomInspectionStrip: React.FC<{ inspection: RoomInspection; roomNum
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
-  const employeesQuery = useQuery({
-    queryKey: ["staff", "employees", "all", "active"],
-    queryFn: ({ signal }) => getAllDjangoEmployees({ status: "active" }, signal),
-    enabled: anchor != null,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
+  const employeesQuery = useHotelEmployees(anchor != null);
 
   if (!inspection.visible) return null;
   const { state, task, result } = inspection;

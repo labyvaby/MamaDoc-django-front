@@ -101,11 +101,17 @@ export function useSaveStaffPost(propertyId: number | undefined, isDemo: boolean
 
 /** Кого можно ставить в смену: в примере — люди из таблицы отеля, иначе — сотрудники организации. */
 export function useRosterEmployees(isDemo: boolean | undefined) {
+  // organizationId обязателен: суперпользователю /staff/employees/ без него отвечает 400,
+  // и в график было некого ставить.
+  const { activeOrganization } = usePermissions();
+  const orgId = activeOrganization?.id ?? null;
   return useQuery<RosterEmployee[]>({
-    queryKey: ["hotel", "rosterEmployees", isDemo],
+    queryKey: ["hotel", "rosterEmployees", isDemo, orgId],
     queryFn: async ({ signal }) =>
-      isDemo ? DEMO_EMPLOYEES : (await getAllDjangoEmployees({ status: "active" }, signal)).map((e) => ({ id: e.id, fullName: e.fullName })),
-    enabled: isDemo != null,
+      isDemo
+        ? DEMO_EMPLOYEES
+        : (await getAllDjangoEmployees({ status: "active", organizationId: orgId! }, signal)).map((e) => ({ id: e.id, fullName: e.fullName })),
+    enabled: isDemo != null && (isDemo || orgId != null),
     staleTime: 5 * 60_000,
   });
 }

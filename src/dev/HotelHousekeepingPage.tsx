@@ -79,11 +79,11 @@ import {
   type HotelHousekeepingTask,
   type HotelHousekeepingTaskCreateData,
 } from "../api/hotel";
-import { getAllDjangoEmployees } from "../api/staff";
 import { ApiError, getErrorMessage } from "../api/client";
 import { useCan } from "../hooks/useCan";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import { usePermissions } from "../hooks/usePermissions";
+import { useHotelEmployees } from "./useHotelEmployees";
 import { appendInspectionResult, isCheckoutInspection, parseInspectionResult } from "./roomInspection";
 
 type TaskKind = "checkout" | "stayover" | "inspection" | "maintenance";
@@ -254,14 +254,8 @@ export const HotelHousekeepingPage: React.FC = () => {
   // Список сотрудников для назначения — если у роли нет staff.view, запрос
   // просто вернёт ошибку и пикер останется пустым (задачу всё ещё можно
   // создать без исполнителя), поэтому isError здесь намеренно не проверяем.
-  const employeesQuery = useQuery({
-    queryKey: ["staff", "employees", "all", "active"],
-    queryFn: ({ signal }) => getAllDjangoEmployees({ status: "active" }, signal),
-    // Список нужен только в форме задачи — не грузим его вместе со страницей.
-    enabled: formOpen,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
+  // Список нужен только в форме задачи — не грузим его вместе со страницей.
+  const employeesQuery = useHotelEmployees(formOpen);
   const employees = employeesQuery.data ?? [];
 
   const invalidateAfterChange = (roomStateChanged: boolean) => {
