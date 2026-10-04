@@ -22,6 +22,7 @@ import { usePermissions } from "../hooks/usePermissions";
 import { fmtMoney } from "./hotelReportFormat";
 import { formatHotelDateRange } from "./mockDemoData";
 import { useSiteRequests } from "./useSiteRequests";
+import { useHotelRealtime } from "./hotelRealtime";
 
 /** Короткий двойной сигнал. Браузер даёт звук только после первого клика по странице — иначе молча без него. */
 function chime() {
@@ -62,6 +63,8 @@ export const siteRequestLine = (r: HotelReservation): string => {
 export const HotelSiteRequestsNotifier: React.FC = () => {
   const { activeOrganization, loading } = usePermissions();
   const isHotel = !loading && activeOrganization?.vertical === "hotel";
+  // Одна подписка отеля на сокет на всё приложение — заявки, отмены, уведомления.
+  useHotelRealtime(isHotel);
   const { requests } = useSiteRequests(isHotel);
   const { enqueueSnackbar, closeSnackbar } = useSnackbar();
   const navigate = useNavigate();
