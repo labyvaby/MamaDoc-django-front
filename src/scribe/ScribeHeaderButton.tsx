@@ -16,6 +16,7 @@ import RecordVoiceOverOutlined from "@mui/icons-material/RecordVoiceOverOutlined
 
 import type { ScribeConsent, ScribeMode } from "../api/scribe";
 import { useT } from "../i18n/VerticalProvider";
+import { consentMenu } from "./consentMenu";
 
 /**
  * Кнопка «Запись» в шапке окна заключения: меню «весь приём / надиктовать».
@@ -30,6 +31,15 @@ export const ScribeHeaderButton: React.FC<{
 }> = ({ consent, compact, disabled, onStart }) => {
   const { t } = useT("scribe");
   const [anchor, setAnchor] = React.useState<HTMLElement | null>(null);
+  /**
+   * «Нет» из плашки: запись не начинается — «Весь приём» гаснет с подписью
+   * «пациент отказался». Ответ уйдёт на сервер вместе с диктовкой, если
+   * врач её выберет (отдельной отметки согласия у врача может не быть).
+   */
+  const [refused, setRefused] = React.useState(false);
+  // Сервер прислал другое согласие (отметили в карточке) — ответ из меню устарел.
+  React.useEffect(() => setRefused(false), [consent]);
+  const menu = consentMenu(consent, refused);
   const close = () => setAnchor(null);
   const pick = (mode: ScribeMode, answer?: "yes" | "no") => {
     close();
@@ -65,31 +75,30 @@ export const ScribeHeaderButton: React.FC<{
         </span>
       </Tooltip>
       <Menu anchorEl={anchor} open={anchor != null} onClose={close}>
-        <MenuItem disabled={consent !== "yes"} onClick={() => pick("visit")}>
+        <MenuItem disabled={!menu.visitEnabled} onClick={() => pick("visit")}>
           <ListItemIcon>
             <GroupsOutlined fontSize="small" />
           </ListItemIcon>
           <ListItemText
             primary={t("menu.visit")}
-            secondary={consent === "no" ? t("menu.visitRefused") : t("menu.visitHint")}
+            secondary={menu.shown === "no" ? t("menu.visitRefused") : t("menu.visitHint")}
           />
         </MenuItem>
-        {consent === "unknown" && (
+        {menu.askConsent && (
           <Alert severity="warning" sx={{ mx: 1.5, my: 0.5, maxWidth: 320 }}>
             {t("menu.consentQuestion")}
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
               <Button size="small" variant="contained" onClick={() => pick("visit", "yes")}>
                 {t("menu.consentYes")}
               </Button>
-              {/* «Нет» сохраняется вместе со стартом диктовки: отдельной
-                  отметки согласия у врача может не быть (scribe.consent.set). */}
-              <Button size="small" onClick={() => pick("dictation", "no")}>
+              <Button size="small" onClick={() => setRefused(true)}>
                 {t("menu.consentNo")}
               </Button>
             </Stack>
           </Alert>
         )}
-        <MenuItem onClick={() => pick("dictation")}>
+        {/* Отказ, отмеченный в меню, уходит вместе с диктовкой и сохраняется. */}
+        <MenuItem onClick={() => pick("dictation", menu.dictationConsent)}>
           <ListItemIcon>
             <RecordVoiceOverOutlined fontSize="small" />
           </ListItemIcon>

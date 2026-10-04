@@ -146,6 +146,7 @@ import {
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePermissions } from "../../hooks/usePermissions";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import { getErrorMessage } from "../../api/client";
 import {
   cancelScribeRecording,
   markScribeApplied,
@@ -164,6 +165,7 @@ import { scribeQueryKey, useScribeRecorder } from "../../scribe/ScribeRecorderPr
 import { ScribeStrip } from "../../scribe/ScribeStrip";
 import { ScribeTranscript } from "../../scribe/ScribeTranscript";
 import { scribeRecordingKey, useScribeLine } from "../../scribe/useScribeLine";
+import { SCRIBE_SLICE_MS } from "../../scribe/unfinishedRecording";
 
 import {
   upsertConclusion,
@@ -1797,11 +1799,13 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
   const [scribeDiagnoses, setScribeDiagnoses] = React.useState<ScribeDiagnosis[]>([]);
   const scribeAppliedRef = React.useRef<number | null>(null);
   React.useEffect(() => {
+    // Без ИИ-записи состояние не трогаем: лишний рендер окна ни к чему.
+    if (!canScribe) return;
     setScribeApplied({});
     setScribeReview(null);
     setScribeDiagnoses([]);
     scribeAppliedRef.current = null;
-  }, [open, draftId]);
+  }, [open, draftId, canScribe]);
 
   const scribeMarked = (key: string, value: string) =>
     scribeApplied[key] != null && scribeApplied[key] === value;
@@ -1888,8 +1892,9 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
   const scribeFormsSettled = !formsEnabled || formsQuery.isFetched;
   const [scribeFormKey, setScribeFormKey] = React.useState<string | null>(null);
   React.useEffect(() => {
+    if (!canScribe) return;
     setScribeFormKey(open && hydratedRef.current && scribeFormsSettled ? hydrationKey : null);
-  }, [open, hydrationKey, scribeFormsSettled]);
+  }, [open, hydrationKey, scribeFormsSettled, canScribe]);
 
   // Готовый и ещё не применённый результат — применить один раз.
   const scribeReady =
@@ -1925,6 +1930,13 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
 
   const scribeRefresh = () =>
     void queryClient.invalidateQueries({ queryKey: scribeQueryKey(serviceLineId) });
+  /** Действие с записью из полосы: ошибка — тостом, затем свежий контекст строки. */
+  const scribeAction = (run: () => Promise<unknown>) =>
+    run()
+      .catch((err) => {
+        notify?.({ type: "error", message: getErrorMessage(err, ts("errors.action_failed")) });
+      })
+      .finally(scribeRefresh);
   const startScribe = (mode: ScribeMode, consent?: "yes" | "no") =>
     void recorder?.start({ lineId: serviceLineId, mode, consent });
 
@@ -2962,16 +2974,12 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         <ScribeStrip
           lineId={serviceLineId}
           recorder={recorder}
-          latest={scribe.latest}
-          onRetry={(id) => void retryScribeRecording(id).catch(() => undefined).finally(scribeRefresh)}
+          recordings={scribe.line?.recordings ?? []}
+          onRetry={(id) => scribeAction(() => retryScribeRecording(id))}
           onSendAbandoned={(rec) =>
-            void stopScribeRecording(rec.id, rec.chunkCount * 15_000)
-              .catch(() => undefined)
-              .finally(scribeRefresh)
+            scribeAction(() => stopScribeRecording(rec.id, rec.chunkCount * SCRIBE_SLICE_MS))
           }
-          onDeleteAbandoned={(rec) =>
-            void cancelScribeRecording(rec.id).catch(() => undefined).finally(scribeRefresh)
-          }
+          onDeleteAbandoned={(rec) => scribeAction(() => cancelScribeRecording(rec.id))}
         />
       )}
 
