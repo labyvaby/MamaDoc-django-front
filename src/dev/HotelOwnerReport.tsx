@@ -356,9 +356,9 @@ export const HotelOwnerReport: React.FC<{
               <Alert
                 severity="warning"
                 variant="outlined"
-                sx={{ mt: 1.5 }}
+                sx={{ mt: 1.5, flexWrap: { xs: "wrap", md: "nowrap" }, "& .MuiAlert-action": { width: { xs: "100%", md: "auto" }, ml: { xs: 0, md: "auto" }, pl: { xs: "36px", md: 2 }, pt: { xs: 0, md: "4px" } } }}
                 action={
-                  <Button color="inherit" size="small" onClick={() => navigate("/reception")}>
+                  <Button color="inherit" size="small" onClick={() => navigate("/reception")} sx={{ whiteSpace: "nowrap" }}>
                     На ресепшен
                   </Button>
                 }

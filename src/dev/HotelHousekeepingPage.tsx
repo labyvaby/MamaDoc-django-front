@@ -633,7 +633,7 @@ export const HotelHousekeepingPage: React.FC = () => {
                       <TableCell>
                         {task.assignedToName ? (
                           <Stack direction="row" alignItems="center" gap={1}>
-                            <Avatar sx={{ width: 26, height: 26, fontSize: 11, fontWeight: 700 }}>{initialsOf(task.assignedToName)}</Avatar>
+                            <Avatar sx={{ width: 26, height: 26, fontSize: 11, fontWeight: 700, bgcolor: "action.selected", color: "text.primary" }}>{initialsOf(task.assignedToName)}</Avatar>
                             <Typography variant="body2" noWrap>
                               {task.assignedToName}
                             </Typography>

@@ -42,21 +42,12 @@ export type FormFieldProps = Omit<TextFieldProps, "onChange" | "value" | "type">
   showValid?: boolean;
 };
 
-export const FormField: React.FC<FormFieldProps> = ({
-  value,
-  onValueChange,
-  icon,
-  rules = {},
-  showErrors = false,
-  unit,
-  showValid,
-  helperText,
-  onBlur,
-  slotProps,
-  select,
-  required,
-  ...rest
-}) => {
+// forwardRef: Collapse, Tooltip и другие обёртки MUI вешают ref на ребёнка —
+// без него React пишет в консоль «Function components cannot be given refs».
+export const FormField = React.forwardRef<HTMLDivElement, FormFieldProps>(function FormField(
+  { value, onValueChange, icon, rules = {}, showErrors = false, unit, showValid, helperText, onBlur, slotProps, select, required, ...rest },
+  ref,
+) {
   const [touched, setTouched] = React.useState(false);
   const effectiveRules: FieldRules = { ...rules, required: rules.required ?? required };
   const error = fieldError(value, effectiveRules);
@@ -78,6 +69,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   return (
     <TextField
       {...rest}
+      ref={ref}
       select={select}
       required={effectiveRules.required}
       type="text"
@@ -122,6 +114,6 @@ export const FormField: React.FC<FormFieldProps> = ({
       }}
     />
   );
-};
+});
 
 export default FormField;

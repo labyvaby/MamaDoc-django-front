@@ -276,6 +276,8 @@ export const HotelPricingRulesPage: React.FC = () => {
                 const amount = Number(rule.adjustmentValue);
                 const isDiscount = amount < 0;
                 const tone = isDiscount ? theme.palette.success.main : theme.palette.warning.main;
+                // Текст плашки: в светлой теме основной оттенок на своей подложке не дотягивает до 3:1.
+                const toneText = theme.palette.mode === "dark" ? tone : isDiscount ? theme.palette.success.dark : theme.palette.warning.dark;
                 // Пустой roomTypeIds — не «ни одной категории», а «все категории объекта,
                 // включая заведённые позже» (см. комментарий у HotelPricingRule.roomTypeIds).
                 const allCategories = rule.roomTypeIds.length === 0;
@@ -321,7 +323,7 @@ export const HotelPricingRulesPage: React.FC = () => {
                         borderRadius: "10px",
                         textAlign: "center",
                         bgcolor: rule.isActive ? alpha(tone, theme.palette.mode === "dark" ? 0.18 : 0.12) : subtleBg(theme, true),
-                        color: rule.isActive ? tone : "text.disabled",
+                        color: rule.isActive ? toneText : "text.disabled",
                       }}
                     >
                       <Typography sx={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1, fontVariantNumeric: "tabular-nums", color: "inherit" }}>

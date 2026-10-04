@@ -64,11 +64,12 @@ import {
   Stack,
   Tab,
   Tabs,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
-  TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
@@ -128,6 +129,8 @@ export interface ReservationDetailsDialogProps {
 
 export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> = ({ reservationId, initialItemId, onClose }) => {
   const theme = useTheme();
+  // На телефоне окно с полями по 32 px теряло шестую часть ширины — во весь экран, как ящики брони и гостя.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
   const queryClient = useQueryClient();
   const canManageReservation = useCan("hotel.reservations.manage");
   const canManageStays = useCan("hotel.stays.manage");
@@ -212,6 +215,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setActiveItemId(initialItemId ?? null);
     setActionError(null);
     setCheckInNeedsForce(false);
+    setCheckInNeedsDocument(false);
+    setDocumentSaved(false);
     setCheckOutNeedsForce(false);
     setCheckOutNeedsInspection(false);
     setCancelPromptOpen(false);
@@ -547,7 +552,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
           </ToggleButton>
         </ToggleButtonGroup>
         {paymentError && <Alert severity="error">{paymentError}</Alert>}
-        <Stack direction="row" gap={1.5}>
+        {/* На телефоне три поля в ряд не помещались (способ — «Н…», сумма за единицей): способ своей строкой. */}
+        <Stack direction="row" gap={1.5} sx={{ flexWrap: { xs: "wrap", md: "nowrap" } }}>
           <TextField
             select
             label={paymentKind === "refund" ? "Способ возврата" : "Способ оплаты"}
@@ -555,7 +561,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
             onChange={(e) => setPaymentMethod(e.target.value)}
             slotProps={{ input: { startAdornment: <FieldIcon icon={<AccountBalanceWalletOutlined />} /> } }}
             size="small"
-            sx={{ flex: 1 }}
+            sx={{ flex: 1, minWidth: { xs: "100%", md: "auto" } }}
             disabled={paymentSaving}
           >
             {paymentMethodChoices.length === 0 && (
@@ -711,9 +717,10 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
       onClose={onClose}
       maxWidth="md"
       fullWidth
+      fullScreen={phone}
       // Окно прижато к верху: при смене вкладок высота меняется, и по центру оно бы «прыгало».
       sx={{ "& .MuiDialog-container": { alignItems: { md: "flex-start" } } }}
-      PaperProps={{ sx: { borderRadius: "16px", overflow: "hidden", backgroundImage: "none", mt: { md: 5 } } }}
+      PaperProps={{ sx: { borderRadius: phone ? 0 : "16px", overflow: "hidden", backgroundImage: "none", mt: { md: 5 } } }}
     >
       {reservationId != null && !reservation && (
         <Stack alignItems="center" justifyContent="center" gap={1.5} sx={{ py: 8 }}>
@@ -1155,7 +1162,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     <Stack gap={1}>
                       {item.guests.map((g) => (
                         <Stack key={g.id} direction="row" alignItems="center" gap={1.25}>
-                          <Avatar sx={{ width: 34, height: 34, fontSize: 12, fontWeight: 700 }}>{initialsOf(g.fullName)}</Avatar>
+                          <Avatar sx={{ width: 34, height: 34, fontSize: 12, fontWeight: 700, bgcolor: "action.selected", color: "text.primary" }}>{initialsOf(g.fullName)}</Avatar>
                           <Box sx={{ flex: 1, minWidth: 0 }}>
                             <Typography variant="body2" fontWeight={600} noWrap>
                               {g.fullName}
