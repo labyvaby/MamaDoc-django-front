@@ -347,13 +347,14 @@ const NightPricesEditor: React.FC<{
           Своя цена ночи начнёт сохраняться после обновления сервера — интерфейс уже готов.
         </Alert>
       )}
-      <Stack direction={{ xs: "column", sm: "row" }} gap={1} alignItems={{ sm: "center" }} sx={{ mb: 1.5 }}>
+      {/* sm в теме — 360 px (телефон): в ряд и в несколько колонок — только с md. */}
+      <Stack direction={{ xs: "column", md: "row" }} gap={1} alignItems={{ md: "center" }} sx={{ mb: 1.5 }}>
         <TextField
           size="small"
           label="Всем ночам"
           value={all}
           onChange={(e) => setAll(e.target.value.replace(/[^\d.,]/g, "").slice(0, 9))}
-          sx={{ width: { sm: 170 } }}
+          sx={{ width: { md: 170 } }}
           slotProps={{ input: { endAdornment: <InputAdornment position="end">{unit}</InputAdornment> }, htmlInput: { inputMode: "decimal" } }}
         />
         <Button
@@ -374,11 +375,11 @@ const NightPricesEditor: React.FC<{
           label="Скидка"
           value={discount}
           onChange={(e) => setDiscount(e.target.value.replace(/[^\d.,]/g, "").slice(0, 5))}
-          sx={{ width: { sm: 120 } }}
+          sx={{ width: { md: 120 } }}
           slotProps={{ input: { endAdornment: <InputAdornment position="end">%</InputAdornment> }, htmlInput: { inputMode: "decimal" } }}
         />
       </Stack>
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1fr 1fr 1fr" }, gap: 1 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr" }, gap: 1 }}>
         {item.nights.map((n) => {
           const isChanged = resetDates.has(n.date) || Number(prices[n.date]) !== Number(n.price);
           const base = n.basePrice != null ? Number(n.basePrice) : null;
@@ -446,7 +447,7 @@ const NightPricesEditor: React.FC<{
         sx={{ mt: 1.5 }}
         helperText="Обязательно — попадёт в историю брони вместе с вашим именем"
       />
-      <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ sm: "center" }} gap={1.5} sx={{ mt: 1.5 }}>
+      <Stack direction={{ xs: "column", md: "row" }} alignItems={{ md: "center" }} gap={1.5} sx={{ mt: 1.5 }}>
         <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
           Было {money(oldTotal)} → станет <b>{money(discountNum ? Math.round(total * (1 - discountNum / 100) * 100) / 100 : total)}</b>
           {discountNum ? ` (скидка ${discountNum}%)` : serverDiscount && discountChanged ? " (скидка снята)" : ""}
