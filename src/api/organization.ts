@@ -13,6 +13,29 @@ export type PatientScope = "shared" | "per_branch";
  *  подтверждения (бэк отвечает 409 со списком конфликтов). */
 export type AppointmentOverlapMode = "forbid" | "warn";
 
+/** Реквизиты организации (шапка формы №2 ОПиУ); "" — не заполнено. */
+export interface OrganizationRequisites {
+  legalName: string;
+  inn: string;
+  okpo: string;
+  activityName: string;
+  activityCode: string;
+  governingBody: string;
+  governingBodyCode: string;
+  ownershipForm: string;
+  ownershipFormCode: string;
+  legalAddress: string;
+  directorName: string;
+  chiefAccountantName: string;
+  chiefAccountantPhone: string;
+}
+
+export const EMPTY_REQUISITES: OrganizationRequisites = {
+  legalName: "", inn: "", okpo: "", activityName: "", activityCode: "", governingBody: "",
+  governingBodyCode: "", ownershipForm: "", ownershipFormCode: "", legalAddress: "",
+  directorName: "", chiefAccountantName: "", chiefAccountantPhone: "",
+};
+
 export interface DjangoOrganization {
   id: number;
   name: string;
