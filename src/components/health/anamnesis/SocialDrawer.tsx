@@ -29,7 +29,9 @@ import { fullYears, lowerFirst } from "./russian";
 import { useApplyLifeAnamnesis } from "./useAnamnesis";
 import { useFormReset } from "./useFormReset";
 
-type SocialForm = Required<Omit<LifeSocialUpdate, "rooms">> & { rooms: string };
+// Отметки «операций / травм / переливаний не было» ставятся на вкладке
+// «Болезни и аллергии», окно «Семья и быт» их не трогает.
+type SocialForm = Required<Omit<LifeSocialUpdate, "rooms" | "hadOperations" | "hadInjuries" | "hadTransfusions">> & { rooms: string };
 
 function toForm(s: LifeAnamnesisSocial): SocialForm {
   return {

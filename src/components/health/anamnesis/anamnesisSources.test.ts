@@ -121,6 +121,11 @@ describe("illnessEntries", () => {
 });
 
 describe("surgeriesInput", () => {
+  it("отметки «не было» из «Семьи и быта»: только false, не отмечено — без отрицания", () => {
+    const input = surgeriesInput([], { hadOperations: false, hadInjuries: null, hadTransfusions: true });
+    expect([input.noneOperations, input.noneInjuries, input.noneTransfusions]).toEqual([true, false, false]);
+  });
+
   it("записи как есть, без отметок «не было»", () => {
     const rows = [
       { id: 1, kind: "operation", status: "recorded", performedOn: "2025-11-14", title: "Грыжесечение", transfusionProduct: "" },

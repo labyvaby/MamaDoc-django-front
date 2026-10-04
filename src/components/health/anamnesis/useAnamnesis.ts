@@ -72,7 +72,8 @@ export interface AnamnesisSources {
  * Вход чистых функций из ответов сервера. Закрытые сведения — только при праве
  * и если сервер их отдал; прививки — только при `vaccinations.view`. Болезни —
  * из «Истории болезней» (случаи из приёмов, архив, внесённые вручную), пока её
- * нет — из диагнозов медкарты. Отметки «болезней не было» в разделах нет.
+ * нет — из диагнозов медкарты. Отметки «операций / травм / переливаний не было» —
+ * из «Семьи и быта»; отметки «болезней не было» в разделах нет.
  */
 export function assembleAnamnesisInput(sources: AnamnesisSources, access: Pick<AnamnesisAccess, "canSeeSensitive" | "canSeeVaccinations">): AnamnesisInput {
   const { life, health, growth } = sources;
@@ -98,7 +99,7 @@ export function assembleAnamnesisInput(sources: AnamnesisSources, access: Pick<A
     noPastIllnesses: null,
     feeding: growth.feeding,
     complementaryFeedingOn: growth.complementaryFeedingOn ?? profile.complementaryFeedingOn,
-    surgeries: sources.surgeries ? surgeriesInput(sources.surgeries) : null,
+    surgeries: sources.surgeries ? surgeriesInput(sources.surgeries, life.social) : null,
     vaccinations:
       access.canSeeVaccinations && (sources.schedule || sources.history)
         ? {
