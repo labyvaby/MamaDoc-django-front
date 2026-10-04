@@ -4,7 +4,7 @@ import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
-import { getGrowth } from "../../../api/health";
+import { getGrowth, type FoodIntroduction } from "../../../api/health";
 import { DJANGO_DETAIL_STALE_TIME_MS, djangoQueryKeys } from "../../../api/queryKeys";
 import { FeedingSection } from "../../../components/health/FeedingSection";
 import { isChild } from "../../../components/health/healthMeta";
@@ -17,6 +17,10 @@ import { GrowthHistory } from "./GrowthHistory";
 import { GrowthMetrics } from "./GrowthMetrics";
 import { Stadiometer } from "./Stadiometer";
 import { assessMeasurement, growthSex, previousWith, readGrowth, type Measurement } from "./growthData";
+import { bmiVerdict } from "./growthNorms";
+
+/** Сервер без журнала прикорма (ещё не выложен) — поля `foods` нет. */
+const NO_FOODS: FoodIntroduction[] = [];
 
 interface GrowthSectionProps {
   patientId: number;
@@ -54,6 +58,9 @@ export const GrowthSection: React.FC<GrowthSectionProps> = ({ patientId, title =
   const measured = list.filter((item) => item.key !== "birth");
   const latest = measured.find((item) => item.heightCm != null) ?? measured[0] ?? null;
   const previousHeight = latest ? previousWith(list, latest, "heightCm") : null;
+  // ИМТ последнего замера словами — для подсказок прикорма («плохая прибавка», «избыток массы»).
+  const latestBmi = measured.find((item) => item.bmi != null) ?? null;
+  const bmiText = latestBmi ? bmiVerdict(assessMeasurement(latestBmi, "bmi", sex)?.z ?? null, latestBmi.months) : "";
   const open = (measurement: Measurement | null) => setDrawer({ open: true, measurement });
 
   const subheader = latest
@@ -156,6 +163,10 @@ export const GrowthSection: React.FC<GrowthSectionProps> = ({ patientId, title =
                   canManage={canManage}
                   feeding={data.feeding}
                   complementaryFeedingOn={data.complementaryFeedingOn}
+                  foods={data.foods ?? NO_FOODS}
+                  gestation={gestation}
+                  birthWeightKg={data.birth?.weightKg ?? null}
+                  bmiVerdict={bmiText}
                 />
               </>
             )}

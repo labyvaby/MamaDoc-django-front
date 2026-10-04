@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getHealthChanges, type HealthChange } from "../../api/health";
 import { DJANGO_LIST_STALE_TIME_MS, djangoQueryKeys } from "../../api/queryKeys";
+import { FOOD_GROUP_OPTIONS, FOOD_REACTIONS, FOOD_SEVERITIES } from "./feeding/feedingCatalog";
 import {
   ALLERGY_CATEGORIES,
   ALLERGY_SEVERITIES,
@@ -31,6 +32,7 @@ const MODEL_LABELS: Record<string, string> = {
   family_history: "Паспорт семьи",
   feeding_period: "Вскармливание",
   medication_course: "Препарат",
+  food_introduction: "Прикорм",
 };
 
 const ACTION_LABELS: Record<HealthChange["action"], string> = {
@@ -57,6 +59,17 @@ const FIELD_LABELS: Record<string, string> = {
   full_name: "ФИО",
   blood_group: "группа крови",
   rh_factor: "резус",
+  product_name: "продукт",
+  given_on: "дата",
+  reaction_severity: "тяжесть",
+  food_group: "группа",
+};
+
+/** Коды отметки прикорма словами. */
+const FOOD_VALUE_OPTIONS: Record<string, ReadonlyArray<Option<string>>> = {
+  reaction: FOOD_REACTIONS,
+  reaction_severity: FOOD_SEVERITIES,
+  food_group: FOOD_GROUP_OPTIONS,
 };
 
 const VALUE_OPTIONS: Record<string, ReadonlyArray<Option<string>>> = {
@@ -75,10 +88,17 @@ function valueText(model: string, field: string, value: unknown): string {
   if (value === false) return "нет";
   if (value == null || value === "") return "—";
   const text = String(value);
-  const options = field === "status" ? (model === "allergy" ? ALLERGY_STATUSES : CONDITION_STATUSES) : VALUE_OPTIONS[field];
+  const options =
+    model === "food_introduction" && FOOD_VALUE_OPTIONS[field]
+      ? FOOD_VALUE_OPTIONS[field]
+      : field === "status"
+        ? model === "allergy"
+          ? ALLERGY_STATUSES
+          : CONDITION_STATUSES
+        : VALUE_OPTIONS[field];
   const label = options?.find((option) => option.value === text)?.label;
   if (label) return label;
-  if (/^d{4}-d{2}-d{2}$/.test(text)) return dayjs(text).format("DD.MM.YYYY");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return dayjs(text).format("DD.MM.YYYY");
   return text;
 }
 
