@@ -79,6 +79,8 @@ import { fetchAllReservations } from "./hotelReportData";
 import { inHouseCounts, isNoShowCandidate, isStayingOn } from "./hotelInHouse";
 import { missingDocumentGuest } from "./CheckInDocumentPanel";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
+import { HotelAlertsPanel } from "./HotelAlertsPanel";
+import { NightAuditSummary } from "./NightAuditSummary";
 import { useSiteRequests } from "./useSiteRequests";
 import { siteRequestLine } from "./HotelSiteRequestsNotifier";
 import { DateStepper, EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
@@ -547,6 +549,10 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
           {getErrorMessage(anyError, "Не удалось загрузить брони")}
         </Alert>
       )}
+
+      {/* Что требует действия сейчас и итог ночи — только на сегодня. */}
+      {isToday && <HotelAlertsPanel propertyId={propertyId} onOpen={onOpen} />}
+      {isToday && <NightAuditSummary propertyId={propertyId} onOpen={onOpen} />}
 
       {/* «Кто сегодня заедет?» — карточками, крупно: это первое, что смотрит ресепшен утром. */}
       <Box>
