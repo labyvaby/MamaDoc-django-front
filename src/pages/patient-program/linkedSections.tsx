@@ -15,6 +15,7 @@ import { MedicationsSection } from "../../components/health/MedicationsSection";
 import { SurgeriesSection } from "../../components/health/SurgeriesSection";
 import { useHealthAccess } from "../../components/health/useHealth";
 import type { ActiveScope } from "../../hooks/useActiveScope";
+import PatientCalendarPanel from "../patients/components/PatientCalendarPanel";
 import PatientVaccinationsPanel from "../patients/components/PatientVaccinationsPanel";
 import { BookAppointments } from "./BookAppointments";
 import { GrowthSection } from "./growth/GrowthSection";
@@ -106,7 +107,14 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
       content = <MedicationsSection patientId={patient.id} canManage={canManage} title={module.name} />;
       break;
     case "vaccination":
-      content = <PatientVaccinationsPanel patient={patient} />;
+      // Календарь прививок (возрастные точки национального календаря) — как во
+      // вкладке карточки пациента; под ним записи прививок, реакции и пробы.
+      content = (
+        <Stack spacing={2}>
+          <PatientCalendarPanel patient={patient} />
+          <PatientVaccinationsPanel patient={patient} />
+        </Stack>
+      );
       break;
     case "visits":
       content = <BookAppointments patientId={patient.id} birthDate={patient.birthDate ?? null} scope={scope} />;
