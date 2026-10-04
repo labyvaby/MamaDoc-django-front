@@ -71,6 +71,7 @@ import { focusFirstFieldError, hasFieldErrors, sanitizeFieldInput, type FieldRul
 /** Правила полей категории — те же проверяют «Сохранить». */
 const CATEGORY_RULES = {
   name: { required: true, maxLength: 60 },
+  nameEn: { maxLength: 60 },
   price: { kind: "decimal", min: 0, max: 10_000_000, maxDecimals: 2 },
   short: { maxLength: 100 },
   long: { maxLength: 2000 },
@@ -114,6 +115,8 @@ interface CategoryFormState {
   bedType: string;
   roomLayout: string;
   description: string;
+  nameEn: string;
+  descriptionEn: string;
   amenities: Set<string>;
   luxury: boolean;
   // ── Значения по умолчанию для «Доп. характеристик» нового номера — см. шапку файла.
@@ -136,6 +139,8 @@ const EMPTY_FORM: CategoryFormState = {
   bedType: "",
   roomLayout: "",
   description: "",
+  nameEn: "",
+  descriptionEn: "",
   amenities: new Set(),
   luxury: false,
   defaultArea: "",
@@ -158,6 +163,8 @@ function toForm(cat: HotelRoomType): CategoryFormState {
     bedType: cat.bedType,
     roomLayout: cat.roomLayout,
     description: cat.description,
+    nameEn: cat.nameEn ?? "",
+    descriptionEn: cat.descriptionEn ?? "",
     amenities: new Set(cat.amenities),
     luxury: cat.isLuxury,
     defaultArea: cat.defaultArea ?? "",
@@ -366,6 +373,8 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
       [form.bedType, CATEGORY_RULES.short],
       [form.roomLayout, CATEGORY_RULES.short],
       [form.description, CATEGORY_RULES.long],
+      [form.nameEn, CATEGORY_RULES.nameEn],
+      [form.descriptionEn, CATEGORY_RULES.long],
       [form.defaultArea, CATEGORY_RULES.area],
       [form.defaultCeilingHeight, CATEGORY_RULES.ceilingHeight],
       [form.defaultBathrooms, CATEGORY_RULES.bathrooms],
@@ -391,6 +400,8 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
         bedType: form.bedType.trim(),
         roomLayout: form.roomLayout.trim(),
         description: form.description.trim(),
+        nameEn: form.nameEn.trim(),
+        descriptionEn: form.descriptionEn.trim(),
         amenities: [...form.amenities],
         isLuxury: form.luxury,
         defaultArea: form.defaultArea.trim() || null,
@@ -755,6 +766,44 @@ const CategoryForm: React.FC<CategoryFormProps> = ({ propertyId, editing, amenit
             minRows={2}
             disabled={saving}
             fullWidth
+          />
+        </Stack>
+      </OptionalCard>
+
+      {/* Сайт с ?lang=en показывает эти поля; пустые — русские название и описание (r4 §20). */}
+      <OptionalCard
+        title="Для сайта на английском"
+        filled={[form.nameEn, form.descriptionEn].some((v) => v.trim())}
+        summary={form.nameEn.trim() || "Название и описание для гостей из-за рубежа — иначе сайт покажет русские"}
+        defaultOpen={editing != null && [form.nameEn, form.descriptionEn].some((v) => v.trim())}
+        forceOpen={showErrors && [form.nameEn, form.descriptionEn].some((v) => v.trim())}
+      >
+        <Stack gap={2}>
+          <FormField
+            icon={<NotesOutlined />}
+            rules={CATEGORY_RULES.nameEn}
+            showErrors={showErrors}
+            label="Name"
+            placeholder={form.name.trim() ? `Например: ${form.name.trim()} → Deluxe Room` : "Deluxe Room"}
+            value={form.nameEn}
+            onValueChange={(v) => patchForm({ nameEn: v })}
+            disabled={saving}
+            fullWidth
+            slotProps={{ htmlInput: { lang: "en" } }}
+          />
+          <FormField
+            icon={<NotesOutlined />}
+            rules={CATEGORY_RULES.long}
+            showErrors={showErrors}
+            label="Description"
+            placeholder="Optional"
+            value={form.descriptionEn}
+            onValueChange={(v) => patchForm({ descriptionEn: v })}
+            multiline
+            minRows={2}
+            disabled={saving}
+            fullWidth
+            slotProps={{ htmlInput: { lang: "en" } }}
           />
         </Stack>
       </OptionalCard>

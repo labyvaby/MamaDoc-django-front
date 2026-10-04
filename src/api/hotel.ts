@@ -339,6 +339,8 @@ export interface HotelRoomTypeCreateData {
   roomLayout?: string;
   isLuxury?: boolean;
   description?: string;
+  nameEn?: string;
+  descriptionEn?: string;
   basePrice?: Money;
   sortOrder?: number;
   defaultArea?: string | null;
