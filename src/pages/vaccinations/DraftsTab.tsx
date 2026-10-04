@@ -107,7 +107,7 @@ const DraftsTab: React.FC<Props> = ({ branchId, orgId, canRecord, canUpdatePatie
   );
 
   return (
-    <Stack spacing={1.5} sx={{ flex: 1 }}>
+    <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
       <ToggleButtonGroup
         exclusive
         size="small"
