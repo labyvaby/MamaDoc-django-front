@@ -155,9 +155,11 @@ interface TaskFormState {
   assignedToId: number | "";
   dueAt: dayjs.Dayjs | null;
   note: string;
+  /** Ремонт: снять номер с продажи до выполнения (r4 §13). */
+  blocksRoom: boolean;
 }
 
-const emptyForm: TaskFormState = { roomId: "", kind: "checkout", assignedToId: "", dueAt: null, note: "" };
+const emptyForm: TaskFormState = { roomId: "", kind: "checkout", assignedToId: "", dueAt: null, note: "", blocksRoom: false };
 
 export const HotelHousekeepingPage: React.FC = () => {
   usePageTitle("Уборка");
@@ -279,6 +281,7 @@ export const HotelHousekeepingPage: React.FC = () => {
       assignedToId: task.assignedToId ?? "",
       dueAt: task.dueAt ? dayjs(task.dueAt) : null,
       note: task.note,
+      blocksRoom: task.blocksRoom ?? false,
     });
     setFormError(null);
     setFormOpen(true);
@@ -314,10 +317,12 @@ export const HotelHousekeepingPage: React.FC = () => {
           assignedToId: form.assignedToId === "" ? undefined : form.assignedToId,
           dueAt: form.dueAt ? form.dueAt.toISOString() : undefined,
           note: form.note || undefined,
+          ...(form.kind === "maintenance" && form.blocksRoom ? { blocksRoom: true } : {}),
         };
         await createHousekeepingTask(payload);
       }
-      invalidateAfterChange(false);
+      // Ремонт с закрытием номера меняет его состояние — шахматка и «Номера» тоже.
+      invalidateAfterChange(!editingTask && form.kind === "maintenance" && form.blocksRoom);
       setFormOpen(false);
       enqueueSnackbar(editingTask ? "Задача обновлена" : "Задача создана", { variant: "success" });
     } catch (err) {
@@ -341,7 +346,8 @@ export const HotelHousekeepingPage: React.FC = () => {
     }
     try {
       await updateHousekeepingTask(task.id, { status });
-      invalidateAfterChange(false);
+      // Отменённый ремонт с закрытием номера возвращает номер в продажу.
+      invalidateAfterChange(Boolean(task.blocksRoom));
     } catch (err) {
       enqueueSnackbar(getErrorMessage(err, "Не удалось изменить статус задачи"), { variant: "error" });
     }
@@ -353,7 +359,7 @@ export const HotelHousekeepingPage: React.FC = () => {
     setDoneTask(null);
     try {
       await updateHousekeepingTask(task.id, { status: "done", roomState: doneRoomState || undefined });
-      invalidateAfterChange(Boolean(doneRoomState));
+      invalidateAfterChange(Boolean(doneRoomState) || Boolean(task.blocksRoom));
       enqueueSnackbar("Задача закрыта", { variant: "success" });
     } catch (err) {
       enqueueSnackbar(getErrorMessage(err, "Не удалось закрыть задачу"), { variant: "error" });
@@ -512,6 +518,11 @@ export const HotelHousekeepingPage: React.FC = () => {
                   <Box sx={{ minWidth: 0, flex: 1 }}>
                     <Typography variant="body2" fontWeight={600} noWrap>
                       {isCheckoutInspection(task) ? "Проверка перед выездом" : KIND_LABELS[task.kind]}
+                      {task.blocksRoom && (
+                        <Typography component="span" variant="caption" color="error.main" fontWeight={600} sx={{ ml: 0.75 }}>
+                          · номер закрыт
+                        </Typography>
+                      )}
                     </Typography>
                     <Typography variant="caption" color={overdue ? "error.main" : doneLine(task) ? "success.main" : "text.secondary"} component="div">
                       {doneLine(task) ?? (task.dueAt ? `${formatDue(task.dueAt)}${overdue ? " · просрочено" : ""}` : "без срока")}
@@ -598,6 +609,11 @@ export const HotelHousekeepingPage: React.FC = () => {
                           <Box>
                             <Typography variant="body2" fontWeight={500}>
                               {isCheckoutInspection(task) ? "Проверка перед выездом" : KIND_LABELS[task.kind]}
+                              {task.blocksRoom && (
+                                <Typography component="span" variant="caption" color="error.main" fontWeight={600} sx={{ ml: 0.75 }}>
+                                  · номер закрыт
+                                </Typography>
+                              )}
                             </Typography>
                             {isCheckoutInspection(task) &&
                               (() => {
@@ -830,6 +846,18 @@ export const HotelHousekeepingPage: React.FC = () => {
                     </MenuItem>
                   ))}
                 </TextField>
+                {form.kind === "maintenance" && (
+                  <Box>
+                    <FormControlLabel
+                      control={<Switch checked={form.blocksRoom} onChange={(e) => setForm((f) => ({ ...f, blocksRoom: e.target.checked }))} />}
+                      label="Закрыть номер до выполнения"
+                    />
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ ml: "42px", mt: -0.5 }}>
+                      Номер снимется с продажи в шахматке и на сайте и вернётся сам, когда задачу выполнят или отменят. Если на номер есть будущие
+                      брони, их сначала надо перенести.
+                    </Typography>
+                  </Box>
+                )}
               </>
             )}
             <TextField
