@@ -108,6 +108,10 @@ export const djangoQueryKeys = {
     load: (filters: Record<string, unknown>) =>
       ["django", "reports", "load", filters] as const,
   },
+  pnl: {
+    report: (filters: Record<string, unknown>) =>
+      ["django", "pnl", "report", filters] as const,
+  },
 
   notifications: {
       settings: (organizationId: number | null | undefined, branchId?: number | null) =>
