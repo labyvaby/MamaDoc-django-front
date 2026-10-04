@@ -55,7 +55,7 @@ import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useNotification } from "@refinedev/core";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
@@ -146,6 +146,24 @@ import {
 import { useApiOrgId } from "../../hooks/useApiOrgId";
 import { usePermissions } from "../../hooks/usePermissions";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
+import {
+  cancelScribeRecording,
+  markScribeApplied,
+  retryScribeRecording,
+  stopScribeRecording,
+  type ScribeDiagnosis,
+  type ScribeMode,
+  type ScribeRecording,
+  type ScribeSection,
+} from "../../api/scribe";
+import { planScribeApply } from "../../scribe/applyPlan";
+import { ScribeDiagnosisChips } from "../../scribe/ScribeDiagnosisChips";
+import { ScribeHeaderButton } from "../../scribe/ScribeHeaderButton";
+import { ScribeMark } from "../../scribe/ScribeMark";
+import { scribeQueryKey, useScribeRecorder } from "../../scribe/ScribeRecorderProvider";
+import { ScribeStrip } from "../../scribe/ScribeStrip";
+import { ScribeTranscript } from "../../scribe/ScribeTranscript";
+import { scribeRecordingKey, useScribeLine } from "../../scribe/useScribeLine";
 
 import {
   upsertConclusion,
@@ -1053,7 +1071,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     const shownLabel = label
       ? label.replace(new RegExp(`[\\s,(]*${unit}\\)?\\s*$`, "i"), "") || props.label
       : props.label;
-    return (
+    const stepper = (
       <VitalStepper
         label={shownLabel}
         suffix={props.suffix}
@@ -1065,6 +1083,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
         decimalPlaces={props.decimals}
         disabled={readOnly}
       />
+    );
+    // Значение вписала ИИ-запись — метка под степпером, пока его не правили.
+    const scribeMarkHere = scribeMarkNode(kind, state.value);
+    return scribeMarkHere ? (
+      <Stack spacing={0.5} sx={{ minWidth: 100, flex: 1 }}>
+        {stepper}
+        {scribeMarkHere}
+      </Stack>
+    ) : (
+      stepper
     );
   };
 
@@ -1240,6 +1268,8 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         </Stack>
       )}
       {aiSuggestionNode("diagnosis", (text) => void applyDiagnosisSuggestion(text))}
+      {/* Диагнозы по ИИ-записи — всегда предложением, врач добавляет сам. */}
+      {canScribe && <ScribeDiagnosisChips items={scribeDiagnosesShown} onAdd={addScribeDiagnosis} />}
     </Stack>
   );
 
@@ -1341,6 +1371,9 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           <>
             {label} {options.required && !readOnly && "*"}
           </>,
+          options.aiField && options.aiField !== "diagnosis" && !options.locked
+            ? scribeMarkNode(options.aiField, value)
+            : undefined,
         )}
         <CollapsibleTextField
           value={value}
@@ -1745,6 +1778,156 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
     for (const key of ai.suggestedKeys) ai.dismiss(key);
   };
 
+  // ── ИИ-запись приёма ──────────────────────────────────────────────────────
+  // Звук пишет ScribeRecorderProvider над маршрутами (окно можно закрыть),
+  // сюда приходит готовый результат: пустые поля заполняются сразу с меткой
+  // «ИИ — проверьте», заполненные — через окно сравнения, диагнозы — только
+  // предложением. Само ничего не сохраняется: сохраняет врач.
+  //
+  // ⚠ Блок стоит выше slotNodes: узлы полей (textFieldNode, vitalNode,
+  // diagnosisNode) вызываются в его useMemo и читают отсюда метки и чипы.
+  const { t: ts } = useT("scribe");
+  const queryClient = useQueryClient();
+  const canScribe = useCan("scribe.record") && !readOnly;
+  const recorder = useScribeRecorder();
+  const scribe = useScribeLine(canScribe && open ? serviceLineId : null);
+  /** Текст, вписанный ИИ в поле; метка видна, пока поле не правили. */
+  const [scribeApplied, setScribeApplied] = React.useState<Partial<Record<string, string>>>({});
+  const [scribeReview, setScribeReview] = React.useState<AiReviewEntry[] | null>(null);
+  const [scribeDiagnoses, setScribeDiagnoses] = React.useState<ScribeDiagnosis[]>([]);
+  const scribeAppliedRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    setScribeApplied({});
+    setScribeReview(null);
+    setScribeDiagnoses([]);
+    scribeAppliedRef.current = null;
+  }, [open, draftId]);
+
+  const scribeMarked = (key: string, value: string) =>
+    scribeApplied[key] != null && scribeApplied[key] === value;
+  const scribeUnmark = (key: string) =>
+    setScribeApplied((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  const scribeMarkNode = (key: string, value: string) =>
+    canScribe && scribeMarked(key, value) ? <ScribeMark onOk={() => scribeUnmark(key)} /> : undefined;
+
+  /** Предложенные диагнозы, которых врач ещё не выбрал (в том числе сам, из каталога). */
+  const scribeDiagnosesShown = scribeDiagnoses.filter(
+    (d) => !selectedDiagnoses.some((item) => item.code === d.code),
+  );
+
+  const applyScribeResult = (recording: ScribeRecording) => {
+    const result = recording.result;
+    if (!result) return;
+    // Те же поля, что у «Помощи AI»: колонку, которую собирает бланк или
+    // которая спрятана под ним, не трогаем — текст лёг бы мимо глаз врача.
+    const editable = aiTargets()
+      .map((target) => target.field)
+      .filter((field): field is ScribeSection => field !== "diagnosis");
+    const snapshot = {
+      complaints,
+      anamnesis,
+      objective,
+      conclusion: conclusionText,
+      weightKg,
+      heightCm,
+      temperature,
+    };
+    const plan = planScribeApply(snapshot, result, editable);
+    const setters: Record<ScribeSection, (v: string) => void> = {
+      complaints: setComplaints,
+      anamnesis: setAnamnesis,
+      objective: setObjective,
+      conclusion: setConclusionText,
+    };
+    const vitalSetters: Record<VitalKind, (v: string) => void> = {
+      weightKg: setWeightKg,
+      heightCm: setHeightCm,
+      temperature: setTemperature,
+    };
+    const marks: Partial<Record<string, string>> = {};
+    for (const [key, text] of Object.entries(plan.direct) as [ScribeSection, string][]) {
+      setters[key](text);
+      marks[key] = text;
+    }
+    for (const [key, value] of Object.entries(plan.vitals) as [VitalKind, string][]) {
+      if (!columnVisible(key)) continue;
+      vitalSetters[key](value);
+      marks[key] = value;
+    }
+    setScribeApplied((prev) => ({ ...prev, ...marks }));
+    if (plan.review.length > 0) {
+      // source — текст поля на момент применения: врач правит поле, пока
+      // открыто сравнение, — окно предупредит, что запись его не видела.
+      setScribeReview(
+        plan.review.map(({ key, suggestion }) => ({ key, suggestion, source: snapshot[key] })),
+      );
+    }
+    const chosen = new Set(selectedDiagnoses.map((d) => d.code));
+    const offered = result.diagnoses.filter((d) => !chosen.has(d.code));
+    setScribeDiagnoses(offered);
+    // Результат применяется один раз: отметка на сервере, и копия в кэше —
+    // иначе повторное открытие окна применило бы его снова.
+    void markScribeApplied(recording.id)
+      .then((updated) => {
+        queryClient.setQueryData(scribeRecordingKey(updated.id, updated.status), updated);
+      })
+      .catch(() => undefined);
+    if (Object.keys(marks).length > 0 || plan.review.length > 0 || offered.length > 0) {
+      notify?.({ type: "success", message: ts("toast.applied") });
+    }
+  };
+
+  // Результат ложится в уже собранную форму: гидратация из заключения или
+  // черновика прошла и список бланков пришёл (бланк по умолчанию прикрепляется
+  // после него и перезаписал бы свою колонку). Метка выставляется эффектом,
+  // поэтому к следующему рендеру значения полей уже гидратированы.
+  const scribeFormsSettled = !formsEnabled || formsQuery.isFetched;
+  const [scribeFormKey, setScribeFormKey] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setScribeFormKey(open && hydratedRef.current && scribeFormsSettled ? hydrationKey : null);
+  }, [open, hydrationKey, scribeFormsSettled]);
+
+  // Готовый и ещё не применённый результат — применить один раз.
+  const scribeReady =
+    scribe.detail && scribe.detail.status === "ready" && scribe.detail.appliedAt == null
+      ? scribe.detail
+      : null;
+  React.useEffect(() => {
+    if (!scribeReady || !canScribe || scribeFormKey !== hydrationKey) return;
+    if (scribeAppliedRef.current === scribeReady.id) return;
+    scribeAppliedRef.current = scribeReady.id;
+    applyScribeResult(scribeReady);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scribeReady?.id, scribeFormKey, hydrationKey, canScribe]);
+
+  const addScribeDiagnosis = (d: ScribeDiagnosis) => {
+    setSelectedDiagnoses((prev) =>
+      prev.some((item) => item.code === d.code)
+        ? prev
+        : [
+            ...prev,
+            catalog.find((c) => c.code === d.code) ?? {
+              id: d.id,
+              code: d.code,
+              title: d.title,
+              displayName: d.displayName,
+              isActive: true,
+              sortOrder: 0,
+            },
+          ],
+    );
+    setScribeDiagnoses((prev) => prev.filter((item) => item.code !== d.code));
+  };
+
+  const scribeRefresh = () =>
+    void queryClient.invalidateQueries({ queryKey: scribeQueryKey(serviceLineId) });
+  const startScribe = (mode: ScribeMode, consent?: "yes" | "no") =>
+    void recorder?.start({ lineId: serviceLineId, mode, consent });
+
   const handleDetachForm = () => {
     // Текст остаётся: врач дописывает уже собранное заключение руками.
     // Бланк со строками запоминаем: вернули его, не трогая текст, — строки
@@ -1855,6 +2038,10 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
     ai.of,
     // Подсказки диагнозов из истории пациента живут в узле диагноза.
     historyQuery.data,
+    // Метки «ИИ — проверьте» и предложенные диагнозы ИИ-записи — тоже.
+    canScribe,
+    scribeApplied,
+    scribeDiagnoses,
   ]);
 
   /**
@@ -2648,6 +2835,16 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               </Typography>
             </Stack>
             <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+              {/* ИИ-запись приёма: «весь приём» или диктовка; пока пишется
+                  любой приём, вторую запись не начать. */}
+              {canScribe && recorder && scribe.line && (
+                <ScribeHeaderButton
+                  consent={scribe.line.consent}
+                  compact={isMobile}
+                  disabled={recorder.state.phase !== "idle" && recorder.state.phase !== "error"}
+                  onStart={startScribe}
+                />
+              )}
               {/* AI — одна кнопка на все поля; в шапке, потому что она не
                   прокручивается, а просят AI обычно дописав форму до низа. */}
               {canAiAssist && (
@@ -2760,6 +2957,24 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         </>
       )}
 
+      {/* ── ИИ-запись: идёт запись, расшифровка, сбой, брошенная запись ── */}
+      {canScribe && recorder && (
+        <ScribeStrip
+          lineId={serviceLineId}
+          recorder={recorder}
+          latest={scribe.latest}
+          onRetry={(id) => void retryScribeRecording(id).catch(() => undefined).finally(scribeRefresh)}
+          onSendAbandoned={(rec) =>
+            void stopScribeRecording(rec.id, rec.chunkCount * 15_000)
+              .catch(() => undefined)
+              .finally(scribeRefresh)
+          }
+          onDeleteAbandoned={(rec) =>
+            void cancelScribeRecording(rec.id).catch(() => undefined).finally(scribeRefresh)
+          }
+        />
+      )}
+
       {/* ── подсказки AI: массовые действия, пока есть неразобранные ── */}
       {canAiAssist && ai.suggestedKeys.length > 0 && (
         <>
@@ -2779,6 +2994,16 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           targets={aiReviewTargets()}
           onResolve={ai.dismiss}
           onClose={() => setAiReview(null)}
+        />
+      )}
+      {/* Результат ИИ-записи для уже заполненных полей — то же сравнение. */}
+      {canScribe && scribeReview && (
+        <AiReviewDialog
+          open
+          entries={scribeReview}
+          targets={aiReviewTargets()}
+          onResolve={() => undefined}
+          onClose={() => setScribeReview(null)}
         />
       )}
 
@@ -3277,6 +3502,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                     placeholder={t("conclusion.text")}
                     {...completion.field("conclusionText", "")}
                   />
+                  {scribeMarkNode("conclusion", conclusionText)}
                   {aiSuggestionNode("conclusion", setConclusionText)}
                 </Stack>
               ),
@@ -3404,6 +3630,11 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               )}
             </Stack>
           </Box>
+
+          {/* ── расшифровка ИИ-записи: свёрнута, для сверки ── */}
+          {canScribe && scribe.detail?.transcript && (
+            <ScribeTranscript text={scribe.detail.transcript} durationMs={scribe.detail.durationMs} />
+          )}
           </>
           )}
 
