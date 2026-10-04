@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 
-import type { GrowthData, GrowthMeasurement, MeasurementInput, MeasurementPosition } from "../../../api/health";
-import { ageMonths, assess, bmi, type GrowthAssessment, type GrowthIndicator, type GrowthSex } from "./growthNorms";
+import type { FeedingPeriod, FoodIntroduction, GrowthData, GrowthMeasurement, MeasurementInput, MeasurementPosition } from "../../../api/health";
+import { ageMonths, assess, bmi, bmiVerdict, type GrowthAssessment, type GrowthIndicator, type GrowthSex } from "./growthNorms";
 
 /**
  * Замеры «Роста и питания» — из медпрофиля пациента (этап 2б): ручные,
@@ -257,6 +257,36 @@ export function buildMeasurementInput(form: GrowthForm): MeasurementInput {
     headCircumferenceCm: parseMeasure(form.headCm),
     chestCircumferenceCm: parseMeasure(form.chestCm),
     notes: form.notes.trim(),
+  };
+}
+
+/**
+ * Входы блока «Вскармливание и прикорм» из ответа `growth/`: одни и те же в
+ * «Росте и развитии» и в отдельном разделе «Вскармливание и прикорм».
+ * ИМТ последнего замера словами — для подсказок («плохая прибавка», «избыток массы»).
+ */
+export interface FeedingInputs {
+  birthDate: string | null;
+  gestation: Gestation;
+  feeding: ReadonlyArray<FeedingPeriod>;
+  complementaryFeedingOn: string | null;
+  foods: ReadonlyArray<FoodIntroduction>;
+  birthWeightKg: number | null;
+  bmiVerdict: string;
+}
+
+export function feedingInputs(data: GrowthData): FeedingInputs {
+  const sex = growthSex(data.sex);
+  const latestBmi = readGrowth(data).find((item) => item.key !== "birth" && item.bmi != null) ?? null;
+  return {
+    birthDate: data.birthDate ?? null,
+    gestation: { weeks: data.gestationalAgeWeeks ?? null, days: data.gestationalAgeDays ?? null },
+    feeding: data.feeding,
+    complementaryFeedingOn: data.complementaryFeedingOn,
+    // Сервер без журнала прикорма (ещё не выложен) — поля `foods` нет.
+    foods: data.foods ?? [],
+    birthWeightKg: data.birth?.weightKg ?? null,
+    bmiVerdict: latestBmi ? bmiVerdict(assessMeasurement(latestBmi, "bmi", sex)?.z ?? null, latestBmi.months) : "",
   };
 }
 

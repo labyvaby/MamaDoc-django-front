@@ -17,6 +17,7 @@ import { useHealthAccess } from "../../components/health/useHealth";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import PatientVaccinationsPanel from "../patients/components/PatientVaccinationsPanel";
 import { BookAppointments } from "./BookAppointments";
+import { FeedingBookSection } from "./growth/FeedingBookSection";
 import { GrowthSection } from "./growth/GrowthSection";
 import { systemType, type SystemSectionType } from "./linkedSectionTypes";
 import { ModuleRecords } from "./ModuleRecords";
@@ -100,7 +101,11 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
       content = <SurgeriesSection patientId={patient.id} canManage={canManage} birthDate={patient.birthDate} title={module.name} />;
       break;
     case "growth":
-      content = <GrowthSection patientId={patient.id} title={module.name} canManage={canManage} />;
+      // Вскармливание — отдельным разделом, если он есть в программе; иначе внизу «Роста».
+      content = <GrowthSection patientId={patient.id} title={module.name} canManage={canManage} showFeeding={!hasSection?.("feeding")} />;
+      break;
+    case "feeding":
+      content = <FeedingBookSection patientId={patient.id} title={module.name} canManage={canManage} />;
       break;
     case "medications":
       content = <MedicationsSection patientId={patient.id} canManage={canManage} title={module.name} />;

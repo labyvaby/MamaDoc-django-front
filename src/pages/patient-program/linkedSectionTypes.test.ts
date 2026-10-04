@@ -30,4 +30,12 @@ describe("linkedSectionTypes", () => {
     const types = SYSTEM_SECTIONS.map((section) => section.type);
     expect(types.indexOf("surgeries")).toBe(types.indexOf("allergies") + 1);
   });
+
+  it("offers «Вскармливание и прикорм» as its own section right after growth", () => {
+    expect(systemType({ code: "feeding", moduleType: "feeding" })).toBe("feeding");
+    expect(isLinkedModule({ code: "feeding", moduleType: "feeding" })).toBe(true);
+    const types = SYSTEM_SECTIONS.map((section) => section.type);
+    expect(types.indexOf("feeding")).toBe(types.indexOf("growth") + 1);
+    expect(SYSTEM_SECTIONS.find((section) => section.type === "growth")?.name).toBe("Рост и развитие");
+  });
 });
