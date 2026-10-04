@@ -1162,7 +1162,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     <Stack gap={1}>
                       {item.guests.map((g) => (
                         <Stack key={g.id} direction="row" alignItems="center" gap={1.25}>
-                          <Avatar sx={{ width: 34, height: 34, fontSize: 12, fontWeight: 700 }}>{initialsOf(g.fullName)}</Avatar>
+                          <Avatar sx={{ width: 34, height: 34, fontSize: 12, fontWeight: 700, bgcolor: "action.selected", color: "text.primary" }}>{initialsOf(g.fullName)}</Avatar>
                           <Box sx={{ flex: 1, minWidth: 0 }}>
                             <Typography variant="body2" fontWeight={600} noWrap>
                               {g.fullName}

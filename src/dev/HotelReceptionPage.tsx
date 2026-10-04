@@ -329,7 +329,7 @@ const ReservationRow: React.FC<{
         "&:hover, &:focus-visible": { bgcolor: "action.hover", outline: "none" },
       }}
     >
-      <Avatar sx={{ width: 36, height: 36, fontSize: 12, fontWeight: 700 }}>{initialsOf(name)}</Avatar>
+      <Avatar sx={{ width: 36, height: 36, fontSize: 12, fontWeight: 700, bgcolor: "action.selected", color: "text.primary" }}>{initialsOf(name)}</Avatar>
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Typography variant="body2" fontWeight={700} noWrap>
           {name}
