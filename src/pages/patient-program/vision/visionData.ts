@@ -7,6 +7,7 @@ import {
   DEGREES,
   DIAGNOSIS_STATES,
   EXAM_TYPES,
+  EYE_COLORS,
   EYES,
   RECOMMENDATIONS,
   diagnosisDef,
@@ -16,6 +17,7 @@ import {
   type DiagnosisState,
   type Eye,
   type ExamType,
+  type EyeColor,
 } from "./visionCatalog";
 import { parseAcuity } from "./visionNorms";
 
@@ -64,6 +66,7 @@ export interface VisionExam {
   recommendationNote: string;
   recommendation: string;
   nextCheckMonths: number | null;
+  eyeColor: EyeColor | null;
 }
 
 export interface VisionDiagnosis {
@@ -147,6 +150,7 @@ export function readExam(record: ProgramModuleRecord): VisionExam {
     recommendationNote: asText(data.recommendationNote),
     recommendation: asText(data.recommendation),
     nextCheckMonths: asNumber(data.nextCheckMonths),
+    eyeColor: pick(EYE_COLORS, data.eyeColor),
   };
 }
 
@@ -239,6 +243,7 @@ export interface ExamForm {
   recommendationCodes: string[];
   recommendationNote: string;
   nextCheckMonths: number | null;
+  eyeColor: EyeColor | "";
   complaints: string[];
   cycloplegia: boolean;
   refractionRight: RefractionInput;
@@ -277,6 +282,7 @@ export function emptyExamForm(examType: ExamType = "preventive"): ExamForm {
     recommendationCodes: [],
     recommendationNote: "",
     nextCheckMonths: null,
+    eyeColor: "",
     complaints: [],
     cycloplegia: false,
     refractionRight: { sph: "", cyl: "", axis: "" },
@@ -321,6 +327,7 @@ export function examToForm(exam: VisionExam): ExamForm {
     recommendationCodes: exam.recommendationCodes,
     recommendationNote: note,
     nextCheckMonths: exam.nextCheckMonths,
+    eyeColor: exam.eyeColor ?? "",
     complaints: exam.complaints,
     cycloplegia: exam.refraction?.cycloplegia ?? false,
     refractionRight: eyeInput(exam.refraction?.right),
@@ -373,6 +380,7 @@ export function buildExamData(form: ExamForm): Record<string, unknown> {
   put("acuityLeftCorrected", form.acuityLeftCorrected.trim());
   put("correction", form.correction);
   put("complaints", form.complaints);
+  put("eyeColor", form.eyeColor);
   const right = refractionEye(form.refractionRight);
   const left = refractionEye(form.refractionLeft);
   if (hasRefraction(right) || hasRefraction(left)) data.refraction = { cycloplegia: form.cycloplegia, right, left };

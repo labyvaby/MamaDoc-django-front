@@ -30,7 +30,18 @@ import { AppButton, CustomDateTimePicker } from "../../../components/ui";
 import type { ActiveScope } from "../../../hooks/useActiveScope";
 import { AcuityPicker, ChipGroup, Section } from "./VisionControls";
 import { VisionFullExam } from "./VisionFullExam";
-import { CONCLUSIONS, CORRECTIONS, EXAM_TYPES, EYES, NEXT_CHECK, RECOMMENDATIONS, diagnosisDef, optionLabel } from "./visionCatalog";
+import {
+  CONCLUSIONS,
+  CORRECTIONS,
+  EXAM_TYPES,
+  EYE_COLORS,
+  EYES,
+  NEXT_CHECK,
+  RECOMMENDATIONS,
+  diagnosisDef,
+  optionLabel,
+  type EyeColor,
+} from "./visionCatalog";
 import {
   buildDiagnosisData,
   buildExamData,
@@ -61,6 +72,8 @@ interface VisionExamDrawerProps {
   /** Осмотр для правки или запланированная запись, которую проводят; null — новый. */
   record: ProgramModuleRecord | null;
   diagnoses: VisionDiagnosis[];
+  /** Цвет глаз с прошлых осмотров — новый осмотр начинается с него. */
+  knownEyeColor?: EyeColor | null;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -74,6 +87,7 @@ export const VisionExamDrawer: React.FC<VisionExamDrawerProps> = ({
   birthDate,
   record,
   diagnoses,
+  knownEyeColor = null,
   onClose,
   onSaved,
 }) => {
@@ -87,13 +101,16 @@ export const VisionExamDrawer: React.FC<VisionExamDrawerProps> = ({
 
   React.useEffect(() => {
     if (!open) return;
-    const next = editing && record ? examToForm(readExam(record)) : emptyExamForm(record ? "control" : "preventive");
+    const next =
+      editing && record
+        ? examToForm(readExam(record))
+        : { ...emptyExamForm(record ? "control" : "preventive"), eyeColor: knownEyeColor ?? ("" as const) };
     setForm(next);
     setOccurredAt(editing && record ? dayjs(record.occurredAt) : dayjs().second(0).millisecond(0));
     setTitleTouched(editing);
     setFullOpen(hasFullExam(next));
     setSkipChronic([]);
-  }, [open, record, editing]);
+  }, [open, record, editing, knownEyeColor]);
 
   const patch = (next: Partial<ExamForm>) => setForm((current) => ({ ...current, ...next }));
   const months = ageInMonths(birthDate, occurredAt ?? dayjs());
@@ -185,6 +202,13 @@ export const VisionExamDrawer: React.FC<VisionExamDrawerProps> = ({
             options={EXAM_TYPES}
             selected={[form.examType]}
             onToggle={(value) => patch({ examType: value, ...(titleTouched ? {} : { title: examTitle(value) }) })}
+          />
+        </Section>
+        <Section title="Цвет глаз">
+          <ChipGroup
+            options={EYE_COLORS}
+            selected={form.eyeColor ? [form.eyeColor] : []}
+            onToggle={(value) => patch({ eyeColor: form.eyeColor === value ? "" : value })}
           />
         </Section>
         <TextField

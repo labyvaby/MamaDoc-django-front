@@ -7,9 +7,10 @@ import { getErrorMessage } from "../../../api/client";
 import { changeResponsibleEmployee } from "../../../api/registry";
 import { AppButton } from "../../../components/ui";
 import type { ActiveScope } from "../../../hooks/useActiveScope";
-import { doctorEmployeesOnly, useAllActiveEmployees } from "../../../hooks/useAllActiveEmployees";
+import { useAllActiveEmployees } from "../../../hooks/useAllActiveEmployees";
 import { useT } from "../../../i18n/VerticalProvider";
 import type { EnrollmentTarget } from "../enrollmentTarget";
+import { pediatricians } from "../registryConstants";
 
 interface ChangeDoctorDialogProps {
   open: boolean;
@@ -24,7 +25,7 @@ export const ChangeDoctorDialog: React.FC<ChangeDoctorDialogProps> = ({ open, sc
   const { t } = useT("registry");
   const { enqueueSnackbar } = useSnackbar();
   const { employees, isLoading } = useAllActiveEmployees(open);
-  const doctors = React.useMemo(() => doctorEmployeesOnly(employees), [employees]);
+  const doctors = React.useMemo(() => pediatricians(employees), [employees]);
   const [employeeId, setEmployeeId] = React.useState<number | "">(target.responsibleEmployeeId ?? "");
 
   React.useEffect(() => {

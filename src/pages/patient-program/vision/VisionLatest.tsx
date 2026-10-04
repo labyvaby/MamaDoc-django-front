@@ -6,7 +6,7 @@ import dayjs from "dayjs";
 
 import type { ProgramModuleRecord } from "../../../api/programs";
 import { EyeCard } from "./EyeCard";
-import { CONCLUSIONS, CORRECTIONS, optionLabel } from "./visionCatalog";
+import { CONCLUSIONS, CORRECTIONS, eyeColorHex, optionLabel } from "./visionCatalog";
 import type { VisionExam } from "./visionData";
 import { acuityNorm, acuityStatus, ageInMonths, parseAcuity } from "./visionNorms";
 import { acuityTrend, type VisionSignal } from "./visionSignals";
@@ -58,6 +58,8 @@ export const VisionLatest: React.FC<VisionLatestProps> = ({
   onConduct,
 }) => {
   const norm = acuityNorm(ageInMonths(birthDate, latest.record.occurredAt));
+  // Цвет глаз — с последнего осмотра, где врач его отметил.
+  const irisColor = eyeColorHex(latest.eyeColor ?? previous.find((exam) => exam.eyeColor)?.eyeColor);
   const eye = (side: "OD" | "OS") => {
     const read = (exam: VisionExam) => (side === "OD" ? exam.acuityRight : exam.acuityLeft);
     const raw = read(latest);
@@ -74,13 +76,14 @@ export const VisionLatest: React.FC<VisionLatestProps> = ({
         previous={previousRaw}
         trend={acuityTrend(value, previousRaw == null ? null : parseAcuity(previousRaw))}
         refraction={(side === "OD" ? latest.refraction?.right : latest.refraction?.left) ?? null}
+        irisColor={irisColor}
       />
     );
   };
   return (
     <Stack gap={1.5}>
       {/* Как у ребёнка: левый глаз слева, правый справа — рисунки встречаются в центре. */}
-      <Box sx={{ display: "grid", gap: { xs: 1, md: 1.5 }, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+      <Box sx={{ display: "grid", gap: { xs: 2, md: 4 }, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
         {eye("OS")}
         {eye("OD")}
       </Box>

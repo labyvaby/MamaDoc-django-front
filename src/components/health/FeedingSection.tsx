@@ -121,7 +121,7 @@ export const FeedingSection: React.FC<FeedingSectionProps> = ({ patientId, birth
             Первый прикорм:{" "}
             <b>
               {complementaryFeedingOn
-                ? `${formatDate(complementaryFeedingOn)}${birthDate ? ` · в ${ageLabel(birthDate, complementaryFeedingOn)}` : ""}`
+                ? `${formatDate(complementaryFeedingOn)}${ageLabel(birthDate, complementaryFeedingOn) ? ` · в ${ageLabel(birthDate, complementaryFeedingOn)}` : ""}`
                 : "не отмечен"}
             </b>
           </Typography>
@@ -133,8 +133,14 @@ export const FeedingSection: React.FC<FeedingSectionProps> = ({ patientId, birth
               label="Дата прикорма"
               value={firstFoodDraft}
               onChange={(value) => setFirstFoodDraft(value as Dayjs | null)}
+              minDate={birthDate ? dayjs(birthDate) : undefined}
+              maxDate={dayjs()}
               onAccept={(value) => {
                 const date = value as Dayjs | null;
+                if (date && date.isValid() && birthDate && date.isBefore(dayjs(birthDate), "day")) {
+                  enqueueSnackbar("Прикорм не может быть раньше рождения", { variant: "warning" });
+                  return;
+                }
                 firstFood.mutate(date && date.isValid() ? date.format("YYYY-MM-DD") : null);
               }}
               slotProps={{ textField: { size: "small", fullWidth: true } }}

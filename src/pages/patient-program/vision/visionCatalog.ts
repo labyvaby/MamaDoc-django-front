@@ -14,6 +14,24 @@ export type Correction = "none" | "glasses" | "lenses" | "orthok";
 export type AlignmentKind = "ortho" | "eso" | "exo" | "vertical";
 export type DiagnosisState = "observation" | "treatment" | "resolved";
 
+export type EyeColor = "blue" | "grey_blue" | "grey" | "green" | "light_brown" | "brown" | "dark_brown";
+
+/** Цвет радужки, как его выбирает врач; у малышей может меняться до 2–3 лет. */
+export const EYE_COLORS: ReadonlyArray<Option<EyeColor> & { hex: string }> = [
+  { value: "blue", label: "Голубые", hex: "#5b8fc9" },
+  { value: "grey_blue", label: "Серо-голубые", hex: "#7b97ad" },
+  { value: "grey", label: "Серые", hex: "#8a959d" },
+  { value: "green", label: "Зелёные", hex: "#5f8a4a" },
+  { value: "light_brown", label: "Светло-карие", hex: "#9a6a3a" },
+  { value: "brown", label: "Карие", hex: "#6b3f22" },
+  { value: "dark_brown", label: "Тёмно-карие", hex: "#3d2415" },
+];
+
+/** Цвет радужки на рисунке; не выбран — нейтральный серый. */
+export function eyeColorHex(color: EyeColor | null | undefined): string {
+  return EYE_COLORS.find((item) => item.value === color)?.hex ?? "#9aa3aa";
+}
+
 export const EXAM_TYPES: ReadonlyArray<Option<ExamType> & { title: string }> = [
   { value: "preventive", label: "Профилактический", title: "Профилактический осмотр зрения" },
   { value: "ophthalmologist", label: "Офтальмолог", title: "Осмотр офтальмолога" },

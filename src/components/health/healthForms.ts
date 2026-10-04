@@ -2,9 +2,30 @@ import { getErrorFields, getErrorMessage } from "../../api/client";
 import type { HealthProfile, HealthProfileUpdate, RiskGroup } from "../../api/health";
 
 /** Текст ошибки сохранения: сообщения полей без служебных ключей. */
+const FIELD_LABELS: Record<string, string> = {
+  measuredOn: "Дата замера",
+  weightKg: "Вес",
+  lengthHeightCm: "Рост",
+  headCircumferenceCm: "Окружность головы",
+  chestCircumferenceCm: "Окружность груди",
+  complementaryFeedingOn: "Первый прикорм",
+  startedOn: "Начало",
+  endedOn: "Окончание",
+  birthWeightG: "Вес при рождении",
+  birthLengthCm: "Рост при рождении",
+  birthHeadCm: "Голова при рождении",
+  gestationalAgeWeeks: "Срок гестации, нед.",
+  gestationalAgeDays: "Срок гестации, дн.",
+  allergen: "Аллерген",
+  drug: "Препарат",
+};
+
 export function healthErrorText(error: unknown): string {
   const fields = getErrorFields(error);
-  return fields ? Object.values(fields).join(" ") : getErrorMessage(error);
+  if (!fields) return getErrorMessage(error);
+  return Object.entries(fields)
+    .map(([key, message]) => (FIELD_LABELS[key] ? `${FIELD_LABELS[key]}: ${String(message)}` : String(message)))
+    .join(" ");
 }
 
 /** Реакции списком: кнопка добавляет или убирает слово из строки «Сыпь, зуд». */

@@ -20,6 +20,7 @@ import {
   growthFormValid,
   growthToForm,
   heightForNorms,
+  measureError,
   normsAge,
   parseMeasure,
   stepValue,
@@ -41,12 +42,14 @@ interface MeasureFieldProps {
   months: number | null;
   /** Значение для норм (рост с поправкой лёжа/стоя). */
   normsValue?: number | null;
+  /** Ошибка значения: поле красное, текст вместо центиля. */
+  error?: string | null;
 }
 
-/** Поле замера: ± шагом и сразу центиль ВОЗ для возраста ребёнка. */
-const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, onChange, indicator, sex, months, normsValue }) => {
+/** Поле замера: «− число +» и сразу центиль ВОЗ для возраста ребёнка. */
+const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, onChange, indicator, sex, months, normsValue, error }) => {
   const theme = useTheme();
-  const assessment = indicator ? assess(indicator, sex, months, normsValue ?? parseMeasure(value)) : null;
+  const assessment = indicator && !error ? assess(indicator, sex, months, normsValue ?? parseMeasure(value)) : null;
   const color = growthColor(theme, assessment?.status ?? "unknown");
   const digits = step < 0.1 ? 3 : 1;
   return (
@@ -54,10 +57,11 @@ const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, o
       <TextField
         size="small"
         fullWidth
-        label={label}
+        label={`${label}, ${unit}`}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        inputProps={{ inputMode: "decimal" }}
+        error={Boolean(error)}
+        inputProps={{ inputMode: "decimal", style: { textAlign: "center", fontWeight: 600 } }}
         InputProps={{
           startAdornment: (
             <InputAdornment position="start">
@@ -68,9 +72,6 @@ const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, o
           ),
           endAdornment: (
             <InputAdornment position="end">
-              <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5 }}>
-                {unit}
-              </Typography>
               <IconButton size="small" edge="end" aria-label={`${label}: плюс`} onClick={() => onChange(stepValue(value, step, digits))}>
                 <AddOutlined fontSize="inherit" />
               </IconButton>
@@ -78,7 +79,12 @@ const MeasureField: React.FC<MeasureFieldProps> = ({ label, unit, value, step, o
           ),
         }}
       />
-      <Box sx={{ minHeight: 26, mt: 0.5 }}>
+      <Box sx={{ minHeight: 26, mt: 0.5, textAlign: "center" }}>
+        {error && (
+          <Typography variant="caption" color="error" fontWeight={600}>
+            {error}
+          </Typography>
+        )}
         {assessment && (
           <Chip
             size="small"
@@ -130,6 +136,8 @@ export const GrowthDrawer: React.FC<GrowthDrawerProps> = ({ open, patientId, bir
   const height = parseMeasure(form.heightCm);
   const bodyMass = bmi(parseMeasure(form.weightKg), height);
   const bmiAssessment = assess("bmi", sex, months, bodyMass);
+  const theme = useTheme();
+  const bmiColor = growthColor(theme, bmiAssessment?.status ?? "unknown");
 
   const save = useMutation({
     mutationFn: () => {
@@ -205,16 +213,78 @@ export const GrowthDrawer: React.FC<GrowthDrawerProps> = ({ open, patientId, bir
           onChange: (value) => patch({ heightCm: value }),
           indicator: "height",
           normsValue: heightForNorms(height, form.position, months),
+          error: measureError("heightCm", form.heightCm),
         })}
-        {field({ label: "Вес", unit: "кг", value: form.weightKg, step: 0.1, onChange: (value) => patch({ weightKg: value }), indicator: "weight" })}
-        {field({ label: "Окружность головы", unit: "см", value: form.headCm, step: 0.5, onChange: (value) => patch({ headCm: value }), indicator: "head" })}
-        {field({ label: "Окружность груди", unit: "см", value: form.chestCm, step: 0.5, onChange: (value) => patch({ chestCm: value }), indicator: null })}
+        {field({
+          label: "Вес",
+          unit: "кг",
+          value: form.weightKg,
+          step: 0.1,
+          onChange: (value) => patch({ weightKg: value }),
+          indicator: "weight",
+          error: measureError("weightKg", form.weightKg),
+        })}
+        {field({
+          label: "Окружность головы",
+          unit: "см",
+          value: form.headCm,
+          step: 0.5,
+          onChange: (value) => patch({ headCm: value }),
+          indicator: "head",
+          error: measureError("headCm", form.headCm),
+        })}
+        {field({
+          label: "Окружность груди",
+          unit: "см",
+          value: form.chestCm,
+          step: 0.5,
+          onChange: (value) => patch({ chestCm: value }),
+          indicator: null,
+          error: measureError("chestCm", form.chestCm),
+        })}
       </Box>
       {bodyMass != null && (
-        <Typography variant="body2">
-          Индекс массы тела <b>{formatNumber(bodyMass, 1)}</b>
-          {bmiAssessment ? ` · ${centileLabel(bmiAssessment.centile)} · ${bmiVerdict(bmiAssessment.z, months)}` : ""}
-        </Typography>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1.5,
+            px: 1.75,
+            py: 1.25,
+            borderRadius: "12px",
+            border: `1px solid ${alpha(bmiColor, 0.4)}`,
+            bgcolor: alpha(bmiColor, 0.06),
+          }}
+        >
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Индекс массы тела
+            </Typography>
+            <Typography sx={{ fontSize: 26, fontWeight: 700, lineHeight: 1.1 }}>
+              {formatNumber(bodyMass, 1)}{" "}
+              <Typography component="span" variant="body2" color="text.secondary">
+                кг/м²
+              </Typography>
+            </Typography>
+          </Box>
+          {bmiAssessment ? (
+            <Box sx={{ textAlign: "right" }}>
+              <Chip
+                size="small"
+                label={centileLabel(bmiAssessment.centile)}
+                sx={{ height: 22, borderRadius: "6px", fontWeight: 600, bgcolor: alpha(bmiColor, 0.16), color: bmiColor }}
+              />
+              <Typography variant="body2" sx={{ color: bmiColor, fontWeight: 600, mt: 0.5 }}>
+                {bmiVerdict(bmiAssessment.z, months)}
+              </Typography>
+            </Box>
+          ) : (
+            <Typography variant="caption" color="text.secondary" sx={{ textAlign: "right" }}>
+              Оценки нет: нужны пол и возраст
+            </Typography>
+          )}
+        </Box>
       )}
       <TextField size="small" label="Заметка" value={form.notes} onChange={(event) => patch({ notes: event.target.value })} multiline minRows={2} fullWidth />
     </HealthDrawerShell>

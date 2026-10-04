@@ -47,6 +47,18 @@ export function chartRange(
   return { from, to, curveTo: curveTo != null && curveTo > from ? curveTo : null };
 }
 
+/**
+ * Пределы оси значений: коридор ВОЗ и замеры вместе, с небольшим запасом —
+ * иначе одна странная точка прячет нормы за краем графика.
+ */
+export function valueDomain(values: ReadonlyArray<number>): [number, number] | null {
+  if (!values.length) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = Math.max((max - min) * 0.06, 0.5);
+  return [Math.max(0, Math.floor(min - pad)), Math.ceil(max + pad)];
+}
+
 /** Деления оси возраста: через 3, 6 или 12 месяцев — по длине периода. */
 export function ageTicks(from: number, to: number): number[] {
   const span = to - from;

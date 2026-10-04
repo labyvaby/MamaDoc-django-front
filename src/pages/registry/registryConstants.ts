@@ -34,6 +34,21 @@ function numberList(value: unknown): number[] {
   return Array.isArray(value) ? value.filter((id): id is number => typeof id === "number") : [];
 }
 
+const PEDIATRIC = /педиатр|pediatr/i;
+
+/**
+ * Кого можно закрепить врачом: всегда педиатра (решение клиники 2026-10-04).
+ * Если педиатров в справочнике специальностей нет — любой врач.
+ */
+export function pediatricians<T extends { clinicalRole?: string | null; specializations: ReadonlyArray<{ name: string }> }>(
+  employees: T[],
+): T[] {
+  const found = employees.filter((employee) => employee.specializations.some((item) => PEDIATRIC.test(item.name)));
+  if (found.length) return found;
+  const doctors = employees.filter((employee) => employee.clinicalRole === "doctor");
+  return doctors.length ? doctors : employees;
+}
+
 export function programSpecializationIds(program: Program | undefined): number[] {
   return numberList(program?.settings?.responsibleSpecializationIds);
 }

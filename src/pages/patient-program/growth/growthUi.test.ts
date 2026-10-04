@@ -27,3 +27,13 @@ describe("growth ui helpers", () => {
     expect(formatNumber(15.86, 1)).toBe("15,9");
   });
 });
+
+describe("valueDomain", () => {
+  it("охватывает коридор ВОЗ и странную точку с запасом", async () => {
+    const { valueDomain } = await import("./growthUi");
+    expect(valueDomain([])).toBeNull();
+    const [low, high] = valueDomain([76, 90, 173]) as [number, number];
+    expect(low).toBeLessThanOrEqual(76);
+    expect(high).toBeGreaterThanOrEqual(173);
+  });
+});

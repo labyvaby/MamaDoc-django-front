@@ -212,10 +212,38 @@ export function parseMeasure(raw: string): number | null {
   return raw.trim() && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-/** Нужна дата и хотя бы одно значение. */
+export type MeasureField = "heightCm" | "weightKg" | "headCm" | "chestCm";
+
+/** Пределы, как на сервере (модель замера): вне их значение не сохранить. */
+export const MEASURE_LIMITS: Record<MeasureField, { min: number; max: number; unit: string }> = {
+  heightCm: { min: 30, max: 250, unit: "см" },
+  weightKg: { min: 0.3, max: 250, unit: "кг" },
+  headCm: { min: 20, max: 70, unit: "см" },
+  chestCm: { min: 25, max: 130, unit: "см" },
+};
+
+const decimal = (value: number): string => String(value).replace(".", ",");
+
+/** Ошибка поля замера для подсказки под ним; пусто или в пределах — null. */
+export function measureError(field: MeasureField, raw: string): string | null {
+  const text = raw.trim();
+  if (!text) return null;
+  const value = Number(text.replace(",", "."));
+  if (!Number.isFinite(value)) return "Нужно число";
+  const { min, max, unit } = MEASURE_LIMITS[field];
+  return value < min || value > max ? `От ${decimal(min)} до ${decimal(max)} ${unit}` : null;
+}
+
+const MEASURE_FIELDS: ReadonlyArray<MeasureField> = ["heightCm", "weightKg", "headCm", "chestCm"];
+
+/** Нужна дата, хотя бы одно значение и все значения в пределах. */
 export function growthFormValid(form: GrowthForm): boolean {
-  const values = [form.heightCm, form.weightKg, form.headCm, form.chestCm].map(parseMeasure);
-  return Boolean(form.measuredOn) && values.some((value) => value != null);
+  const values = MEASURE_FIELDS.map((field) => parseMeasure(form[field]));
+  return (
+    Boolean(form.measuredOn) &&
+    values.some((value) => value != null) &&
+    MEASURE_FIELDS.every((field) => measureError(field, form[field]) == null)
+  );
 }
 
 /** Тело запроса замера: числа, длина или рост — с положением. */

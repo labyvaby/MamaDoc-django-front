@@ -40,3 +40,14 @@ describe("registry constants", () => {
     });
   });
 });
+
+describe("pediatricians", () => {
+  it("закрепляется педиатр; нет педиатров — любой врач", async () => {
+    const { pediatricians } = await import("./registryConstants");
+    const doctor = { id: 1, clinicalRole: "doctor", specializations: [{ name: "Невролог" }] };
+    const pediatrician = { id: 2, clinicalRole: "doctor", specializations: [{ name: "Педиатр" }] };
+    const nurse = { id: 3, clinicalRole: "nurse", specializations: [] };
+    expect(pediatricians([doctor, pediatrician, nurse]).map((item) => item.id)).toEqual([2]);
+    expect(pediatricians([doctor, nurse]).map((item) => item.id)).toEqual([1]);
+  });
+});

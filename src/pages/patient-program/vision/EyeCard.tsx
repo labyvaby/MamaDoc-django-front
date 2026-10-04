@@ -26,6 +26,8 @@ export interface EyeCardProps {
   previous: string | null;
   trend: "up" | "down" | "same" | null;
   refraction: RefractionEye | null;
+  /** Цвет радужки на рисунке — настоящий цвет глаз ребёнка. */
+  irisColor: string;
 }
 
 /**
@@ -33,7 +35,7 @@ export interface EyeCardProps {
  * Как у ребёнка: левый глаз слева, правый справа; рисунки обращены к центру,
  * текст прижат к внешнему краю. На телефоне рисунок над текстом.
  */
-export const EyeCard: React.FC<EyeCardProps> = ({ side, raw, status, norm, corrected, previous, trend, refraction }) => {
+export const EyeCard: React.FC<EyeCardProps> = ({ side, raw, status, norm, corrected, previous, trend, refraction, irisColor }) => {
   const theme = useTheme();
   const narrow = useMediaQuery(theme.breakpoints.down("md"));
   const color = statusColor(theme, status);
@@ -59,7 +61,7 @@ export const EyeCard: React.FC<EyeCardProps> = ({ side, raw, status, norm, corre
       }}
     >
       <Box sx={{ display: "flex", justifyContent: { xs: inner, md: "center" }, flexShrink: 0 }}>
-        <EyeGraphic status={status} mirrored={left} size={narrow ? 76 : 92} />
+        <EyeGraphic status={status} irisColor={irisColor} mirrored={left} size={narrow ? 76 : 92} />
       </Box>
       <Box sx={{ flex: 1, minWidth: 0, textAlign: left ? "left" : "right" }}>
         <Typography variant="caption" color="text.secondary">

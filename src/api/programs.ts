@@ -84,6 +84,8 @@ export interface ProgramEnrollment {
   paymentState: PaymentState;
   createdAt: string;
   updatedAt: string;
+  /** Последний день оплаченного срока, который ещё идёт; до него снять с учёта нельзя. */
+  paidUntil?: string | null;
 }
 
 /** Учётная программа: медицинская и с пакетами — её видят мастер и реестр. */

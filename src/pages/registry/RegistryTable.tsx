@@ -12,10 +12,12 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
 } from "@mui/material";
+import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
 import dayjs from "dayjs";
 
@@ -104,13 +106,20 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({ rows, canManage, o
   const [menu, setMenu] = React.useState<{ anchor: HTMLElement; row: RegistryRow } | null>(null);
 
   const menuButton = (row: RegistryRow) => (
-    <IconButton
-      size="small"
-      aria-label={t("actions.menu")}
-      onClick={(event) => setMenu({ anchor: event.currentTarget, row })}
-    >
-      <MoreVertOutlined fontSize="small" />
-    </IconButton>
+    <Stack direction="row" gap={0.25} justifyContent="flex-end" sx={{ flexShrink: 0 }}>
+      <Tooltip title={t("actions.openBook")}>
+        <IconButton size="small" aria-label={t("actions.openBook")} onClick={() => onAction("openBook", row)}>
+          <MenuBookOutlined fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <IconButton
+        size="small"
+        aria-label={t("actions.menu")}
+        onClick={(event) => setMenu({ anchor: event.currentTarget, row })}
+      >
+        <MoreVertOutlined fontSize="small" />
+      </IconButton>
+    </Stack>
   );
 
   const contact = (row: RegistryRow) =>

@@ -1,6 +1,7 @@
 import React from "react";
 import { Alert, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
+import dayjs from "dayjs";
 import { useSnackbar } from "notistack";
 
 import { getErrorMessage } from "../../../api/client";
@@ -18,6 +19,8 @@ interface CancelEnrollmentDialogProps {
   patientName: string;
   /** Причина, выбранная при открытии; из вкладки «Не приходили» — «Не посещает». */
   defaultReason?: CancelReason;
+  /** Последний день оплаченного срока: до него снять с учёта нельзя. */
+  paidUntil?: string | null;
   onClose: () => void;
   onDone: (enrollment: ProgramEnrollment) => void;
 }
@@ -29,6 +32,7 @@ export const CancelEnrollmentDialog: React.FC<CancelEnrollmentDialogProps> = ({
   enrollmentId,
   patientName,
   defaultReason = "moved",
+  paidUntil = null,
   onClose,
   onDone,
 }) => {
@@ -66,6 +70,9 @@ export const CancelEnrollmentDialog: React.FC<CancelEnrollmentDialogProps> = ({
       </DialogTitle>
       <DialogContent>
         <Stack gap={1.5} sx={{ mt: 0.5 }}>
+          {paidUntil && (
+            <Alert severity="info">{t("cancel.paidUntil", { date: dayjs(paidUntil).format("DD.MM.YYYY") })}</Alert>
+          )}
           <TextField
             select
             size="small"
@@ -108,7 +115,7 @@ export const CancelEnrollmentDialog: React.FC<CancelEnrollmentDialogProps> = ({
         <AppButton
           variant="contained"
           color="error"
-          disabled={commentMissing || mutation.isPending}
+          disabled={Boolean(paidUntil) || commentMissing || mutation.isPending}
           onClick={() => mutation.mutate()}
         >
           {t("cancel.submit")}

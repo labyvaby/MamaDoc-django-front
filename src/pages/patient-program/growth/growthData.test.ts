@@ -112,3 +112,20 @@ describe("growthData", () => {
     expect(stepValue("", -0.5, 1)).toBe("0");
   });
 });
+
+describe("measureError", () => {
+  it("пустое и в пределах — без ошибки, вне пределов — понятный текст", async () => {
+    const { measureError } = await import("./growthData");
+    expect(measureError("headCm", "")).toBeNull();
+    expect(measureError("headCm", "45,5")).toBeNull();
+    expect(measureError("headCm", "73")).toBe("От 20 до 70 см");
+    expect(measureError("weightKg", "0,1")).toBe("От 0,3 до 250 кг");
+    expect(measureError("heightCm", "abc")).toBe("Нужно число");
+  });
+
+  it("значение вне пределов не даёт сохранить замер", () => {
+    const form = { ...emptyGrowthForm("2026-10-04", "standing"), heightCm: "80", headCm: "73" };
+    expect(growthFormValid(form)).toBe(false);
+    expect(growthFormValid({ ...form, headCm: "47" })).toBe(true);
+  });
+});

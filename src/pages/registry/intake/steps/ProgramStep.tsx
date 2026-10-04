@@ -9,11 +9,11 @@ import { djangoQueryKeys } from "../../../../api/queryKeys";
 import type { PriceQuote } from "../../../../api/registry";
 import { CustomDatePicker } from "../../../../components/ui";
 import type { ActiveScope } from "../../../../hooks/useActiveScope";
-import { doctorEmployeesOnly, useAllActiveEmployees } from "../../../../hooks/useAllActiveEmployees";
+import { useAllActiveEmployees } from "../../../../hooks/useAllActiveEmployees";
 import { usePermissions } from "../../../../hooks/usePermissions";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { subtleBg } from "../../../../theme/uiHelpers";
-import { programSpecializationIds, RESIDENCE_STATUSES } from "../../registryConstants";
+import { pediatricians, RESIDENCE_STATUSES } from "../../registryConstants";
 import { formatMoney } from "../../registryTabs";
 import type { ProgramState, StepErrors } from "../intakeState";
 
@@ -68,16 +68,13 @@ export const ProgramStep: React.FC<ProgramStepProps> = ({
   const branchOptions = activeBranch
     ? [{ id: activeBranch.id, name: activeBranch.name }]
     : (branches.data ?? []).filter((b) => b.isActive);
-  const wanted = programSpecializationIds(program);
   const doctors = React.useMemo(() => {
-    const pool = wanted.length
-      ? employees.filter((e) => e.specializations.some((s) => wanted.includes(s.id)))
-      : doctorEmployeesOnly(employees);
+    const pool = pediatricians(employees);
     return value.branchId == null
       ? pool
       : pool.filter((e) => e.branch == null || e.branch.id === value.branchId
         || e.operationalBranches.some((b) => b.id === value.branchId));
-  }, [employees, wanted, value.branchId]);
+  }, [employees, value.branchId]);
   React.useEffect(() => {
     onProgramLoaded(program);
   }, [program, onProgramLoaded]);
