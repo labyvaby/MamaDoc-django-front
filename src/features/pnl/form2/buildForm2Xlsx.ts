@@ -30,6 +30,17 @@ const VALUE_COLUMNS = [
   { col: "I", next: "J", previous: false },
 ];
 
+/** Символов в строке: кыргызское название — A:E (~48), русское — K:M (~36). */
+const KY_LINE = 46;
+const RU_LINE = 34;
+const LINE_HEIGHT = 13;
+
+/** Высота строки таблицы под самый длинный перенос (минимум одна строка). */
+export function rowHeight(ky: string, ru: string): number {
+  const lines = Math.max(1, Math.ceil(ky.length / KY_LINE), Math.ceil(ru.length / RU_LINE));
+  return Math.max(15, lines * LINE_HEIGHT + 2);
+}
+
 const center = (cell: Cell): Cell => {
   cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
   return cell;
@@ -49,6 +60,9 @@ export async function buildForm2Xlsx(input: Form2Input): Promise<Blob> {
   const ExcelJSModule = (await import("exceljs")).default;
   const workbook = new ExcelJSModule.Workbook();
   const sheet = workbook.addWorksheet("Форма №2");
+  // Вид листа задаём явно: без <sheetViews> Excel игнорирует высоту строк из файла
+  // (проверено на Excel 16), а длинные названия строк формы переносятся в 2–3 строки.
+  sheet.views = [{ showGridLines: false }];
   sheet.columns = [9, 9, 9, 12, 9, 9, 10, 9, 10, 10, 12, 12, 12].map((width) => ({ width }));
   const put = writer(sheet);
 
@@ -109,7 +123,7 @@ export async function buildForm2Xlsx(input: Form2Input): Promise<Blob> {
     ["K44", "Наименование показателей", "M44"],
   ];
   for (const [address, text, merge] of headers) center(put(address, text, merge, true)).border = BOX;
-  sheet.getRow(44).height = 42;
+  sheet.getRow(44).height = 56;
   for (const [address, n, merge] of [
     ["A45", 1, "E45"], ["F45", 2], ["G45", 3, "H45"], ["I45", 4, "J45"], ["K45", 5, "M45"],
   ] as [string, number, string?][]) {
@@ -133,11 +147,11 @@ export async function buildForm2Xlsx(input: Form2Input): Promise<Blob> {
       put(`K${r}`, item.ru, `M${r}`, !item.code);
     }
     for (const col of ["A", "B", "K", "L"]) sheet.getCell(`${col}${r}`).alignment = { wrapText: true, vertical: "middle" };
+    for (const { col, next } of VALUE_COLUMNS) sheet.mergeCells(`${col}${r}:${next}${r}`);
     if (item.code) {
       center(put(`F${r}`, item.code));
       const formula = FORM2_FORMULAS[item.code];
-      for (const { col, next, previous } of VALUE_COLUMNS) {
-        sheet.mergeCells(`${col}${r}:${next}${r}`);
+      for (const { col, previous } of VALUE_COLUMNS) {
         const cell = sheet.getCell(`${col}${r}`);
         const result = amount(item.code, previous);
         cell.value = formula
@@ -145,10 +159,11 @@ export async function buildForm2Xlsx(input: Form2Input): Promise<Blob> {
           : result;
         cell.numFmt = "#,##0";
         cell.font = { ...FONT, bold: Boolean(formula) };
+        cell.alignment = { vertical: "middle" };
       }
     }
     for (const col of ["A", "F", "G", "I", "K"]) sheet.getCell(`${col}${r}`).border = BOX;
-    sheet.getRow(r).height = 30;
+    sheet.getRow(r).height = rowHeight(item.ky, item.ru);
   }
 
   put("B75", `Руководитель  _____________________  ${req.directorName}`);

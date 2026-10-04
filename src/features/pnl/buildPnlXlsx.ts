@@ -147,7 +147,11 @@ export async function buildPnlXlsx(input: PnlXlsxInput): Promise<Blob> {
   }
 
   sheet.views = [{ state: "frozen", xSplit: 1, ySplit: HEADER_ROW }];
-  sheet.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+  // Без fitToPage: вместе с группировкой строк exceljs пишет <pageSetUpPr> раньше
+  // <outlinePr> внутри <sheetPr>, и Excel отказывается открывать файл (проверено
+  // на Excel 16). Группировка важнее «уместить при печати».
+  // Масштаб вместо «уместить»: год по месяцам ложится на альбомный лист по ширине.
+  sheet.pageSetup = { orientation: "landscape", paperSize: 9, scale: 60 };
 
   const buffer = await workbook.xlsx.writeBuffer();
   return new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });

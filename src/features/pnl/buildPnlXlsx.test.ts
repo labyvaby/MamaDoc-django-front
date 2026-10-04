@@ -55,6 +55,10 @@ describe("buildPnlXlsx", () => {
 
     expect(sheet.getCell(`C${revenue.number}`).numFmt).toBe("#,##0;[Red]-#,##0");
     expect(sheet.views[0]).toMatchObject({ state: "frozen", xSplit: 1, ySplit: 7 });
+    // fitToPage + группировка строк = файл, который Excel не открывает (порядок в <sheetPr>).
+    expect(sheet.pageSetup.fitToPage).toBeFalsy();
+    expect(sheet.pageSetup.orientation).toBe("landscape");
+    expect(sheet.pageSetup.scale).toBe(60);
   });
 
   it("при нулевой выручке доли пустые", async () => {

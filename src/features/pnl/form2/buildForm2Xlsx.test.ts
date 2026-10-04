@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { EMPTY_REQUISITES } from "../../../api/organization";
 import { makeReport } from "../fixture";
-import { buildForm2Xlsx } from "./buildForm2Xlsx";
+import { buildForm2Xlsx, rowHeight } from "./buildForm2Xlsx";
 
 async function readBack(blob: Blob): Promise<ExcelJS.Worksheet> {
   const workbook = new ExcelJS.Workbook();
@@ -42,6 +42,14 @@ describe("buildForm2Xlsx", () => {
     expect(sheet.getCell("G73").value).toMatchObject({ formula: "G71+G72" });
     expect(sheet.getCell("B57").value).toBe("Амортизация");
     expect(sheet.getCell("B75").value).toBe("Руководитель  _____________________  Сейдалиев К. Т.");
+    // Без явного вида листа Excel игнорирует высоту строк — длинные названия обрезаются.
+    expect(sheet.views).toHaveLength(1);
+    expect(sheet.getRow(66).height).toBeGreaterThan(sheet.getRow(55).height ?? 0);
+  });
+
+  it("высота строки растёт с длиной названия", () => {
+    expect(rowHeight("Короткое", "Короткое")).toBe(15);
+    expect(rowHeight("x".repeat(95), "y".repeat(40))).toBe(41);
   });
 
   it("целый год — заголовки как в бланке; юр. название из реквизитов", async () => {
