@@ -453,7 +453,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setTab("billing");
   };
   const paidShare = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
-  const stayStatus = item ? mapStayDisplayStatus(item.stayStatus) : null;
+  // Отменённая, незаезд, истёкшая: статус проживания («Подтверждена») рядом со статусом брони противоречил ему.
+  const reservationClosed = reservation != null && ["cancelled", "no_show", "expired"].includes(reservation.status);
+  const stayStatus = item && !reservationClosed ? mapStayDisplayStatus(item.stayStatus) : null;
   const stayColor = stayStatus ? hotelStayStatusColor(stayStatus, theme) : theme.palette.text.disabled;
 
   const detailRows: { label: string; value: React.ReactNode }[] =
