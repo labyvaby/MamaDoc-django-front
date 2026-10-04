@@ -6,7 +6,16 @@ import dayjs from "dayjs";
 import { useSnackbar } from "notistack";
 
 import { getAppointment } from "../../../api/appointments";
-import { getConditions, getFamily, getGrowth, getHospitalizations, getLifeAnamnesis, getPatientHealth } from "../../../api/health";
+import {
+  getConditions,
+  getFamily,
+  getGrowth,
+  getHospitalizations,
+  getIllnessHistory,
+  getLifeAnamnesis,
+  getPatientHealth,
+  getSurgeries,
+} from "../../../api/health";
 import { DJANGO_DETAIL_STALE_TIME_MS, djangoQueryKeys } from "../../../api/queryKeys";
 import { getPatientHistory, getPatientSchedule } from "../../../api/vaccinations";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
@@ -68,7 +77,7 @@ export const InsertLifeAnamnesisButton: React.FC<InsertLifeAnamnesisButtonProps>
       const id = patientId;
       const scope = health.scope;
       const orgId = health.orgId;
-      const [life, summary, family, conditions, hospitalizations, schedule, history] = await Promise.all([
+      const [life, summary, family, conditions, hospitalizations, illness, surgeries, schedule, history] = await Promise.all([
         queryClient.fetchQuery({ queryKey: djangoQueryKeys.health.lifeAnamnesis(id, orgId), queryFn: ({ signal }) => getLifeAnamnesis(scope, id, signal) }),
         queryClient.fetchQuery({ queryKey: djangoQueryKeys.health.summary(id, orgId), queryFn: ({ signal }) => getPatientHealth(scope, id, signal) }),
         queryClient.fetchQuery({ queryKey: djangoQueryKeys.health.family(id, orgId), queryFn: ({ signal }) => getFamily(scope, id, signal) }),
@@ -77,6 +86,11 @@ export const InsertLifeAnamnesisButton: React.FC<InsertLifeAnamnesisButtonProps>
           queryFn: ({ signal }) => getConditions(scope, id, { status: "all" }, signal),
         }),
         queryClient.fetchQuery({ queryKey: djangoQueryKeys.health.hospitalizations(id, orgId), queryFn: ({ signal }) => getHospitalizations(scope, id, signal) }),
+        queryClient.fetchQuery({ queryKey: djangoQueryKeys.health.illnessHistory(id, orgId), queryFn: ({ signal }) => getIllnessHistory(scope, id, signal) }),
+        queryClient.fetchQuery({
+          queryKey: djangoQueryKeys.health.surgeries(id, orgId),
+          queryFn: ({ signal }) => getSurgeries(scope, id, { status: "all" }, signal),
+        }),
         access.canSeeVaccinations
           ? queryClient.fetchQuery({ queryKey: djangoQueryKeys.vaccinations.patientSchedule(id), queryFn: ({ signal }) => getPatientSchedule(id, apiOrgId, signal) })
           : Promise.resolve(null),
@@ -85,7 +99,7 @@ export const InsertLifeAnamnesisButton: React.FC<InsertLifeAnamnesisButtonProps>
           : Promise.resolve(null),
       ]);
       const input = assembleAnamnesisInput(
-        { life, health: summary, growth: growth.data, family, conditions, hospitalizations, schedule, history },
+        { life, health: summary, growth: growth.data, family, conditions, hospitalizations, illness, surgeries, schedule, history },
         access,
       );
       const paragraph = buildLifeAnamnesisParagraph(input, {

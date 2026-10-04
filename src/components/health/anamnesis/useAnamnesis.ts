@@ -12,8 +12,10 @@ import {
   type FamilyMember,
   type GrowthData,
   type Hospitalization,
+  type IllnessHistory,
   type LifeAnamnesis,
   type PatientHealth,
+  type Surgery,
 } from "../../../api/health";
 import { DJANGO_DETAIL_STALE_TIME_MS, DJANGO_LIST_STALE_TIME_MS, djangoQueryKeys } from "../../../api/queryKeys";
 import {
@@ -24,7 +26,8 @@ import {
 } from "../../../api/vaccinations";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
 import { usePermissions } from "../../../hooks/usePermissions";
-import { usePatientHealth, useHealthScope } from "../useHealth";
+import { useIllnessHistory, usePatientHealth, usePatientSurgeries, useHealthScope } from "../useHealth";
+import { illnessEntries, surgeriesInput } from "./anamnesisSources";
 import type { AnamnesisInput } from "./anamnesisTypes";
 import type { ChildSex } from "./russian";
 
@@ -57,20 +60,26 @@ export interface AnamnesisSources {
   /** `conditions/?status=all`; null — ещё нет, берём диагнозы из `health/`. */
   conditions: Condition[] | null;
   hospitalizations: Hospitalization[];
+  /** «История болезней»; null — ещё нет: болезни из диагнозов медкарты. */
+  illness: IllnessHistory | null;
+  /** «Операции и травмы»; null — ещё нет: фразы об операциях нет. */
+  surgeries: Surgery[] | null;
   schedule: VaccinationScheduleSlot[] | null;
   history: VaccinationRecord[] | null;
 }
 
 /**
  * Вход чистых функций из ответов сервера. Закрытые сведения — только при праве
- * и если сервер их отдал; прививки — только при `vaccinations.view`.
- * «Операции и травмы» и отметка «болезней не было» пока не подключены.
+ * и если сервер их отдал; прививки — только при `vaccinations.view`. Болезни —
+ * из «Истории болезней» (случаи из приёмов, архив, внесённые вручную), пока её
+ * нет — из диагнозов медкарты. Отметки «болезней не было» в разделах нет.
  */
 export function assembleAnamnesisInput(sources: AnamnesisSources, access: Pick<AnamnesisAccess, "canSeeSensitive" | "canSeeVaccinations">): AnamnesisInput {
   const { life, health, growth } = sources;
   const profile = health.profile;
   const sex: ChildSex = growth.sex === "male" || growth.sex === "female" ? growth.sex : "";
   const canSeeSensitive = access.canSeeSensitive && life.sensitiveAccess;
+  const illness = sources.illness ? illnessEntries(sources.illness) : null;
   return {
     sex,
     birthDate: growth.birthDate,
@@ -84,12 +93,12 @@ export function assembleAnamnesisInput(sources: AnamnesisSources, access: Pick<A
     riskGroups: life.riskGroups,
     family: sources.family,
     allergies: health.allergies.filter((allergy) => allergy.status === "active"),
-    conditions: (sources.conditions ?? health.conditions).filter((condition) => condition.status !== "refuted"),
-    hospitalizations: sources.hospitalizations,
+    conditions: illness?.conditions ?? (sources.conditions ?? health.conditions).filter((condition) => condition.status !== "refuted"),
+    hospitalizations: illness?.hospitalizations ?? sources.hospitalizations,
     noPastIllnesses: null,
     feeding: growth.feeding,
     complementaryFeedingOn: growth.complementaryFeedingOn ?? profile.complementaryFeedingOn,
-    surgeries: null,
+    surgeries: sources.surgeries ? surgeriesInput(sources.surgeries) : null,
     vaccinations:
       access.canSeeVaccinations && (sources.schedule || sources.history)
         ? {
@@ -180,6 +189,8 @@ export function useAnamnesisInput(patientId: number | null | undefined, options:
     enabled: on,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
+  const illness = useIllnessHistory(patientId, on);
+  const surgeries = usePatientSurgeries(patientId, on);
   const vaccinesOn = on && access.canSeeVaccinations;
   const schedule = useQuery({
     queryKey: djangoQueryKeys.vaccinations.patientSchedule(id),
@@ -205,6 +216,8 @@ export function useAnamnesisInput(patientId: number | null | undefined, options:
               family: family.data,
               conditions: conditions.data ?? null,
               hospitalizations: hospitalizations.data ?? [],
+              illness: illness.data ?? null,
+              surgeries: surgeries.data ?? null,
               schedule: schedule.data ?? null,
               history: history.data ?? null,
             },
@@ -218,6 +231,8 @@ export function useAnamnesisInput(patientId: number | null | undefined, options:
       family.data,
       conditions.data,
       hospitalizations.data,
+      illness.data,
+      surgeries.data,
       schedule.data,
       history.data,
       access,
