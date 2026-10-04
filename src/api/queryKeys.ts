@@ -347,6 +347,8 @@ export const djangoQueryKeys = {
       ["django", "vaccinations", "batches", batchId, "write-offs"] as const,
     records: (params: Record<string, unknown>) =>
       ["django", "vaccinations", "records", params] as const,
+    recordsSummary: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "records-summary", params] as const,
     record: (id: number) => ["django", "vaccinations", "records", id] as const,
     // Дашборд «кому пора» (по всем пациентам филиала).
     schedule: (params: Record<string, unknown>) =>
@@ -362,6 +364,20 @@ export const djangoQueryKeys = {
     // Месячный отчёт по календарю.
     monthlyReport: (params: Record<string, unknown>) =>
       ["django", "vaccinations", "monthly-report", params] as const,
+    // Бейдж «Не оформлено».
+    draftCount: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "records", "draft-count", params] as const,
+    recordAudit: (id: number, orgId?: number) =>
+      ["django", "vaccinations", "records", id, "audit", orgId] as const,
+    exemptions: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "exemptions", params] as const,
+    refusals: (params: Record<string, unknown>) =>
+      ["django", "vaccinations", "refusals", params] as const,
+    form5Rows: (orgId?: number) => ["django", "vaccinations", "form5-rows", orgId] as const,
+    krPositions: (orgId?: number) => ["django", "vaccinations", "kr-positions", orgId] as const,
+    patientCalendar: (patientId: number, orgId?: number) =>
+      ["django", "vaccinations", "patients", patientId, "calendar", orgId] as const,
+    form5: (params: Record<string, unknown>) => ["django", "vaccinations", "form5", params] as const,
   },
 
   staff: {

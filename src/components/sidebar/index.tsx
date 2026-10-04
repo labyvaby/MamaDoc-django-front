@@ -71,6 +71,7 @@ import { getTasksSummary } from "../../api/tasks";
 import { getWaitlistSummary, WAITLIST_MODULE_ENABLED } from "../../api/waitlist";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import { getBookings } from "../../api/bookings";
+import { getDraftCount } from "../../api/vaccinations";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import {
   djangoQueryKeys,
@@ -601,6 +602,18 @@ const SidebarSecondary: React.FC = () => {
     refetchOnWindowFocus: true,
   });
   const waitlistBadgeCount = waitlistSummaryQuery.data?.waiting ?? 0;
+
+  // Бейдж «Вакцины»: проданные в приёмах, но не оформленные прививки — без
+  // оформления они не попадают ни в карту, ни в отчётность.
+  const canRecordVaccination = can("vaccinations.record");
+  const vaccinationDraftsQuery = useQuery({
+    queryKey: djangoQueryKeys.vaccinations.draftCount({ branchId: activeBranchId ?? null, orgId }),
+    queryFn: ({ signal }) => getDraftCount(activeBranchId ?? null, orgId, signal),
+    enabled: can_.vaccinations && canRecordVaccination && !permissionsLoading,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+    refetchOnWindowFocus: true,
+  });
+  const vaccinationDraftsCount = vaccinationDraftsQuery.data ?? 0;
   const waitlistBadgeColor: "error" | "primary" =
     (waitlistSummaryQuery.data?.urgent ?? 0) > 0 ? "error" : "primary";
 
@@ -1016,7 +1029,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Вакцины (карточки вакцин — товары склада с меткой «вакцина») */}
         {show("storage") && can_.vaccinations && (
-          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/vaccinations" icon={<VaccinesOutlined />} label="Вакцины" collapsed={siderCollapsed} badgeCount={vaccinationDraftsCount} badgeColor="primary" />
         )}
 
         {/* Продажи товаров */}

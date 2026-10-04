@@ -1,4 +1,4 @@
-import { ApiError, apiRequest } from "./client";
+import { API_BASE, ApiError, apiRequest } from "./client";
 
 /**
  * Модуль «Вакцины» (vaccinations).
@@ -81,6 +81,27 @@ export interface Vaccine {
   price: string | null;
   /** Остаток товара; строка-decimal. Можно сузить ?branchId= (см. getVaccines). */
   stock: string;
+  /** Государственная (бесплатная, идёт в форму 5) или платная. */
+  funding?: VaccineFunding;
+  /** Какая строка раздела 1 формы 5 закрывается каждой дозой (только у гос.). */
+  form5Rows?: Form5RowRef[];
+}
+
+export type VaccineFunding = "commercial" | "state";
+
+export interface Form5RowRef {
+  dose: number;
+  /** Код строки формы 5, например "3.2". */
+  row: string;
+}
+
+/** Строка встроенного справочника раздела 1 формы 5. */
+export interface Form5Row {
+  code: string;
+  label: string;
+  group: string;
+  /** false — у строки в бланке нет кода, код наш. */
+  printedCode: boolean;
 }
 
 export interface CreateVaccinePayload {
@@ -91,6 +112,8 @@ export interface CreateVaccinePayload {
   intervalDays?: number | null;
   recommendedAgeMonths?: number | null;
   notes?: string;
+  funding?: VaccineFunding;
+  form5Rows?: Form5RowRef[];
 }
 
 export interface UpdateVaccinePayload extends Partial<CreateVaccinePayload> {
@@ -125,7 +148,11 @@ export interface VaccineBatch {
    * ответах отсутствует, поэтому необязательное (UI трактует undefined как 0).
    */
   writtenOff?: number;
+  /** Источник поставки: платная или гос. (плановая / наверстывающая) — форма 5, раздел 5. */
+  program?: BatchProgram;
 }
+
+export type BatchProgram = "commercial" | "state_planned" | "state_catchup";
 
 export interface CreateBatchPayload {
   branchId: number;
@@ -144,6 +171,7 @@ export interface CreateBatchPayload {
   costPrice?: string;
   supplier?: string;
   notes?: string;
+  program?: BatchProgram;
 }
 
 export type UpdateBatchPayload = Partial<Omit<CreateBatchPayload, "vaccineId">>;
@@ -193,18 +221,30 @@ export type InjectionSite = string;
 /**
  * Статус записи о вакцине.
  *
- * "draft" (с 21.08.2026) бэк ставит сам, когда регистратор продал товар-вакцину
- * в приёме, — медсестре остаётся дозаполнить. "done" — предположение фронта
- * (гайд обещает "completed", но на проде записи только в "pending", проверено
- * 23.08.2026). Поле терпимо к произвольной строке.
+ * "draft" — «Не оформлена»: бэк ставит сам, когда в приёме продали товар-вакцину;
+ * медсестра дооформляет через `administerRecord`. "pending" — «Проведена»
+ * (историческое значение API, сохранено ради совместимости). "canceled" — отменена.
  */
-export type VaccinationRecordStatus =
-  | "draft"
-  | "pending"
-  | "done"
-  | "completed"
-  | "canceled"
-  | string;
+export type VaccinationRecordStatus = "draft" | "pending" | "canceled";
+
+export type PatientGenderValue = "male" | "female" | "unknown";
+export type InnAbsentReason = "newborn" | "foreigner" | "no_documents" | "other";
+
+/** Пациент записи — то, что нужно форме оформления (пол, дата рождения, ИНН). */
+export interface RecordPatient {
+  id: number;
+  fullName: string;
+  gender: PatientGenderValue;
+  birthDate: string | null;
+  inn: string;
+  innAbsentReason: InnAbsentReason | "";
+}
+
+/** Необязательное замечание к сохранённой записи (например, возраст вне срока). */
+export interface RecordWarning {
+  code: string;
+  message: string;
+}
 
 /** Кто вводил вакцину — объект (как employee в строке услуги приёма), не число. */
 export interface VaccinationAdministeredBy {
@@ -236,6 +276,10 @@ export interface VaccinationRecord {
   doseNumber: number;
   injectionSite: InjectionSite;
   administeredBy: VaccinationAdministeredBy | null;
+  /** Врач приёма, к которому привязана доза (назначил); нет — внешняя или без приёма. */
+  prescribedBy?: VaccinationAdministeredBy | null;
+  /** Кто внёс запись в CRM (у внешней прививки — не тот, кто прививал). */
+  recordedBy?: VaccinationAdministeredBy | null;
   isExternal: boolean;
   batchNumberManual: string;
   expiresAtManual: string | null;
@@ -248,6 +292,14 @@ export interface VaccinationRecord {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  /** Пациент записи (пол, дата рождения, ИНН) — для окна оформления. */
+  patient?: RecordPatient;
+  /** Чего не хватает черновику до «Проведена» (ключи вида "patient.gender", "batch"). */
+  missing?: string[];
+  /** Замечания — приходят только в ответе administerRecord. */
+  warnings?: RecordWarning[];
+  /** Передача в госсистему (этап 4; пока всегда "not_sent"). */
+  govSyncStatus?: "not_sent" | "sent" | "error";
 }
 
 export interface RecordsFilters {
@@ -255,9 +307,18 @@ export interface RecordsFilters {
   branchId?: number;
   dateFrom?: string; // YYYY-MM-DD
   dateTo?: string;
-  /** Записи одного приёма (с 21.08.2026). Фильтра по статусу у эндпоинта нет. */
+  /** Записи одного приёма (с 21.08.2026). */
   appointmentId?: number;
+  /** "draft" — только «Не оформлено»; "pending" — только проведённые; по умолчанию — все, кроме отменённых. */
+  status?: "draft" | "pending";
+  administeredById?: number;
+  vaccineId?: number;
+  /** Проведённые прививки пациентов без ИНН («Дополнить ИНН»). */
+  missingInn?: boolean;
   organizationId?: number;
+  /** Порция ленты: пропустить offset записей и взять limit (не больше 200). */
+  offset?: number;
+  limit?: number;
 }
 
 /** Сценарий 1 «у нас» — batchId + administeredById; Сценарий 2 «внешняя» — isExternal + ручные поля. */
@@ -294,7 +355,90 @@ export interface CreateRecordPayload {
  */
 export interface UpdateRecordPayload {
   status?: "canceled";
+  /** Причина отмены — попадает в журнал правок. */
+  cancelReason?: string;
   reactionNotes?: string;
+  injectionSite?: InjectionSite;
+  notes?: string;
+}
+
+/** Тело «Оформить»: поля записи + недостающие данные пациента, одной транзакцией. */
+export interface AdministerRecordPayload {
+  batchId?: number;
+  batchNumberManual?: string;
+  expiresAtManual?: string;
+  doseNumber?: number;
+  injectionSite?: InjectionSite;
+  administeredById?: number;
+  administeredAt?: string;
+  notes?: string;
+  patient?: {
+    gender?: "male" | "female";
+    birthDate?: string;
+    inn?: string;
+    innAbsentReason?: InnAbsentReason | "";
+  };
+}
+
+/** Строка журнала правок записи. */
+export interface VaccinationAuditEntry {
+  id: number;
+  action: "created" | "updated" | "status_changed" | "canceled" | string;
+  changes: Record<string, [unknown, unknown]>;
+  userName: string | null;
+  createdAt: string;
+}
+
+export type ExemptionKind = "temporary" | "long_term" | "permanent";
+export type RefusalReason = "safety_doubts" | "religious" | "no_information" | "other";
+
+/** Медотвод: vaccineId null — от всех прививок. */
+export interface VaccinationExemption {
+  id: number;
+  patientId: number;
+  vaccineId: number | null;
+  vaccineName: string | null;
+  kind: ExemptionKind;
+  startsOn: string;
+  endsOn: string | null;
+  reason: string;
+  issuedBy: VaccinationAdministeredBy | null;
+  isCanceled: boolean;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreateExemptionPayload {
+  patientId: number;
+  vaccineId?: number | null;
+  kind: ExemptionKind;
+  startsOn: string;
+  endsOn?: string | null;
+  reason: string;
+  issuedById?: number | null;
+}
+
+/** Отказ от прививки: vaccineId null — от всех. */
+export interface VaccinationRefusal {
+  id: number;
+  patientId: number;
+  vaccineId: number | null;
+  vaccineName: string | null;
+  refusedOn: string;
+  reason: RefusalReason;
+  comment: string;
+  recordedBy: VaccinationAdministeredBy | null;
+  isCanceled: boolean;
+  createdAt: string;
+}
+
+export interface CreateRefusalPayload {
+  patientId: number;
+  vaccineId?: number | null;
+  refusedOn: string;
+  reason: RefusalReason;
+  comment?: string;
+  recordedById?: number | null;
 }
 
 /**
@@ -305,7 +449,7 @@ export interface UpdateRecordPayload {
  * (проверено 23.08.2026 на newcrm.pediatr.kg). "completed" держим в типе как
  * запасной вариант, чтобы чипы не пропали, если бэк всё-таки переименует.
  */
-export type ScheduleStatus = "planned" | "overdue" | "done" | "completed" | "skipped";
+export type ScheduleStatus = "planned" | "overdue" | "exempt" | "done" | "completed" | "skipped";
 
 /** Слот календаря вакцин. status="overdue" вычисляется бэком на лету. */
 export interface VaccinationScheduleSlot {
@@ -335,6 +479,8 @@ export interface VaccinationScheduleSlot {
   /** Для дашборда «Кому пора» (все пациенты) — бэк заполняет с 21.08.2026. */
   patientName?: string;
   patientPhone?: string;
+  /** status="exempt": до какого числа медотвод (null — постоянный). */
+  exemptionUntil?: string | null;
 }
 
 export interface ScheduleDashboardFilters {
@@ -755,18 +901,60 @@ export function getRecords(
       list = list.filter((r) => r.appointmentId === filters.appointmentId);
     return mockDelay(list);
   }
+  const qs = recordsQuery(filters);
+  return apiRequest<{ results: VaccinationRecord[] } | VaccinationRecord[]>(
+    `/vaccinations/records/${qs ? `?${qs}` : ""}`,
+    { signal },
+  ).then(toList);
+}
+
+function recordsQuery(filters: RecordsFilters): string {
   const q = new URLSearchParams();
   if (filters.patientId != null) q.set("patientId", String(filters.patientId));
   if (filters.branchId != null) q.set("branchId", String(filters.branchId));
   if (filters.dateFrom) q.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) q.set("dateTo", filters.dateTo);
   if (filters.appointmentId != null) q.set("appointmentId", String(filters.appointmentId));
+  if (filters.status) q.set("status", filters.status);
+  if (filters.administeredById != null) q.set("administeredById", String(filters.administeredById));
+  if (filters.vaccineId != null) q.set("vaccineId", String(filters.vaccineId));
+  if (filters.missingInn) q.set("missingInn", "1");
   if (filters.organizationId != null) q.set("organizationId", String(filters.organizationId));
-  const qs = q.toString();
-  return apiRequest<{ results: VaccinationRecord[] } | VaccinationRecord[]>(
-    `/vaccinations/records/${qs ? `?${qs}` : ""}`,
-    { signal },
-  ).then(toList);
+  if (filters.offset != null) q.set("offset", String(filters.offset));
+  if (filters.limit != null) q.set("limit", String(filters.limit));
+  return q.toString();
+}
+
+export interface RecordsSummaryBucket {
+  key: string;
+  label: string;
+  count: number;
+}
+
+/** Итоги записей за период под теми же фильтрами, что и лента. */
+export interface RecordsSummary {
+  count: number;
+  /** Сделано у нас (со склада). */
+  ours: number;
+  external: number;
+  /** Разных детей. */
+  patients: number;
+  /** Сумма по нашим прививкам: цена − скидка, строка-decimal. */
+  amount: string;
+  byVaccine: { vaccineId: number; vaccineName: string; count: number; amount: string }[];
+  /** Дети по полу: female / male / unknown. */
+  bySex: RecordsSummaryBucket[];
+  /** Прививки по возрасту ребёнка на день прививки: lt1, 1to2, 2to7, 7to14, gte14, unknown. */
+  byAge: RecordsSummaryBucket[];
+  byMonth: { month: string; count: number; amount: string }[];
+}
+
+export function getRecordsSummary(
+  filters: Omit<RecordsFilters, "offset" | "limit"> = {},
+  signal?: AbortSignal,
+): Promise<RecordsSummary> {
+  const qs = recordsQuery(filters);
+  return apiRequest<RecordsSummary>(`/vaccinations/records/summary/${qs ? `?${qs}` : ""}`, { signal });
 }
 
 /**
@@ -878,8 +1066,110 @@ export function updateRecord(
 }
 
 /** Отменить запись: возврат дозы на склад, снятие строки счёта, откат слота в planned. */
-export function cancelRecord(recordId: number, organizationId?: number): Promise<VaccinationRecord> {
-  return updateRecord(recordId, { status: "canceled" }, organizationId);
+export function cancelRecord(
+  recordId: number,
+  organizationId?: number,
+  cancelReason?: string,
+): Promise<VaccinationRecord> {
+  return updateRecord(recordId, { status: "canceled", cancelReason }, organizationId);
+}
+
+/** Оформить черновик (или исправить проведённую): поля записи + данные пациента. */
+export function administerRecord(
+  recordId: number,
+  payload: AdministerRecordPayload,
+  organizationId?: number,
+): Promise<VaccinationRecord> {
+  return apiRequest<VaccinationRecord>(
+    withOrg(`/vaccinations/records/${recordId}/administer/`, organizationId),
+    { method: "POST", body: payload },
+  );
+}
+
+/** Сколько черновиков «Не оформлено» (бейдж в меню и на вкладке). */
+export function getDraftCount(
+  branchId?: number | null,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<number> {
+  const q = branchId != null ? `?branchId=${branchId}` : "";
+  return apiRequest<{ count: number }>(
+    withOrg(`/vaccinations/records/draft-count/${q}`, organizationId),
+    { signal },
+  ).then((r) => r.count);
+}
+
+/** Журнал правок записи, новые сверху. */
+export function getRecordAudit(
+  recordId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<VaccinationAuditEntry[]> {
+  return apiRequest<VaccinationAuditEntry[]>(
+    withOrg(`/vaccinations/records/${recordId}/audit/`, organizationId),
+    { signal },
+  );
+}
+
+/** Встроенный справочник строк раздела 1 формы 5. */
+export function getForm5Rows(organizationId?: number, signal?: AbortSignal): Promise<Form5Row[]> {
+  return apiRequest<Form5Row[]>(withOrg("/vaccinations/form5-rows/", organizationId), { signal });
+}
+
+export function getExemptions(
+  patientId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<VaccinationExemption[]> {
+  return apiRequest<VaccinationExemption[]>(
+    withOrg(`/vaccinations/exemptions/?patientId=${patientId}`, organizationId),
+    { signal },
+  );
+}
+
+export function createExemption(
+  payload: CreateExemptionPayload,
+  organizationId?: number,
+): Promise<VaccinationExemption> {
+  return apiRequest<VaccinationExemption>(withOrg("/vaccinations/exemptions/", organizationId), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function cancelExemption(id: number, organizationId?: number): Promise<VaccinationExemption> {
+  return apiRequest<VaccinationExemption>(
+    withOrg(`/vaccinations/exemptions/${id}/`, organizationId),
+    { method: "PATCH", body: { isCanceled: true } },
+  );
+}
+
+export function getRefusals(
+  patientId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<VaccinationRefusal[]> {
+  return apiRequest<VaccinationRefusal[]>(
+    withOrg(`/vaccinations/refusals/?patientId=${patientId}`, organizationId),
+    { signal },
+  );
+}
+
+export function createRefusal(
+  payload: CreateRefusalPayload,
+  organizationId?: number,
+): Promise<VaccinationRefusal> {
+  return apiRequest<VaccinationRefusal>(withOrg("/vaccinations/refusals/", organizationId), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function cancelRefusal(id: number, organizationId?: number): Promise<VaccinationRefusal> {
+  return apiRequest<VaccinationRefusal>(
+    withOrg(`/vaccinations/refusals/${id}/`, organizationId),
+    { method: "PATCH", body: { isCanceled: true } },
+  );
 }
 
 /** Наблюдение после вакцины (реакция). */
@@ -1048,7 +1338,13 @@ export interface CalendarTemplateRow {
   mandatory: boolean;
   label: string;
   isActive: boolean;
+  /** Кому строка: всем / девочкам (ВПЧ) / мальчикам. */
+  sex?: CalendarSex;
+  /** Позиция встроенного календаря КР (пусто у своих строк). */
+  krKey?: string;
 }
+
+export type CalendarSex = "any" | "female" | "male";
 
 export interface CreateCalendarTemplatePayload {
   vaccineId: number;
@@ -1060,6 +1356,7 @@ export interface CreateCalendarTemplatePayload {
   mandatory?: boolean;
   label?: string;
   isActive?: boolean;
+  sex?: CalendarSex;
 }
 
 export type UpdateCalendarTemplatePayload = Partial<CreateCalendarTemplatePayload>;
@@ -1153,4 +1450,148 @@ export function getMonthlyReport(
     withOrg(`/vaccinations/monthly-report/?${q.toString()}`, opts.organizationId),
     { signal },
   );
+}
+
+// ── Календарь КР ──────────────────────────────────────────────────────────────
+
+/** Позиция встроенного календаря КР (для диалога сопоставления). */
+export interface KrPosition {
+  key: string;
+  antigen: string;
+  antigenLabel: string;
+  dose: number;
+  label: string;
+  form5Row: string;
+  sex: CalendarSex;
+  adult: boolean;
+}
+
+export function getKrPositions(organizationId?: number, signal?: AbortSignal): Promise<KrPosition[]> {
+  return apiRequest<KrPosition[]>(withOrg("/vaccinations/calendar-template/kr/", organizationId), {
+    signal,
+  });
+}
+
+/** Применить календарь КР: антиген → своя карточка вакцины. */
+export function applyKrCalendar(
+  payload: { vaccines: Record<string, number>; includeAdult: boolean },
+  organizationId?: number,
+): Promise<CalendarTemplateRow[]> {
+  return apiRequest<CalendarTemplateRow[]>(
+    withOrg("/vaccinations/calendar-template/apply-kr/", organizationId),
+    { method: "POST", body: payload },
+  );
+}
+
+// ── Календарь прививок ребёнка ────────────────────────────────────────────────
+
+export type CalendarCellState =
+  | "done"
+  | "done_external"
+  | "draft"
+  | "due"
+  | "overdue"
+  | "planned"
+  | "exempt"
+  | "refused"
+  | "skipped";
+
+export interface CalendarCell {
+  templateId: number;
+  vaccineId: number;
+  vaccineName: string;
+  doseNumber: number;
+  dueDate: string;
+  windowEnd: string;
+  state: CalendarCellState;
+  record: { id: number; administeredAt: string; isExternal: boolean; status: VaccinationRecordStatus } | null;
+  slotId: number | null;
+  exemptionUntil: string | null;
+  exemptionKind: string | null;
+  refusalDate: string | null;
+  refusalReason: string | null;
+}
+
+export interface CalendarGroup {
+  label: string;
+  ageDays: number;
+  cells: CalendarCell[];
+}
+
+export interface PatientCalendar {
+  patientId: number;
+  birthDate: string | null;
+  gender: PatientGenderValue;
+  groups: CalendarGroup[];
+}
+
+export function getPatientCalendar(
+  patientId: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<PatientCalendar> {
+  return apiRequest<PatientCalendar>(
+    withOrg(`/vaccinations/patients/${patientId}/calendar/`, organizationId),
+    { signal },
+  );
+}
+
+// ── Форма 5 ────────────────────────────────────────────────────────────────────
+
+export interface Form5ReportRow {
+  key: string;
+  label: string;
+  values: (number | null)[];
+}
+
+export interface Form5Report {
+  periodStart: string;
+  periodEnd: string;
+  periodLabel: string;
+  section1: Form5ReportRow[];
+  section2: Form5ReportRow[];
+  section3: Form5ReportRow[];
+  section5: Form5ReportRow[];
+  section6: Form5ReportRow[];
+  warnings: string[];
+}
+
+function form5Query(period: string, branchId?: number | null): string {
+  const q = new URLSearchParams({ period });
+  if (branchId != null) q.set("branchId", String(branchId));
+  return q.toString();
+}
+
+export function getForm5(
+  opts: { period: string; branchId?: number | null; organizationId?: number },
+  signal?: AbortSignal,
+): Promise<Form5Report> {
+  return apiRequest<Form5Report>(
+    withOrg(`/vaccinations/form5/?${form5Query(opts.period, opts.branchId)}`, opts.organizationId),
+    { signal },
+  );
+}
+
+/** Скачать заполненный бланк формы 5 (.docx). */
+export async function downloadForm5Docx(opts: {
+  period: string;
+  periodLabel: string;
+  branchId?: number | null;
+  organizationId?: number;
+}): Promise<void> {
+  const path = withOrg(
+    `/vaccinations/form5/docx/?${form5Query(opts.period, opts.branchId)}`,
+    opts.organizationId,
+  );
+  const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  if (!response.ok) throw new Error("Не удалось сформировать форму 5");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `Форма 5 ${opts.periodLabel}.docx`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }

@@ -43,6 +43,10 @@ export interface DjangoPatient {
   source: string | null;
   photoUrl: string | null;
   inn: string;
+  /** Почему нет ИНН (нужно для оформления прививки); "" — не указано. */
+  innAbsentReason?: InnAbsentReason | "";
+  /** «Приезжий» — графа формы 5. */
+  isVisitor?: boolean;
   isBlacklisted: boolean;
   blacklistReason: string;
   isActive: boolean;
@@ -65,10 +69,14 @@ export interface CreatePatientPayload {
   notes?: string | null;
   source?: string | null;
   inn?: string;
+  innAbsentReason?: InnAbsentReason | "";
+  isVisitor?: boolean;
   isBlacklisted?: boolean;
   blacklistReason?: string;
   isActive?: boolean;
 }
+
+export type InnAbsentReason = "newborn" | "foreigner" | "no_documents" | "other";
 
 export type UpdatePatientPayload = Partial<Omit<CreatePatientPayload, "organizationId">>;
 

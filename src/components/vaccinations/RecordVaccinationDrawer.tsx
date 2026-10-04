@@ -41,11 +41,15 @@ import {
   type CreateRecordPayload,
 } from "../../api/vaccinations";
 import { getAppointment } from "../../api/appointments";
-import { searchPatients, type DjangoPatient } from "../../api/patients";
+import { getPatient, searchPatients, updatePatient, type DjangoPatient } from "../../api/patients";
 import { getDjangoEmployees } from "../../api/staff";
 import { INJECTION_SITE_OPTIONS } from "../../pages/vaccinations/meta";
 import { useT } from "../../i18n/VerticalProvider";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
+import VaccinationPatientFields from "./VaccinationPatientFields";
+import { missingFromError } from "./administerPayload";
+import { changedPatientFields, patientGaps, type PatientDraft } from "./patientGaps";
+import { MISSING_FIELD_LABELS } from "../../pages/vaccinations/meta";
 
 type Scenario = "ours" | "external";
 
@@ -198,6 +202,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     setBatchNumberManual("");
     setExpiresAtManual(null);
     setAppointmentId(initialAppointmentId != null ? String(initialAppointmentId) : "");
+    setProductLineId("");
     setNotes("");
     setError(null);
     setDraftRestored(false);
@@ -340,6 +345,31 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       : [patient, ...patientOptions];
   }, [patientOptions, patient]);
 
+  // ── Пол / дата рождения / ИНН выбранного пациента ──
+  // Пациент из приёма приходит заглушкой — берём карточку целиком: без пола,
+  // даты рождения и ИНН (или причины) бэк прививку не проведёт.
+  const fullPatientQuery = useQuery({
+    queryKey: ["django", "patients", "detail", patient?.id ?? 0],
+    queryFn: () => getPatient(patient!.id),
+    enabled: open && patient != null,
+  });
+  const originalPatientDraft = React.useMemo<PatientDraft>(() => {
+    const p = fullPatientQuery.data;
+    return {
+      gender: p?.gender === "male" || p?.gender === "female" ? p.gender : "unknown",
+      birthDate: p?.birthDate ?? null,
+      inn: p?.inn ?? "",
+      innAbsentReason: p?.innAbsentReason ?? "",
+    };
+  }, [fullPatientQuery.data]);
+  const [patientDraft, setPatientDraft] = React.useState<PatientDraft>(originalPatientDraft);
+  React.useEffect(() => setPatientDraft(originalPatientDraft), [originalPatientDraft]);
+  const [highlight, setHighlight] = React.useState<string[]>([]);
+  // Пол/дата рождения/ИНН можно пропустить (решение 2026-10-04): первое
+  // «Сохранить» подсвечивает пустые поля, второе сохраняет без них.
+  const [skipPatientWarning, setSkipPatientWarning] = React.useState<string | null>(null);
+  React.useEffect(() => setSkipPatientWarning(null), [patientDraft]);
+
   // ── Справочник вакцин ──
   const vaccinesQuery = useQuery({
     queryKey: djangoQueryKeys.vaccinations.vaccines({ orgId }),
@@ -457,7 +487,12 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   }, [scenario, priceTouched, batchId, priceForBatch]);
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      const changes = changedPatientFields(originalPatientDraft, patientDraft);
+      if (Object.keys(changes).length > 0) {
+        await updatePatient(patient!.id, changes);
+        void queryClient.invalidateQueries({ queryKey: ["django", "patients"] });
+      }
       const payload: CreateRecordPayload = {
         patientId: patient!.id,
         branchId: branchId!,
@@ -492,11 +527,18 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.vaccinations.all });
       onClose();
     },
-    onError: (e) =>
+    onError: (e) => {
+      const keys = missingFromError(e);
+      setHighlight(keys);
       setError(
         parseDuplicateDoseConflict(e) ??
-          (e instanceof Error ? e.message : "Не удалось сохранить вакцину"),
-      ),
+          (keys.length
+            ? `Не хватает: ${keys.map((k) => MISSING_FIELD_LABELS[k] ?? k).join(", ")}`
+            : e instanceof Error
+              ? e.message
+              : "Не удалось сохранить вакцину"),
+      );
+    },
   });
 
   // Порядок ключей = порядок полей: в первое незаполненное уйдёт фокус.
@@ -505,12 +547,23 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     vaccineId: vaccineId !== "" ? null : "Выберите вакцину",
     batchId:
       scenario === "external" || batchId !== "" ? null : "Выберите партию вакцины",
+    // Несколько проданных строк этой вакцины — без выбора доза ушла бы в счёт второй раз.
+    productLineId:
+      freeVaccineLines.length > 1 && productLineId === "" ? "Укажите строку счёта" : null,
   });
 
   const handleSubmit = () => {
     // Филиал не поле формы — без него ввод недоступен, предупреждение уже сверху.
     if (branchId == null || mutation.isPending) return;
     if (!form.validate()) return;
+    const gaps = patientGaps(patientDraft);
+    if (patient && gaps.length > 0 && skipPatientWarning == null) {
+      setHighlight(gaps.map((g) => `patient.${g}`));
+      setSkipPatientWarning(
+        "Не заполнены пол, дата рождения или ИНН — они нужны для отчётов. Заполните сейчас или нажмите «Сохранить» ещё раз, чтобы дополнить позже.",
+      );
+      return;
+    }
     mutation.mutate();
   };
 
@@ -556,6 +609,7 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       <Box sx={{ flex: 1, overflowY: "auto", px: 3, py: 2.5 }}>
         <MotionStack spacing={2} variants={cascadeContainer} initial="hidden" animate="show">
           {error && <Alert severity="error">{error}</Alert>}
+          {skipPatientWarning && <Alert severity="warning">{skipPatientWarning}</Alert>}
           {branchId == null && (
             <Alert severity="warning">
               Не выбран активный филиал — ввод вакцины недоступен. Переключите филиал вверху.
@@ -605,6 +659,16 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                 />
               )}
             />
+            {patient && fullPatientQuery.data && (
+              <Box sx={{ mt: 1.5 }}>
+                <VaccinationPatientFields
+                  key={patient.id}
+                  value={patientDraft}
+                  onChange={setPatientDraft}
+                  highlight={highlight}
+                />
+              </Box>
+            )}
           </MotionBox>
 
           {/* ── Вакцина ── */}
@@ -838,7 +902,11 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   }
                   fullWidth
                   size="small"
-                  helperText="В приёме несколько таких вакцин — укажите, какую оформляете"
+                  required
+                  {...form.field(
+                    "productLineId",
+                    "В приёме несколько таких вакцин — укажите, какую оформляете",
+                  )}
                 >
                   {freeVaccineLines.map((line, i) => (
                     <MenuItem key={line.id} value={String(line.id)}>

@@ -19,6 +19,8 @@ import { PageHeader, AppBottomSheet, SegmentedTabs, cascadeContainer, cascadeIte
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useQueryClient } from "@tanstack/react-query";
+import { djangoQueryKeys } from "../../api/queryKeys";
 import { useCan } from "../../hooks/useCan";
 import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
@@ -41,6 +43,7 @@ import PatientListPanel from "./components/PatientListPanel";
 import PatientCard from "./components/PatientCard";
 import PatientHistoryPanel from "./components/PatientHistoryPanel";
 import PatientVaccinationsPanel from "./components/PatientVaccinationsPanel";
+import PatientCalendarPanel from "./components/PatientCalendarPanel";
 import PatientLabOrdersPanel from "./components/PatientLabOrdersPanel";
 import BalanceTopUpDrawer from "./components/BalanceTopUpDrawer";
 import AppointmentDetailsPanel from "../appointments/components/AppointmentDetailsPanel";
@@ -58,7 +61,7 @@ import type { OldConclusion } from "./useOldConclusions";
 
 const MotionBox = motion(Box);
 
-type RightTabKey = "card" | "history" | "old" | "vaccinations" | "lab";
+type RightTabKey = "card" | "history" | "old" | "vaccinations" | "vaccineCalendar" | "lab";
 
 const DjangoPatientsPage: React.FC = () => {
   const { t } = useT("patients");
@@ -77,6 +80,7 @@ const DjangoPatientsPage: React.FC = () => {
     activeBranch,
     activeMembership,
   } = usePermissions();
+  const queryClient = useQueryClient();
 
   const canView = isSuperAdmin() || hasPermission("patients.view");
   const canCreate = isSuperAdmin() || hasPermission("patients.create");
@@ -374,6 +378,8 @@ const DjangoPatientsPage: React.FC = () => {
 
   const handleUpdated = (saved: DjangoPatient) => {
     setEditOpen(false);
+    // Пол / дата рождения / ИНН меняют календарь и «Не оформлено».
+    void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.vaccinations.all });
     setPatients((prev) => {
       const idx = prev.findIndex((p) => p.id === saved.id);
       if (idx >= 0) { const next = [...prev]; next[idx] = saved; return next; }
@@ -422,7 +428,10 @@ const DjangoPatientsPage: React.FC = () => {
   );
 
   const vaccinationsNode = (
-    <PatientVaccinationsPanel patient={selected} />
+    <PatientVaccinationsPanel patient={selected} onEditPatient={canUpdate ? handleEdit : undefined} />
+  );
+  const vaccineCalendarNode = (
+    <PatientCalendarPanel patient={selected} onEditPatient={canUpdate ? handleEdit : undefined} />
   );
 
   const labOrdersNode = (
@@ -482,6 +491,7 @@ const DjangoPatientsPage: React.FC = () => {
     { key: "history", label: t("tabs.history") },
     { key: "old", label: t("tabs.old") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
+    ...(canViewVaccinations ? [{ key: "vaccineCalendar" as const, label: t("tabs.vaccineCalendar") }] : []),
     ...(canViewLab ? [{ key: "lab" as const, label: LAB_TAB_LABEL }] : []),
   ];
 
@@ -490,6 +500,7 @@ const DjangoPatientsPage: React.FC = () => {
     { key: "history", label: t("tabs.historyFull") },
     { key: "old", label: t("tabs.oldFull") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
+    ...(canViewVaccinations ? [{ key: "vaccineCalendar" as const, label: t("tabs.vaccineCalendar") }] : []),
     ...(canViewLab ? [{ key: "lab" as const, label: LAB_TAB_LABEL }] : []),
   ];
 
@@ -540,6 +551,7 @@ const DjangoPatientsPage: React.FC = () => {
                   {tabletTab === "history" && historyNode}
                   {tabletTab === "old" && oldConclusionsNode}
                   {tabletTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
+                  {tabletTab === "vaccineCalendar" && canViewVaccinations && vaccineCalendarNode}
                   {tabletTab === "lab" && canViewLab && labOrdersNode}
                 </Box>
               </>
@@ -567,6 +579,7 @@ const DjangoPatientsPage: React.FC = () => {
                 {desktopRightTab === "history" && historyNode}
                 {desktopRightTab === "old" && oldConclusionsNode}
                 {desktopRightTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
+                {desktopRightTab === "vaccineCalendar" && canViewVaccinations && vaccineCalendarNode}
                 {desktopRightTab === "lab" && canViewLab && labOrdersNode}
               </Box>
             </MotionBox>
@@ -590,6 +603,7 @@ const DjangoPatientsPage: React.FC = () => {
             {mobileTab === "history" && historyNode}
             {mobileTab === "old" && oldConclusionsNode}
             {mobileTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
+            {mobileTab === "vaccineCalendar" && canViewVaccinations && vaccineCalendarNode}
             {mobileTab === "lab" && canViewLab && labOrdersNode}
           </Box>
         </AppBottomSheet>
