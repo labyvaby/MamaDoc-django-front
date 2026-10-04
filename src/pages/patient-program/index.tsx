@@ -7,6 +7,9 @@ import {
   CircularProgress,
   Divider,
   FormControl,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
   MenuItem,
   Select,
   Skeleton,
@@ -15,6 +18,7 @@ import {
   useMediaQuery,
   useTheme,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BiotechOutlined from "@mui/icons-material/BiotechOutlined";
@@ -35,6 +39,8 @@ import PsychologyOutlined from "@mui/icons-material/PsychologyOutlined";
 import RemoveRedEyeOutlined from "@mui/icons-material/RemoveRedEyeOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
+import HeightOutlined from "@mui/icons-material/HeightOutlined";
+import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
@@ -110,6 +116,11 @@ function moduleIcon(module: Pick<EffectiveProgramModule, "code" | "moduleType">)
       return <EventNoteOutlined />;
     case "life_anamnesis":
       return <HistoryEduOutlined />;
+    case "feeding":
+      return <RestaurantOutlined />;
+    case "growth":
+      // Не как у «Истории болезней»: рост — ростомер.
+      return <HeightOutlined />;
     default:
       break;
   }
@@ -132,35 +143,39 @@ function moduleDescription(module: EffectiveProgramModule): string {
     : "Раздел подключён к программе";
 }
 
+/**
+ * Пункт меню книжки — как пункт бокового меню CRM (`components/sidebar`):
+ * те же отступы и подсветка выбранного, без стрелок; длинное название
+ * переносится на вторую строку, а не обрезается.
+ */
 const NavigationItem: React.FC<{
   active: boolean;
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
 }> = ({ active, icon, label, onClick }) => (
-  <ButtonBase
+  <ListItemButton
+    selected={active}
     onClick={onClick}
-    sx={(theme) => ({
-      width: "100%",
-      minHeight: 42,
-      justifyContent: "flex-start",
-      gap: 1.25,
-      px: 1.25,
-      borderRadius: 1.5,
-      color: active ? "primary.main" : "text.secondary",
-      bgcolor: active ? subtleBg(theme, true) : "transparent",
-      fontWeight: active ? 700 : 500,
-      textAlign: "left",
-      "&:hover": { bgcolor: subtleBg(theme, true) },
-      "& .MuiSvgIcon-root": { fontSize: 19 },
-    })}
+    sx={(theme) => {
+      const selected = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.22 : 0.08);
+      const selectedHover = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.28 : 0.12);
+      return {
+        flexGrow: 0,
+        borderRadius: "10px",
+        my: theme.appLayout.sidebar.itemGap,
+        py: theme.appLayout.sidebar.itemPaddingY,
+        px: 1.4,
+        color: active ? theme.palette.primary.onSurface : undefined,
+        "& .MuiListItemIcon-root": { minWidth: 36, color: active ? theme.palette.primary.onSurface : undefined },
+        "&, &.Mui-selected": { bgcolor: active ? selected : "transparent" },
+        "&:hover, &.Mui-selected:hover": { bgcolor: active ? selectedHover : theme.palette.action.hover },
+      };
+    }}
   >
-    {icon}
-    <Typography variant="body2" fontWeight="inherit" noWrap sx={{ flex: 1 }}>
-      {label}
-    </Typography>
-    <ChevronRightOutlined sx={{ opacity: active ? 1 : 0.45 }} />
-  </ButtonBase>
+    <ListItemIcon>{icon}</ListItemIcon>
+    <ListItemText primary={label} sx={{ my: 0, "& .MuiListItemText-primary": { overflowWrap: "anywhere" } }} />
+  </ListItemButton>
 );
 
 const ProgramHeader: React.FC<{ enrollment: ProgramEnrollment }> = ({ enrollment }) => (
@@ -435,22 +450,29 @@ const PatientProgramPage: React.FC = () => {
           <Box
             sx={{
               display: "grid",
-              gridTemplateColumns: { xs: "1fr", md: "230px minmax(0, 1fr)" },
+              // Колонка меню — ширины бокового меню CRM, названия разделов не обрезаются.
+              gridTemplateColumns: { xs: "1fr", md: `${theme.appLayout.sidebar.width.desktopExpanded}px minmax(0, 1fr)` },
               gap: 1.75,
               alignItems: "start",
             }}
           >
             {!isMobile && (
-              <AppCard variant="outlined" sx={{ position: "sticky", top: 12 }}>
-                <Stack direction="row" alignItems="center" gap={1.25} sx={{ mb: 1.5 }}>
+              <AppCard
+                variant="outlined"
+                // Поля как у бокового меню CRM: пункты почти от края, названия помещаются.
+                sx={{ position: "sticky", top: 12, "& .MuiCardContent-root": { px: 1, py: 1.5 } }}
+              >
+                <Stack direction="row" alignItems="center" gap={1.25} sx={{ mb: 1.5, px: 1 }}>
                   <UserAvatar src={patient.photoUrl} name={patient.fullName} size={42} />
                   <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="body2" fontWeight={700} noWrap>{patient.fullName}</Typography>
+                    <Typography variant="body2" fontWeight={700} sx={{ overflowWrap: "anywhere" }}>
+                      {patient.fullName}
+                    </Typography>
                     <Typography variant="caption" color="text.secondary">{patient.phone || "Телефон не указан"}</Typography>
                   </Box>
                 </Stack>
                 <Divider sx={{ mb: 1 }} />
-                <Stack gap={0.5}>
+                <Stack>
                   <NavigationItem
                     active={view === "overview"}
                     icon={<AutoAwesomeOutlined />}

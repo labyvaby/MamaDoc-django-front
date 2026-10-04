@@ -76,6 +76,10 @@ interface FeedingSectionProps {
   birthWeightKg: number | null;
   /** ИМТ последнего замера словами. */
   bmiVerdict: string;
+  /** Название раздела книжки, когда блок стоит отдельным разделом. */
+  title?: string;
+  /** Отдельный раздел книжки (заголовок как у разделов), а не блок «Роста». */
+  standalone?: boolean;
 }
 
 interface FoodDrawerState {
@@ -166,6 +170,8 @@ export const FeedingSection: React.FC<FeedingSectionProps> = ({
   gestation,
   birthWeightKg,
   bmiVerdict,
+  title = "Вскармливание и прикорм",
+  standalone = false,
 }) => {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
@@ -284,8 +290,8 @@ export const FeedingSection: React.FC<FeedingSectionProps> = ({
   const header = (
     <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ md: "flex-start" }} gap={1.25}>
       <Box sx={{ minWidth: 0 }}>
-        <Typography variant="subtitle1" fontWeight={700}>
-          Вскармливание и прикорм
+        <Typography variant={standalone ? "h6" : "subtitle1"} fontWeight={700}>
+          {title}
         </Typography>
         {headline}
       </Box>
@@ -329,7 +335,7 @@ export const FeedingSection: React.FC<FeedingSectionProps> = ({
   const hemoglobin = age && mode === "toddler" ? hemoglobinHint(age) : null;
 
   return (
-    <Box component="section" aria-label="Вскармливание и прикорм">
+    <Box component="section" aria-label={title}>
       <Stack gap={2}>
         {header}
         {mode === "unknown" && <NoticeLine tone="muted">Нет даты рождения — подсказки по возрасту недоступны.</NoticeLine>}

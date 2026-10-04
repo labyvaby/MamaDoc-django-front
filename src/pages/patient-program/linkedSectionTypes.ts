@@ -12,6 +12,7 @@ export type SystemSectionType =
   | "conditions"
   | "surgeries"
   | "growth"
+  | "feeding"
   | "vaccination"
   | "medications"
   | "visits"
@@ -34,7 +35,13 @@ export const SYSTEM_SECTIONS: ReadonlyArray<{
   { type: "vaccination", name: "Прививки и пробы", description: "Карта прививок и календарь", kind: "linked" },
   { type: "medications", name: "Препараты", description: "Антибиотики, витамин D и другие курсы", kind: "linked" },
   { type: "birth_history", name: "Сведения о новорождённом", description: "Роддом, выписка, данные о рождении, прикорм", kind: "linked" },
-  { type: "growth", name: "Рост и питание", description: "Замеры с центилями ВОЗ, вскармливание", kind: "linked" },
+  { type: "growth", name: "Рост и развитие", description: "Замеры с центилями ВОЗ", kind: "linked" },
+  {
+    type: "feeding",
+    name: "Вскармливание и прикорм",
+    description: "Периоды вскармливания, журнал прикорма, нормы и подсказки по возрасту",
+    kind: "linked",
+  },
   { type: "visits", name: "Приёмы", description: "Лист текущего наблюдения: приёмы и заключения", kind: "linked" },
   {
     type: "life_anamnesis",
