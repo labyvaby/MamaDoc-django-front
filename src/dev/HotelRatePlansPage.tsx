@@ -430,7 +430,8 @@ const RatePlanDrawer: React.FC<{
           )}
 
           <DrawerSection label="Условия">
-            <Stack direction={{ xs: "column", sm: "row" }} gap={2}>
+            {/* На телефоне три поля в ряд не входили (питание — «Б…», предоплата без значения): питание своей строкой. */}
+            <Stack direction="row" gap={2} sx={{ flexWrap: { xs: "wrap", md: "nowrap" } }}>
               <TextField
                 select
                 label="Питание"
@@ -438,7 +439,7 @@ const RatePlanDrawer: React.FC<{
                 onChange={(e) => set("mealPlan", e.target.value)}
                 disabled={saving}
                 slotProps={{ input: { startAdornment: <FieldIcon icon={<RestaurantOutlined />} /> } }}
-                sx={{ flex: 1 }}
+                sx={{ flex: 1, minWidth: { xs: "100%", md: "auto" } }}
               >
                 {MEAL_PLANS.map((m) => (
                   <MenuItem key={m} value={m}>
