@@ -133,6 +133,9 @@ export const djangoQueryKeys = {
       ["django", "health", "patient", patientId, "family", orgId] as const,
     familySuggestions: (patientId: number, orgId: number | undefined) =>
       ["django", "health", "patient", patientId, "family-suggestions", orgId] as const,
+    // «Анамнез жизни» — под общим префиксом пациента: useInvalidateHealth сбрасывает и его.
+    lifeAnamnesis: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "life-anamnesis", orgId] as const,
     growth: (patientId: number, orgId: number | undefined) =>
       ["django", "health", "patient", patientId, "growth", orgId] as const,
     visitConclusions: (patientId: number, orgId: number | undefined) =>

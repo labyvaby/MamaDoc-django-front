@@ -19,6 +19,11 @@ interface HealthDrawerShellProps {
   onClose: () => void;
   /** Слева в подвале (например, «Удалить»). */
   footerStart?: React.ReactNode;
+  /** Вторая кнопка сохранения («Сохранить и далее»). */
+  saveNextLabel?: string;
+  onSaveNext?: () => void;
+  /** Ширина окна на широком экране; по умолчанию 520. */
+  width?: number;
   children: React.ReactNode;
 }
 
@@ -34,6 +39,9 @@ export const HealthDrawerShell: React.FC<HealthDrawerShellProps> = ({
   onSave,
   onClose,
   footerStart,
+  saveNextLabel,
+  onSaveNext,
+  width = 520,
   children,
 }) => {
   const theme = useTheme();
@@ -45,7 +53,7 @@ export const HealthDrawerShell: React.FC<HealthDrawerShellProps> = ({
       anchor="right"
       open={open}
       onClose={close}
-      PaperProps={{ sx: { width: { xs: "100vw", md: 520 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
+      PaperProps={{ sx: { width: { xs: "100vw", md: width }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
     >
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 2.5, py: 1.5 }}>
         <Box sx={{ minWidth: 0 }}>
@@ -68,11 +76,16 @@ export const HealthDrawerShell: React.FC<HealthDrawerShellProps> = ({
         {children}
       </Stack>
       <Divider />
-      <Stack direction="row" alignItems="center" gap={1} sx={{ px: 2.5, py: 1.5 }}>
+      <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" sx={{ px: 2.5, py: 1.5 }}>
         <Box sx={{ flex: 1 }}>{footerStart}</Box>
         <AppButton onClick={close} disabled={pending}>
           Отмена
         </AppButton>
+        {saveNextLabel && onSaveNext && (
+          <AppButton variant="outlined" disabled={!canSave || pending} onClick={onSaveNext}>
+            {saveNextLabel}
+          </AppButton>
+        )}
         <AppButton variant="contained" loading={pending} disabled={!canSave} onClick={onSave}>
           {saveLabel}
         </AppButton>

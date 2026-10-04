@@ -20,6 +20,7 @@ import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import BiotechOutlined from "@mui/icons-material/BiotechOutlined";
 import ChildFriendlyOutlined from "@mui/icons-material/ChildFriendlyOutlined";
 import FamilyRestroomOutlined from "@mui/icons-material/FamilyRestroomOutlined";
+import HistoryEduOutlined from "@mui/icons-material/HistoryEduOutlined";
 import MedicationOutlined from "@mui/icons-material/MedicationOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
@@ -107,6 +108,8 @@ function moduleIcon(module: Pick<EffectiveProgramModule, "code" | "moduleType">)
       return <MedicationOutlined />;
     case "visits":
       return <EventNoteOutlined />;
+    case "life_anamnesis":
+      return <HistoryEduOutlined />;
     default:
       break;
   }
@@ -580,6 +583,11 @@ const PatientProgramPage: React.FC = () => {
                   enrollmentId={selectedEnrollment.id}
                   scope={scope}
                   icon={moduleIcon(selectedModule)}
+                  hasSection={(type) => modules.some((module) => systemType(module) === type)}
+                  openSection={(type) => {
+                    const target = modules.find((module) => systemType(module) === type);
+                    if (target) setView(`module:${target.id}`);
+                  }}
                 />
               ) : isVisionModule(selectedModule) ? (
                 <VisionModule

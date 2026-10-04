@@ -5,6 +5,7 @@ import { SYSTEM_SECTIONS, isLinkedModule, systemType } from "./linkedSectionType
 describe("linkedSectionTypes", () => {
   it("recognises system sections and the stand's first growth section", () => {
     expect(systemType({ code: "family", moduleType: "family" })).toBe("family");
+    expect(systemType({ code: "life_anamnesis", moduleType: "life_anamnesis" })).toBe("life_anamnesis");
     expect(systemType({ code: "growth", moduleType: "measurements" })).toBe("growth");
     expect(systemType({ code: "measurements", moduleType: "measurements" })).toBeNull();
     expect(systemType({ code: "vision", moduleType: "ophthalmology" })).toBeNull();
@@ -16,6 +17,7 @@ describe("linkedSectionTypes", () => {
     expect(isLinkedModule({ code: "visits", moduleType: "visits" })).toBe(true);
     expect(isLinkedModule({ code: "plan", moduleType: "checkup_plan" })).toBe(false);
     expect(SYSTEM_SECTIONS.every((section) => section.kind === "linked")).toBe(true);
+    expect(isLinkedModule({ code: "life_anamnesis", moduleType: "life_anamnesis" })).toBe(true);
   });
 
   it("knows «Операции и травмы» and the new name of «conditions»", () => {

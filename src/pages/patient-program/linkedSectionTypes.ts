@@ -15,6 +15,7 @@ export type SystemSectionType =
   | "vaccination"
   | "medications"
   | "visits"
+  | "life_anamnesis"
   | "checkup_plan";
 
 export const SYSTEM_SECTIONS: ReadonlyArray<{
@@ -35,6 +36,12 @@ export const SYSTEM_SECTIONS: ReadonlyArray<{
   { type: "birth_history", name: "Сведения о новорождённом", description: "Роддом, выписка, данные о рождении, прикорм", kind: "linked" },
   { type: "growth", name: "Рост и питание", description: "Замеры с центилями ВОЗ, вскармливание", kind: "linked" },
   { type: "visits", name: "Приёмы", description: "Лист текущего наблюдения: приёмы и заключения", kind: "linked" },
+  {
+    type: "life_anamnesis",
+    name: "Анамнез жизни",
+    description: "Беременность и роды, новорождённость, наследственность, семья и быт, оценка анамнеза и группы риска",
+    kind: "linked",
+  },
   { type: "allergies", name: "Аллергии", description: "Подробный список к алерту", kind: "linked" },
   // На бумажной 112/у такого листа нет — в расширениях после «Аллергий» (ТЗ 2026-10-04 §2.6).
   { type: "surgeries", name: "Операции и травмы", description: "Операции, травмы, процедуры и переливания крови", kind: "linked" },

@@ -76,6 +76,8 @@ describe("healthForms", () => {
     const birth = buildProfilePatch(form, ["birth"]);
     expect(birth).toMatchObject({ gestationalAgeWeeks: 38, birthWeightG: 3350, birthLengthCm: 52, birthHeadCircumferenceCm: null });
     expect(buildProfilePatch({ ...form, birthWeightG: "три кило" }, ["birth"])).toBeNull();
+    // Группы риска — записями «Анамнеза жизни»: в PATCH health/ их нет.
+    expect(buildProfilePatch(form, ["groups"])).toEqual({ healthGroup: "2", healthGroupSetOn: "2025-04-01", peGroup: "" });
   });
 
   it("keeps a chronic diagnosis with its observation and trims the text", () => {

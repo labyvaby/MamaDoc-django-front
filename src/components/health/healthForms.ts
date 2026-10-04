@@ -125,7 +125,8 @@ const PART_FIELDS: Record<ProfilePart, ReadonlyArray<keyof ProfileForm>> = {
     "perinatalNotes",
   ],
   maternity: ["maternityHospital", "maternityDischargedOn", "birthNoticeReceivedOn", "complementaryFeedingOn"],
-  groups: ["healthGroup", "healthGroupSetOn", "peGroup", "riskGroups"],
+  // Группы риска ведутся записями «Анамнеза жизни»: PATCH health/ с riskGroups — 400.
+  groups: ["healthGroup", "healthGroupSetOn", "peGroup"],
   blood: ["bloodGroup", "rhFactor"],
 };
 
