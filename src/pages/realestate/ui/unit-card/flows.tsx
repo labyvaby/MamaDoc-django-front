@@ -34,6 +34,7 @@ import {
   signUnitContract,
   type ContractPayment,
   type Project,
+  type RealtyScope,
   type ReservationTerm,
   type ReservationType,
   type UnitDetails,
@@ -41,6 +42,7 @@ import {
   type UnitOperation,
 } from "../../../../api/realestate";
 import { AppButton, CustomDateTimePicker } from "../../../../components/ui";
+import { useCanChecker } from "../../../../hooks/useCan";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { tt } from "../../../../i18n/t";
 import { subtleBg } from "../../../../theme/uiHelpers";
@@ -74,8 +76,8 @@ export interface FlowProps {
   project: Project;
   unit: UnitDetails;
   offer: UnitOffer;
-  /** Суперпользователю бэк без него отвечает 400. */
-  organizationId: number | undefined;
+  /** Организация и филиал запросов: организация уходит заголовком, филиал — в ключи кэша. */
+  scope: RealtyScope;
   /** realty.manage — команды над квартирой. */
   canManage: boolean;
   onBack: () => void;
@@ -96,13 +98,13 @@ const tomorrowAt11 = () => dayjs().add(1, "day").hour(11).minute(0).second(0).mi
  * Команда над квартирой: ответ — свежая карточка. Шахматка и соседние карточки
  * перезапрашиваются, потому что меняются статусы.
  */
-function useUnitCommand<Input>(organizationId: number | undefined, run: (input: Input) => Promise<UnitDetails>) {
+function useUnitCommand<Input>(scope: RealtyScope, run: (input: Input) => Promise<UnitDetails>) {
   const queryClient = useQueryClient();
   const toast = useRealEstateToast();
   return useMutation({
     mutationFn: run,
     onSuccess: (next) => {
-      queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
+      queryClient.setQueryData(realEstateKeys.unit(scope, next.id), next);
       void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
     },
     onError: (error) => toast(errorMessage(error)),
@@ -191,10 +193,10 @@ interface ReserveForm {
   meetingAt: Dayjs | null;
 }
 
-export function ReserveScreen({ project, unit, offer, organizationId, onBack, go }: FlowProps) {
+export function ReserveScreen({ project, unit, offer, scope, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
-  const reserve = useUnitCommand(organizationId, (input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input, organizationId));
+  const reserve = useUnitCommand(scope, (input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input, scope));
   const finalPrice = priceWithOffer(unit, offer);
   const { register, control, handleSubmit, watch, formState } = useForm<ReserveForm>({
     defaultValues: { buyer: "", phone: "", term: "48", type: "free", withMeeting: true, meetingAt: tomorrowAt11() },
@@ -391,10 +393,10 @@ function OfferCell({ label, value, hint, strong }: { label: string; value: strin
   );
 }
 
-export function PaymentScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
+export function PaymentScreen({ project, unit, scope, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
-  const confirm = useUnitCommand(organizationId, () => confirmUnitPrepayment(unit, organizationId));
+  const confirm = useUnitCommand(scope, () => confirmUnitPrepayment(unit, scope));
   const amount = unit.reservation?.amount || project.defaultPrepayment || 0;
   return (
     <Box>
@@ -469,14 +471,14 @@ export function SuccessScreen({ unit, onBack, go }: FlowProps) {
 
 // ─── КП, встреча ───────────────────────────────────────────────────────────
 
-export function ProposalScreen({ project, unit, offer, organizationId, onBack, onClose }: FlowProps) {
+export function ProposalScreen({ project, unit, offer, scope, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
   const queryClient = useQueryClient();
   const send = useMutation({
-    mutationFn: (input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input, organizationId),
+    mutationFn: (input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input, scope),
     onSuccess: ({ unit: next }) => {
-      queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
+      queryClient.setQueryData(realEstateKeys.unit(scope, next.id), next);
       void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
     },
     onError: (error) => toast(errorMessage(error)),
@@ -577,10 +579,10 @@ interface MeetingForm {
   note: string;
 }
 
-export function MeetingScreen({ project, unit, organizationId, onBack, onClose }: FlowProps) {
+export function MeetingScreen({ project, unit, scope, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
-  const schedule = useUnitCommand(organizationId, (input: Parameters<typeof scheduleUnitMeeting>[1]) => scheduleUnitMeeting(unit.id, input, organizationId));
+  const schedule = useUnitCommand(scope, (input: Parameters<typeof scheduleUnitMeeting>[1]) => scheduleUnitMeeting(unit.id, input, scope));
   const { register, control, handleSubmit, formState } = useForm<MeetingForm>({
     defaultValues: { buyer: unit.reservation?.buyer ?? "", phone: unit.reservation?.phone ?? "", meetingAt: tomorrowAt11(), note: "" },
   });
@@ -657,18 +659,22 @@ interface OperationForm {
   comment: string;
 }
 
-export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }: FlowProps) {
+export function OperationScreen({ unit, scope, go, onBack, onOpenUnit }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
-  const run = useUnitCommand(organizationId, (input: Parameters<typeof runUnitOperation>[1]) => runUnitOperation(unit.id, input, organizationId));
+  const run = useUnitCommand(scope, (input: Parameters<typeof runUnitOperation>[1]) => runUnitOperation(unit.id, input, scope));
+  const { can } = useCanChecker();
+  // Справочник сотрудников — только с staff.view: без права бэк ответит 403, ответственный вводится текстом.
+  const canListStaff = REALESTATE_USE_MOCKS || can("staff.view");
   const managersData = useQuery({
-    queryKey: realEstateKeys.managers(organizationId),
-    queryFn: () => getSalesManagers(organizationId),
+    queryKey: realEstateKeys.managers(scope),
+    queryFn: () => getSalesManagers(scope),
     staleTime: Infinity,
+    enabled: canListStaff,
   }).data;
   const managers = React.useMemo(() => managersData ?? [], [managersData]);
   const projectUnits =
-    useQuery({ queryKey: realEstateKeys.units(organizationId, unit.projectId), queryFn: () => getProjectUnits(unit.projectId, organizationId) }).data ?? [];
+    useQuery({ queryKey: realEstateKeys.units(scope, unit.projectId), queryFn: () => getProjectUnits(unit.projectId, scope) }).data ?? [];
   const freeUnits = projectUnits.filter((u) => u.status === "free" && u.id !== unit.id).slice(0, 20);
 
   const options: [UnitOperation, string][] = [
@@ -856,11 +862,11 @@ interface ContractForm {
   accept: boolean;
 }
 
-export function ContractScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
+export function ContractScreen({ project, unit, scope, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
   const sign = useMutation({
-    mutationFn: (input: Parameters<typeof signUnitContract>[1]) => signUnitContract(unit.id, input, organizationId),
+    mutationFn: (input: Parameters<typeof signUnitContract>[1]) => signUnitContract(unit.id, input, scope),
   });
   const queryClient = useQueryClient();
   // Договор заключается по цене брони (с акцией), без брони — по цене квартиры, как на бэке.
@@ -882,7 +888,7 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
     const { buyer, passport, phone, email, payment, signCode } = form;
     sign.mutate({ buyer, passport, phone, email, payment, signCode }, {
       onSuccess: (next) => {
-        queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
+        queryClient.setQueryData(realEstateKeys.unit(scope, next.id), next);
         void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
         go("signed");
         toast(t("flow.contract.signedToast"), next.contract?.number);

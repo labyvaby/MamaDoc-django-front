@@ -16,8 +16,8 @@ import {
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { ProjectCreateError, createProjectWithUnits, realEstateKeys } from "../../../../api/realestate";
-import { useApiOrgId } from "../../../../hooks/useApiOrgId";
+import { ProjectCreateError, createProjectWithUnits, realEstateKeys, type RealtyScope } from "../../../../api/realestate";
+import { useRealtyScope } from "../../../../hooks/useRealtyScope";
 import { usePermissions } from "../../../../hooks/usePermissions";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { formatDateRu } from "../../../../utility/format";
@@ -51,7 +51,7 @@ interface Draft {
 
 /** Черновик живёт сутки; ключ — по организации, у суперпользователя их несколько. */
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
-const draftKey = (organizationId: number | undefined) => `mamadoc:realestate:new-project:${organizationId ?? "session"}`;
+const draftKey = (scope: RealtyScope) => `mamadoc:realestate:new-project:${scope.organizationId ?? "session"}`;
 
 const noop = () => {};
 const EMPTY_IDS: ReadonlySet<string> = new Set();
@@ -71,8 +71,12 @@ export function NewProjectWizard({
   onCreated: (projectId: string, info: { name: string; units: number }) => void;
 }) {
   const { t } = useT("realestate");
-  const organizationId = useApiOrgId();
-  const { activeBranch } = usePermissions();
+  const scope = useRealtyScope();
+  const { activeBranch, activeMembership, isSuperAdmin } = usePermissions();
+  // Без филиала в сессии бэк делает ЖК общим только сотруднику без ограничений по филиалам.
+  // В /auth/me ограничение не видно (branches — доступные филиалы), поэтому «общий» обещаем
+  // только владельцу и суперпользователю — у них ограничений не бывает.
+  const unrestricted = isSuperAdmin() || Boolean(activeMembership?.isOwner);
   const queryClient = useQueryClient();
   const isPhone = useMediaQuery((theme: Theme) => theme.breakpoints.down("md"));
 
@@ -86,14 +90,14 @@ export function NewProjectWizard({
   // Черновик: поднимаем при открытии, пишем на каждое изменение.
   React.useEffect(() => {
     if (!open) return;
-    const draft = readFormDraft<Draft>(draftKey(organizationId), DRAFT_TTL_MS);
+    const draft = readFormDraft<Draft>(draftKey(scope), DRAFT_TTL_MS);
     if (draft) {
       setState(draft.state);
       setStep(WIZARD_STEPS.includes(draft.step) ? draft.step : "project");
       setRestoredAt(draft.savedAt);
     }
     // Только при открытии: дальше черновик — отражение состояния, а не его источник.
-  }, [open, organizationId]);
+  }, [open, scope]);
 
   const dirty = React.useRef(false);
   const change = (next: WizardState) => {
@@ -101,11 +105,11 @@ export function NewProjectWizard({
     setState(next);
   };
   React.useEffect(() => {
-    if (open && dirty.current) writeFormDraft(draftKey(organizationId), { state, step });
-  }, [open, organizationId, state, step]);
+    if (open && dirty.current) writeFormDraft(draftKey(scope), { state, step });
+  }, [open, scope, state, step]);
 
   const reset = () => {
-    clearFormDraft(draftKey(organizationId));
+    clearFormDraft(draftKey(scope));
     dirty.current = false;
     setState(initialWizardState(t("wizard.sections.defaultName", { n: 1 })));
     setStep("project");
@@ -117,9 +121,9 @@ export function NewProjectWizard({
   const planned = React.useMemo(() => planUnits(state), [state]);
 
   const mutation = useMutation({
-    mutationFn: () => createProjectWithUnits(projectBody(state), (ids) => bulkUnitsBody(planned, ids), organizationId),
+    mutationFn: () => createProjectWithUnits(projectBody(state), (ids) => bulkUnitsBody(planned, ids), scope),
     onSuccess: async ({ projectId, created }) => {
-      await queryClient.invalidateQueries({ queryKey: realEstateKeys.projects(organizationId) });
+      await queryClient.invalidateQueries({ queryKey: realEstateKeys.projects(scope) });
       const info = { name: state.name.trim(), units: created };
       reset();
       onCreated(projectId, info);
@@ -209,7 +213,7 @@ export function NewProjectWizard({
           </Alert>
         )}
 
-        {step === "project" && <ProjectStep state={state} onChange={change} branchName={activeBranch?.name ?? null} />}
+        {step === "project" && <ProjectStep state={state} onChange={change} branchName={activeBranch?.name ?? null} unrestricted={unrestricted} />}
         {step === "sections" && <SectionsStep state={state} onChange={change} />}
         {step === "floors" && <FloorsStep state={state} onChange={change} />}
         {step === "prices" && <PricesStep state={state} onChange={change} />}

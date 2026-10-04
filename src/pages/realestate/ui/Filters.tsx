@@ -125,6 +125,47 @@ export function ProjectSummary({
   );
 }
 
+// ─── Цифры ЖК ──────────────────────────────────────────────────────────────
+
+const kpiKeys = ["total", "free", "reserved", "sold"] as const;
+
+/** Четыре карточки над шахматкой, как в макете: всего, свободно, забронировано, продано. */
+export function ProjectKpis({ stats }: { stats: Record<(typeof kpiKeys)[number], number> }) {
+  const { t } = useT("realestate");
+  return (
+    <Box
+      role="list"
+      aria-label={t("kpi.label")}
+      sx={{ mb: 2, display: "grid", gap: 1.5, gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(4, minmax(0, 1fr))" } }}
+    >
+      {kpiKeys.map((key) => (
+        <Box
+          key={key}
+          role="listitem"
+          sx={{ p: { xs: 1.75, md: 2.25 }, border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper", minWidth: 0 }}
+        >
+          <Typography noWrap sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>
+            {t(`kpi.${key}`)}
+          </Typography>
+          <Typography
+            sx={(theme) => ({
+              mt: 0.75,
+              fontSize: { xs: "1.5rem", md: "1.875rem" },
+              fontWeight: 700,
+              lineHeight: 1.1,
+              fontVariantNumeric: "tabular-nums",
+              // Продано — нейтральным цветом текста, как в макете: серый тон статуса читается как «неактивно».
+              color: key === "free" || key === "reserved" ? statusTone(theme, key).main : "text.primary",
+            })}
+          >
+            {stats[key]}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 // ─── ЖК ────────────────────────────────────────────────────────────────────
 
 export function ProjectTabs({

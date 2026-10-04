@@ -4,7 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 
 import { REALESTATE_USE_MOCKS, getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
-import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { ApiError, isModuleDisabled } from "../../api/client";
+import { AccessDenied } from "../../components/rbac/AccessDenied";
+import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { useT } from "../../i18n/VerticalProvider";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -15,7 +17,7 @@ import { countByStatus, countHolds, hasActiveFilters, matchesUnitFilters } from 
 import { useMinuteClock } from "./model/useMinuteClock";
 import { Board, CompactNote, FloorGuide } from "./ui/Board";
 import { COMPARE_LIMIT, CompareDialog, SelectionBar } from "./ui/Compare";
-import { BoardToolbar, FilterBar, PriceLegend, ProjectSummary, ProjectTabs } from "./ui/Filters";
+import { BoardToolbar, FilterBar, PriceLegend, ProjectKpis, ProjectSummary, ProjectTabs } from "./ui/Filters";
 import { FloorList } from "./ui/FloorList";
 import { RealEstateToastProvider, useRealEstateToast } from "./ui/toast";
 import { UnitCardDialog, type QuickScreen } from "./ui/unit-card/UnitCardDialog";
@@ -44,16 +46,17 @@ function ChessboardPage() {
   const { t } = useT("realestate");
   const toast = useRealEstateToast();
   const [params, updateParams] = useChessboardParams();
-  const organizationId = useApiOrgId();
+  const scope = useRealtyScope();
   const { can } = useCanChecker();
   const [wizardOpen, setWizardOpen] = React.useState(false);
-  // Каталог (ЖК, корпуса, квартиры) бэк пускает по любому из двух прав — повторяем его гейт.
-  const canCreate = REALESTATE_USE_MOCKS || can("realty.catalog.manage") || can("realty.manage");
+  // «Новый ЖК» — только с правом на каталог: с одним realty.manage бэк отвечает 403.
+  const canCreate = REALESTATE_USE_MOCKS || can("realty.catalog.manage");
   const onCreate = canCreate ? () => setWizardOpen(true) : undefined;
   const projectsQuery = useQuery({
-    queryKey: realEstateKeys.projects(organizationId),
-    queryFn: () => getRealEstateProjects(organizationId),
+    queryKey: realEstateKeys.projects(scope),
+    queryFn: () => getRealEstateProjects(scope),
     staleTime: 5 * 60_000,
+    enabled: scope.orgReady !== false,
   });
 
   const projects = projectsQuery.data;
@@ -108,6 +111,9 @@ function ChessboardPage() {
 
 function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const { t } = useT("realestate");
+  // Выключенный модуль правами не лечится — отдельный текст; обычный 403 — «Нет доступа».
+  if (isModuleDisabled(error)) return <AccessDenied title={t("page.moduleOff")} description={t("page.moduleOffHint")} showBack={false} />;
+  if (error instanceof ApiError && error.status === 403) return <AccessDenied />;
   return (
     <Box role="alert" sx={{ p: 5, display: "flex", flexDirection: "column", alignItems: "center", gap: 1.5, textAlign: "center", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
       <Typography sx={{ fontWeight: 600 }}>{t("page.loadError")}</Typography>
@@ -157,10 +163,10 @@ function ProjectChessboard({
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
   const [params, updateParams] = useChessboardParams();
-  const organizationId = useApiOrgId();
+  const scope = useRealtyScope();
   const unitsQuery = useQuery({
-    queryKey: realEstateKeys.units(organizationId, baseProject.id),
-    queryFn: () => getProjectUnits(baseProject.id, organizationId),
+    queryKey: realEstateKeys.units(scope, baseProject.id),
+    queryFn: () => getProjectUnits(baseProject.id, scope),
     staleTime: 30_000,
   });
   const units = React.useMemo(
@@ -247,8 +253,12 @@ function ProjectChessboard({
   const view = params.view === "auto" ? autoBoardView(board) : params.view;
   const selectedUnits = selected.map((id) => units.find((u) => u.id === id)).filter((u): u is Unit => Boolean(u));
 
+  // Цифры шапки — счётчики ЖК с бэка; старый ответ без них — считаем по загруженным квартирам.
+  const kpis = project.stats ?? { total: counts.all, free: counts.free, reserved: counts.reserved, sold: counts.sold };
+
   return (
     <Box sx={{ pb: selected.length ? 10 : 0 }}>
+      <ProjectKpis stats={kpis} />
       <ProjectTabs
         projects={projects}
         activeId={project.id}

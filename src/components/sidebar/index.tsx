@@ -72,6 +72,7 @@ import { getWaitlistSummary, WAITLIST_MODULE_ENABLED } from "../../api/waitlist"
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import { getBookings } from "../../api/bookings";
 import { useModuleGate } from "../../hooks/useModuleGate";
+import { useEstateNav } from "../../hooks/useEstateNav";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -402,8 +403,11 @@ const RealEstateSidebarMenu: React.FC = () => {
   const { moduleGate } = useModuleGate();
   const canSettings = useHasVisibleSettingsTab();
   const orgId = useApiOrgId();
+  // Экраны AIVIO — ещё и по матрице ролей бэка: у юриста шахматки в меню нет, хотя realty.view есть.
+  const estateNav = useEstateNav();
+  const seen = (screen: string) => estateNav?.(screen) ?? true;
 
-  const canChessboard = moduleGate("realty");
+  const canChessboard = moduleGate("realty") && seen("inventory");
   const canDeals = DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals);
   const canTasks = can(PAGE_PERMISSIONS.tasks);
   const canBuyers = can(PAGE_PERMISSIONS.patients);

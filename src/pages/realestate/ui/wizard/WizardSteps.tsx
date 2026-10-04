@@ -99,7 +99,12 @@ const fromDate = (value: dayjs.Dayjs | null) => (value?.isValid() ? value.format
 
 // ─── 1. ЖК ─────────────────────────────────────────────────────────────────
 
-export function ProjectStep({ state, onChange, branchName }: StepProps & { branchName: string | null }) {
+export function ProjectStep({
+  state,
+  onChange,
+  branchName,
+  unrestricted,
+}: StepProps & { branchName: string | null; unrestricted: boolean }) {
   const { t } = useT("realestate");
   return (
     <Box sx={{ display: "grid", gap: 2, maxWidth: 560 }}>
@@ -128,7 +133,9 @@ export function ProjectStep({ state, onChange, branchName }: StepProps & { branc
         slotProps={{ textField: { size: "small", sx: { maxWidth: 240 } } }}
       />
       <Typography variant="body2" color="text.secondary">
-        {branchName ? t("wizard.project.branch", { name: branchName }) : t("wizard.project.branchNone")}
+        {branchName
+          ? t("wizard.project.branch", { name: branchName })
+          : t(unrestricted ? "wizard.project.branchNone" : "wizard.project.branchPick")}
       </Typography>
     </Box>
   );
