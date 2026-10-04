@@ -1,7 +1,7 @@
 import type { InnAbsentReason, PatientGenderValue } from "../../api/vaccinations";
 import { parseKgPin } from "../../utils/kgPin";
 
-/** Данные пациента, без которых прививку не оформить. */
+/** Данные пациента для отчётов по прививкам (можно дополнить позже). */
 export interface PatientDraft {
   gender: PatientGenderValue;
   birthDate: string | null;
