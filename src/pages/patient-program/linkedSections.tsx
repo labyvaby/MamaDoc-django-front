@@ -8,9 +8,10 @@ import { getProgramModuleRecords, type EffectiveProgramModule } from "../../api/
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { AllergiesSection } from "../../components/health/AllergiesSection";
 import { BirthHistorySection } from "../../components/health/BirthHistorySection";
-import { ConditionsSection } from "../../components/health/ConditionsSection";
 import { FamilySection } from "../../components/health/FamilySection";
+import { IllnessHistorySection } from "../../components/health/IllnessHistorySection";
 import { MedicationsSection } from "../../components/health/MedicationsSection";
+import { SurgeriesSection } from "../../components/health/SurgeriesSection";
 import { useHealthAccess } from "../../components/health/useHealth";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import PatientVaccinationsPanel from "../patients/components/PatientVaccinationsPanel";
@@ -79,7 +80,18 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
       content = <AllergiesSection patientId={patient.id} canManage={canManage} title={module.name} />;
       break;
     case "conditions":
-      content = <ConditionsSection patientId={patient.id} canManage={canManage} title={module.name} />;
+      content = (
+        <IllnessHistorySection
+          patientId={patient.id}
+          canManage={canManage}
+          title={module.name}
+          gender={patient.gender}
+          patientName={patient.fullName}
+        />
+      );
+      break;
+    case "surgeries":
+      content = <SurgeriesSection patientId={patient.id} canManage={canManage} birthDate={patient.birthDate} title={module.name} />;
       break;
     case "growth":
       content = <GrowthSection patientId={patient.id} title={module.name} canManage={canManage} />;

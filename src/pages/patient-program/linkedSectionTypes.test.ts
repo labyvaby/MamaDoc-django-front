@@ -17,4 +17,15 @@ describe("linkedSectionTypes", () => {
     expect(isLinkedModule({ code: "plan", moduleType: "checkup_plan" })).toBe(false);
     expect(SYSTEM_SECTIONS.every((section) => section.kind === "linked")).toBe(true);
   });
+
+  it("knows «Операции и травмы» and the new name of «conditions»", () => {
+    expect(systemType({ code: "surgeries", moduleType: "surgeries" })).toBe("surgeries");
+    expect(isLinkedModule({ code: "surgeries", moduleType: "surgeries" })).toBe(true);
+    const surgeries = SYSTEM_SECTIONS.find((section) => section.type === "surgeries");
+    expect(surgeries).toMatchObject({ name: "Операции и травмы", kind: "linked" });
+    expect(SYSTEM_SECTIONS.find((section) => section.type === "conditions")?.name).toBe("История болезней");
+    // В конструкторе — в расширениях после «Аллергий».
+    const types = SYSTEM_SECTIONS.map((section) => section.type);
+    expect(types.indexOf("surgeries")).toBe(types.indexOf("allergies") + 1);
+  });
 });

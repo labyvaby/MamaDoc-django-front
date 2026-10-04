@@ -11,9 +11,11 @@ import {
   type Hospitalization,
   type HospitalizationInput,
 } from "../../api/health";
+import { Section } from "../../pages/patient-program/vision/VisionControls";
 import { pairGridSx } from "../../pages/patient-program/vision/visionUi";
 import { CustomDatePicker } from "../ui";
 import { HealthDrawerShell } from "./HealthDrawerShell";
+import { HealthFilesField } from "./HealthFilesField";
 import { useHealthScope, useInvalidateHealth } from "./useHealth";
 
 const EMPTY: HospitalizationInput = {
@@ -22,6 +24,7 @@ const EMPTY: HospitalizationInput = {
   dischargedOn: null,
   conditionId: null,
   diagnosisTitle: "",
+  attachments: [],
   notes: "",
 };
 
@@ -32,6 +35,7 @@ function toInput(row: Hospitalization): HospitalizationInput {
     dischargedOn: row.dischargedOn,
     conditionId: row.conditionId,
     diagnosisTitle: row.diagnosisTitle,
+    attachments: row.attachments ?? [],
     notes: row.notes,
   };
 }
@@ -44,29 +48,36 @@ interface HospitalizationDrawerProps {
   hospitalization: Hospitalization | null;
   /** Диагнозы пациента для выбора. */
   conditions: ReadonlyArray<Condition>;
+  /** Из случая болезни — дата начала и диагноз случая. */
+  initial?: Partial<HospitalizationInput>;
+  /** Сохранённая запись — например, чтобы окно операции сразу её выбрало. */
+  onSaved?: (row: Hospitalization) => void;
   onClose: () => void;
 }
 
-/** «Отметка о госпитализации»: стационар, даты, диагноз из списка или текстом. */
+/** «Отметка о госпитализации»: стационар, даты, диагноз из списка или текстом, документы. */
 export const HospitalizationDrawer: React.FC<HospitalizationDrawerProps> = ({
   open,
   patientId,
   hospitalization,
   conditions,
+  initial,
+  onSaved,
   onClose,
 }) => {
   const { enqueueSnackbar } = useSnackbar();
   const { scope } = useHealthScope();
   const invalidate = useInvalidateHealth(patientId);
   const [form, setForm] = React.useState<HospitalizationInput>(EMPTY);
+  const [uploading, setUploading] = React.useState(false);
 
   React.useEffect(() => {
-    if (open) setForm(hospitalization ? toInput(hospitalization) : EMPTY);
-  }, [open, hospitalization]);
+    if (open) setForm(hospitalization ? toInput(hospitalization) : { ...EMPTY, ...initial });
+  }, [open, hospitalization, initial]);
 
   const patch = (next: Partial<HospitalizationInput>) => setForm((current) => ({ ...current, ...next }));
   const dischargeBefore = Boolean(form.dischargedOn && form.admittedOn && form.dischargedOn < form.admittedOn);
-  const canSave = form.facility.trim().length > 0 && Boolean(form.admittedOn) && !dischargeBefore;
+  const canSave = form.facility.trim().length > 0 && Boolean(form.admittedOn) && !dischargeBefore && !uploading;
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -75,8 +86,9 @@ export const HospitalizationDrawer: React.FC<HospitalizationDrawerProps> = ({
         ? updateHospitalization(scope, patientId, hospitalization.id, payload)
         : createHospitalization(scope, patientId, payload);
     },
-    onSuccess: async () => {
+    onSuccess: async (row) => {
       enqueueSnackbar(hospitalization ? "Госпитализация обновлена" : "Госпитализация добавлена", { variant: "success" });
+      onSaved?.(row);
       await invalidate();
       onClose();
     },
@@ -148,6 +160,16 @@ export const HospitalizationDrawer: React.FC<HospitalizationDrawerProps> = ({
           fullWidth
         />
       )}
+      <Section title="Документы">
+        <HealthFilesField
+          patientId={patientId}
+          value={form.attachments}
+          onChange={(attachments) => patch({ attachments })}
+          kinds={["discharge", "other"]}
+          defaultKind="discharge"
+          onBusyChange={setUploading}
+        />
+      </Section>
       <TextField
         size="small"
         label="Примечание"

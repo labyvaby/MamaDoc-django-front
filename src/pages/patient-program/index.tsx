@@ -27,6 +27,7 @@ import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import FitnessCenterOutlined from "@mui/icons-material/FitnessCenterOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
+import HealingOutlined from "@mui/icons-material/HealingOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import MonitorHeartOutlined from "@mui/icons-material/MonitorHeartOutlined";
 import RemoveRedEyeOutlined from "@mui/icons-material/RemoveRedEyeOutlined";
@@ -97,6 +98,8 @@ function moduleIcon(module: Pick<EffectiveProgramModule, "code" | "moduleType">)
       return <WarningAmberOutlined />;
     case "conditions":
       return <MonitorHeartOutlined />;
+    case "surgeries":
+      return <HealingOutlined />;
     case "medications":
       return <MedicationOutlined />;
     case "visits":

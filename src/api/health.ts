@@ -1,5 +1,6 @@
-import { apiRequest } from "./client";
+import { ApiError, apiRequest } from "./client";
 import { Scope, scopeParams } from "./scope";
+import { preparePhotoIfImage, withUploadErrors } from "./uploads";
 
 /**
  * Медпрофиль пациента (книжка ребёнка, этап 2): рождение, группы, аллергии,
@@ -22,6 +23,18 @@ export type PeGroup = "main" | "preparatory" | "special" | "exempt" | "";
 export type BloodGroup = "0" | "A" | "B" | "AB" | "";
 export type RhFactor = "positive" | "negative" | "";
 export type RiskGroup = "cns" | "infection" | "trophic_endocrine" | "malformations" | "allergic" | "social";
+/** Точность даты: при `month` день — 1-е число, при `year` — 1 января. */
+export type DatePrecision = "day" | "month" | "year";
+/** `chronic` — хроническое или под наблюдением; `past` — перенесённая болезнь, внесённая вручную. */
+export type ConditionKind = "chronic" | "past";
+export type AttachmentKind = "discharge" | "image" | "other";
+
+/** Документ записи медкарты: ссылка только из загрузки для этой карточки (`health-files/`). */
+export interface HealthAttachment {
+  url: string;
+  name: string;
+  kind: AttachmentKind;
+}
 
 export interface EmployeeRef {
   id: number;
@@ -97,11 +110,15 @@ export interface AllergyInput {
 
 export interface Condition {
   id: number;
+  kind: ConditionKind;
   diagnosisId: number | null;
   diagnosisCode: string;
   title: string;
   status: ConditionStatus;
   diagnosedOn: string | null;
+  datePrecision: DatePrecision;
+  /** Где лечили (у перенесённой): дома, другая клиника, стационар. */
+  place: string;
   resolvedOn: string | null;
   isFirstDiagnosis: boolean;
   isDispensary: boolean;
@@ -121,11 +138,14 @@ export interface Condition {
 }
 
 export interface ConditionInput {
+  kind: ConditionKind;
   title: string;
   diagnosisId: number | null;
   diagnosisCode: string;
   status: ConditionStatus;
   diagnosedOn: string | null;
+  datePrecision: DatePrecision;
+  place: string;
   resolvedOn: string | null;
   isFirstDiagnosis: boolean;
   isDispensary: boolean;
@@ -136,6 +156,8 @@ export interface ConditionInput {
   controlIntervalMonths: number | null;
   lastControlOn: string | null;
   nextControlOn: string | null;
+  /** Заключение, из которого диагноз поднят кнопкой «Хроническое». */
+  sourceConclusionId: number | null;
   notes: string;
 }
 
@@ -147,6 +169,7 @@ export interface Hospitalization {
   conditionId: number | null;
   conditionTitle: string | null;
   diagnosisTitle: string;
+  attachments: HealthAttachment[];
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -158,6 +181,7 @@ export interface HospitalizationInput {
   dischargedOn: string | null;
   conditionId: number | null;
   diagnosisTitle: string;
+  attachments: HealthAttachment[];
   notes: string;
 }
 
@@ -296,12 +320,14 @@ export function updateAllergy(
 export function getConditions(
   scope: Scope,
   patientId: number,
-  params: { status?: ConditionStatus | "all"; dispensary?: boolean } = {},
+  params: { status?: ConditionStatus | "all"; dispensary?: boolean; kind?: ConditionKind } = {},
   signal?: AbortSignal,
 ): Promise<Condition[]> {
   const extra: Record<string, string> = {};
   if (params.status) extra.status = params.status;
   if (params.dispensary) extra.dispensary = "1";
+  // Без вида сервер отдаёт хронические — как до появления перенесённых.
+  if (params.kind) extra.kind = params.kind;
   return apiRequest<Condition[]>(patientPath(scope, patientId, "conditions/", extra), { signal });
 }
 
@@ -553,4 +579,277 @@ export function updateMedication(
     method: "PATCH",
     body: payload,
   });
+}
+
+// ── История болезней, детские инфекции, операции и травмы (пакет B) ─────────
+// ТЗ docs/specs/2026-10-04-book-illness-surgery-design.md, §2.5.
+
+export type IllnessCounter = "ari" | "otitis" | "intestinal";
+/** `visit` — есть живое заключение, `archive` — только архив, `manual` — внесено вручную. */
+export type EpisodeSource = "visit" | "archive" | "manual";
+export type AgeBand = "0" | "1-3" | "4-5" | "6+";
+
+export interface IllnessDiagnosis {
+  code: string;
+  title: string;
+}
+
+/** Приём (или архивное заключение) внутри случая болезни. */
+export interface IllnessVisit {
+  on: string;
+  appointmentId: number | null;
+  conclusionId: number | null;
+  legacyConclusionId: number | null;
+  doctor: EmployeeRef | null;
+  /** Врач текстом — у архива, где сотрудника нет. */
+  doctorName: string;
+  /** Специализации врача через запятую. */
+  specialty: string;
+  serviceName: string;
+  branch: { id: number; name: string } | null;
+  /** Диагнозы этой группы на этом приёме. */
+  diagnoses: IllnessDiagnosis[];
+}
+
+export interface EpisodeMedication {
+  id: number;
+  drug: string;
+  startedOn: string;
+  endedOn: string | null;
+  /** Дней курса — при известной дате отмены. */
+  days: number | null;
+}
+
+/** Случай болезни: приёмы одной группы диагнозов с промежутком не больше 21 дня. */
+export interface IllnessEpisode {
+  /** `v<заключение>-<группа>`, `a<архив>-<группа>`, `m<диагноз>`. */
+  key: string;
+  source: EpisodeSource;
+  counter: IllnessCounter | null;
+  startedOn: string;
+  endedOn: string;
+  datePrecision: DatePrecision;
+  diagnoses: IllnessDiagnosis[];
+  /** Номер в справочнике клиники — для кнопки «Хроническое». */
+  diagnosisId: number | null;
+  visitsCount: number;
+  visits: IllnessVisit[];
+  /** У `manual` — его строка диагноза; у остальных — хроническое той же рубрики. */
+  conditionId: number | null;
+  isChronic: boolean;
+  place: string;
+  notes: string;
+  medications: EpisodeMedication[];
+}
+
+export interface ChronicStat {
+  conditionId: number;
+  visitsLast12Months: number;
+  lastVisitOn: string | null;
+}
+
+export type ChildhoodInfectionCode =
+  | "varicella"
+  | "measles"
+  | "rubella"
+  | "mumps"
+  | "pertussis"
+  | "scarlet_fever"
+  | "roseola"
+  | "mononucleosis";
+export type InfectionStatus = "had" | "not_had" | "unknown";
+export type InfectionEvidence = "doctor" | "lab" | "parent";
+
+export interface ChildhoodInfection {
+  id: number;
+  infection: ChildhoodInfectionCode;
+  status: InfectionStatus;
+  occurredOn: string | null;
+  datePrecision: DatePrecision;
+  evidence: InfectionEvidence | "";
+  sourceConclusionId: number | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: EmployeeRef | null;
+  updatedBy: EmployeeRef | null;
+}
+
+export interface ChildhoodInfectionInput {
+  infection: ChildhoodInfectionCode;
+  status: InfectionStatus;
+  occurredOn: string | null;
+  datePrecision: DatePrecision;
+  evidence: InfectionEvidence | "";
+  sourceConclusionId: number | null;
+  notes: string;
+}
+
+export interface InfectionMention {
+  on: string;
+  code: string;
+  title: string;
+  conclusionId: number | null;
+  legacyConclusionId: number | null;
+}
+
+/** Итог по одной детской инфекции (§3.7). */
+export interface InfectionSummary {
+  infection: ChildhoodInfectionCode;
+  name: string;
+  codes: string[];
+  status: InfectionStatus;
+  /** «Болела» выведено из приёмов, отметки нет. */
+  derived: boolean;
+  /** Отмечено «не болела», а диагноз в приёмах есть. */
+  conflict: boolean;
+  record: ChildhoodInfection | null;
+  mentions: InfectionMention[];
+}
+
+export interface IllnessSummary {
+  windowFrom: string;
+  windowTo: string;
+  ageYears: number | null;
+  /** У взрослых и без даты рождения — null. */
+  ageBand: AgeBand | null;
+  counts: { ari: number; otitis: number; intestinal: number; episodes: number; hospitalizations: number };
+  frequentIll: { threshold: number; isFrequent: boolean } | null;
+  sources: { visits: number; archive: number; manual: number };
+}
+
+/** `GET illness-history/` — вся «История болезней» одним ответом. */
+export interface IllnessHistory {
+  patientId: number;
+  birthDate: string | null;
+  today: string;
+  chronic: Condition[];
+  chronicStats: ChronicStat[];
+  /** Новые сверху. */
+  episodes: IllnessEpisode[];
+  hospitalizations: Hospitalization[];
+  /** Все восемь инфекций в порядке каталога. */
+  infections: InfectionSummary[];
+  summary: IllnessSummary;
+}
+
+export function getIllnessHistory(scope: Scope, patientId: number, signal?: AbortSignal): Promise<IllnessHistory> {
+  return apiRequest<IllnessHistory>(patientPath(scope, patientId, "illness-history/"), { signal });
+}
+
+/** Тело отметки: при создании обязательны `infection` и `status`; при правке `null` очищает поле. */
+export type ChildhoodInfectionPayload = Partial<Record<keyof ChildhoodInfectionInput, unknown>>;
+
+export function createChildhoodInfection(
+  scope: Scope,
+  patientId: number,
+  payload: ChildhoodInfectionPayload,
+): Promise<ChildhoodInfection> {
+  return apiRequest<ChildhoodInfection>(patientPath(scope, patientId, "childhood-infections/"), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateChildhoodInfection(
+  scope: Scope,
+  patientId: number,
+  recordId: number,
+  payload: ChildhoodInfectionPayload,
+): Promise<ChildhoodInfection> {
+  return apiRequest<ChildhoodInfection>(patientPath(scope, patientId, `childhood-infections/${recordId}/`), {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export type SurgeryKind = "operation" | "injury" | "procedure" | "transfusion";
+export type SurgeryStatus = "recorded" | "refuted";
+export type InjuryType = "fracture" | "dislocation" | "bruise" | "sprain" | "burn" | "wound" | "concussion" | "other";
+export type BodySide = "left" | "right" | "both";
+export type InjuryTreatment = "cast" | "splint" | "sutures" | "surgery" | "bandage";
+export type TransfusionProduct = "red_cells" | "plasma" | "platelets" | "exchange" | "immunoglobulin" | "other";
+export type Anesthesia = "general" | "sedation" | "local" | "none";
+export type AnesthesiaTolerance = "good" | "complications";
+export type SurgeryOutcome = "recovered" | "consequences" | "ongoing";
+
+/** Операция, травма, процедура или переливание крови (иммуноглобулина). */
+export interface Surgery {
+  id: number;
+  kind: SurgeryKind;
+  status: SurgeryStatus;
+  performedOn: string;
+  datePrecision: DatePrecision;
+  title: string;
+  injuryType: InjuryType | "";
+  bodyPart: string;
+  side: BodySide | "";
+  treatments: InjuryTreatment[];
+  transfusionProduct: TransfusionProduct | "";
+  reason: string;
+  facility: string;
+  surgeon: string;
+  anesthesia: Anesthesia | "";
+  anesthesiaTolerance: AnesthesiaTolerance | "";
+  anesthesiaNotes: string;
+  complications: string;
+  outcome: SurgeryOutcome | "";
+  hospitalizationId: number | null;
+  hospitalization: { id: number; facility: string; admittedOn: string; dischargedOn: string | null } | null;
+  attachments: HealthAttachment[];
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: EmployeeRef | null;
+  updatedBy: EmployeeRef | null;
+}
+
+/** Тело создания и правки; пустые поля собирает `buildSurgeryPayload` (§2.5: null очищает). */
+export type SurgeryPayload = Partial<Record<keyof Omit<Surgery, "id" | "hospitalization" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy">, unknown>>;
+
+export function getSurgeries(
+  scope: Scope,
+  patientId: number,
+  params: { kind?: SurgeryKind; status?: "all" } = {},
+  signal?: AbortSignal,
+): Promise<Surgery[]> {
+  const extra: Record<string, string> = {};
+  if (params.kind) extra.kind = params.kind;
+  if (params.status) extra.status = params.status;
+  return apiRequest<Surgery[]>(patientPath(scope, patientId, "surgeries/", extra), { signal });
+}
+
+export function createSurgery(scope: Scope, patientId: number, payload: SurgeryPayload): Promise<Surgery> {
+  return apiRequest<Surgery>(patientPath(scope, patientId, "surgeries/"), { method: "POST", body: payload });
+}
+
+export function updateSurgery(scope: Scope, patientId: number, surgeryId: number, payload: SurgeryPayload): Promise<Surgery> {
+  return apiRequest<Surgery>(patientPath(scope, patientId, `surgeries/${surgeryId}/`), { method: "PATCH", body: payload });
+}
+
+export interface HealthFileUpload {
+  url: string;
+  name: string;
+  contentType: string;
+  size: number;
+}
+
+/** Документы медкарты: фото и PDF до 10 МБ (§2.5). */
+export const HEALTH_FILE_MAX_BYTES = 10 * 1024 * 1024;
+export const HEALTH_FILE_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.pdf";
+
+/**
+ * `POST health-files/` — загрузка документа карточки. Снимок ужимаем и
+ * приводим к jpg (HEIC сервер не берёт), PDF уходит как есть.
+ */
+export async function uploadHealthFile(scope: Scope, patientId: number, file: File): Promise<HealthFileUpload> {
+  const prepared = await preparePhotoIfImage(file);
+  if (prepared.size > HEALTH_FILE_MAX_BYTES) {
+    throw new ApiError("Файл больше 10 МБ — уменьшите снимок или PDF.", 400, null);
+  }
+  const form = new FormData();
+  form.append("file", prepared);
+  return withUploadErrors(() =>
+    apiRequest<HealthFileUpload>(patientPath(scope, patientId, "health-files/"), { method: "POST", formData: form }),
+  );
 }
