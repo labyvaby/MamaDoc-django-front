@@ -34,6 +34,7 @@ export const PAGE_PERMISSIONS = {
   reports: "reports.view",
   // Отчёт раскрывает зарплаты всех врачей — своё право, не reports.view.
   doctorProfit: "reports.doctor_profit.view",
+  pnl: "pnl.view",
   payroll: ["payroll.view", "payroll.view_own"],
   notifications: "notifications.page.view",
   reviews: ["reviews.view", "reviews.view_own", "reviews.handle", "reviews.manage"],

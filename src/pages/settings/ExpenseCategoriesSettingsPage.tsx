@@ -40,7 +40,9 @@ import {
   type ExpenseCategory,
   type ExpenseCategoryKind,
   type ExpenseCategoriesResponse,
+  type UpdateCategoryPayload,
 } from "../../api/expenses";
+import { PNL_LINE_OPTIONS, type PnlLineValue } from "../../features/pnl/pnlLines";
 import { djangoQueryKeys, DJANGO_REFERENCE_STALE_TIME_MS } from "../../api/queryKeys";
 import { ApiError } from "../../api/client";
 import { useT } from "../../i18n/VerticalProvider";
@@ -169,7 +171,7 @@ const AddCategoryDialog: React.FC<AddDialogProps> = ({ open, onClose, organizati
 const ExpenseCategoriesSettingsPage: React.FC = () => {
   const { t } = useT("settings");
   usePageTitle(t("expenseCategories.title"));
-  const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
+  const { isSuperAdmin, activeOrganization, memberships, loading: permLoading, hasModule } = usePermissions();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = React.useState(false);
 
@@ -197,20 +199,16 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
   };
 
-  // Переключатели «Фото чека» и «В прибыли» сохраняются сразу, без кнопки: одна
-  // категория — одно действие. Пока запрос идёт, строка заблокирована; список
-  // расходов после ответа перечитывается — метка «нет фото» гаснет/появляется.
+  // Переключатель «Фото чека» сохраняется сразу, без кнопки: одна категория —
+  // одно действие. Пока запрос идёт, строка заблокирована; список расходов
+  // после ответа перечитывается — метка «нет фото» по категории гаснет/появляется.
   const canManage = useCan(["finance.expense.manage", "finance.manage"]);
   const { open: notify } = useNotification();
   const [savingId, setSavingId] = React.useState<number | null>(null);
-  const handleFlagChange = async (
-    category: ExpenseCategory,
-    patch: { photoRequired?: boolean; includeInProfit?: boolean },
-    errorKey: string,
-  ) => {
+  const patchCategory = async (category: ExpenseCategory, payload: UpdateCategoryPayload, errorMessage: string) => {
     setSavingId(category.id);
     try {
-      const updated = await updateExpenseCategory(category.id, patch);
+      const updated = await updateExpenseCategory(category.id, payload);
       queryClient.setQueryData<ExpenseCategoriesResponse>(
         djangoQueryKeys.expenses.categories(orgId ?? null),
         (prev) =>
@@ -220,14 +218,19 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
           },
       );
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
-      // Флаг «В прибыли» меняет общие расходы отчёта «Прибыль по врачам».
-      void queryClient.invalidateQueries({ queryKey: ["django", "reports"] });
     } catch (e) {
-      notify?.({ type: "error", message: t(errorKey), description: parseBackendError(e) });
+      notify?.({ type: "error", message: errorMessage, description: parseBackendError(e) });
     } finally {
       setSavingId(null);
     }
   };
+  const handlePhotoRequiredChange = (category: ExpenseCategory, photoRequired: boolean) =>
+    patchCategory(category, { photoRequired }, t("expenseCategories.photoRequired.saveError"));
+  // Статья ОПиУ — в какую строку отчёта «Прибыли и убытки» идут расходы категории.
+  // Колонка видна, только когда у организации включён модуль pnl.
+  const showPnl = hasModule("pnl");
+  const handlePnlLineChange = (category: ExpenseCategory, pnlLine: PnlLineValue) =>
+    patchCategory(category, { pnlLine }, t("expenseCategories.pnlLine.saveError"));
 
 
   return (
@@ -297,11 +300,9 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
                       <span>{t("expenseCategories.columns.photoRequired")}</span>
                     </Tooltip>
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>
-                    <Tooltip title={t("expenseCategories.includeInProfit.description")} arrow>
-                      <span>{t("expenseCategories.columns.includeInProfit")}</span>
-                    </Tooltip>
-                  </TableCell>
+                  {showPnl && (
+                    <TableCell sx={{ fontWeight: 600 }}>{t("expenseCategories.pnlLine.column")}</TableCell>
+                  )}
                   <TableCell sx={{ fontWeight: 600 }}>{t("expenseCategories.columns.status")}</TableCell>
                 </TableRow>
               </TableHead>
@@ -328,52 +329,36 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
                             size="small"
                             checked={cat.photoRequired !== false}
                             disabled={!canManage || savingId === cat.id}
-                            onChange={(e) =>
-                              void handleFlagChange(
-                                cat,
-                                { photoRequired: e.target.checked },
-                                "expenseCategories.photoRequired.saveError",
-                              )
-                            }
+                            onChange={(e) => void handlePhotoRequiredChange(cat, e.target.checked)}
                             inputProps={{ "aria-label": t("expenseCategories.columns.photoRequired") }}
                           />
                         </span>
                       </Tooltip>
                     </TableCell>
-                    <TableCell>
-                      {cat.kind === "general" ? (
-                        <Tooltip
-                          title={
-                            cat.includeInProfit === false
-                              ? t("expenseCategories.includeInProfit.off")
-                              : t("expenseCategories.includeInProfit.on")
-                          }
-                          arrow
+                    {showPnl && (
+                      <TableCell>
+                        <TextField
+                          select
+                          size="small"
+                          value={cat.pnlLine ?? "admin"}
+                          disabled={!canManage || savingId === cat.id}
+                          onChange={(e) => void handlePnlLineChange(cat, e.target.value as PnlLineValue)}
+                          inputProps={{ "aria-label": t("expenseCategories.pnlLine.column") }}
+                          sx={{ minWidth: 230 }}
                         >
-                          <span>
-                            <Switch
-                              size="small"
-                              checked={cat.includeInProfit !== false}
-                              disabled={!canManage || savingId === cat.id}
-                              onChange={(e) =>
-                                void handleFlagChange(
-                                  cat,
-                                  { includeInProfit: e.target.checked },
-                                  "expenseCategories.includeInProfit.saveError",
-                                )
-                              }
-                              inputProps={{ "aria-label": t("expenseCategories.columns.includeInProfit") }}
-                            />
-                          </span>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip title={t("expenseCategories.includeInProfit.notApplicable")} arrow>
-                          <Typography variant="body2" color="text.disabled" component="span">
-                            —
-                          </Typography>
-                        </Tooltip>
-                      )}
-                    </TableCell>
+                          {PNL_LINE_OPTIONS.map((option) => (
+                            <MenuItem key={option.value} value={option.value}>
+                              {t(`expenseCategories.pnlLine.options.${option.value}`)}
+                              {option.code && (
+                                <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 1 }}>
+                                  {option.code}
+                                </Typography>
+                              )}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </TableCell>
+                    )}
                     <TableCell>
                       <Chip
                         label={cat.isActive ? t("expenseCategories.status.active") : t("expenseCategories.status.inactive")}
@@ -387,6 +372,12 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+        )}
+
+        {showPnl && categories.length > 0 && (
+          <Typography variant="caption" color="text.secondary">
+            {t("expenseCategories.pnlLine.hint")}
+          </Typography>
         )}
       </Stack>
 

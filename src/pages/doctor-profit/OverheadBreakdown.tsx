@@ -7,7 +7,7 @@ import type { ProfitOverhead, ProfitOverheadItem } from "../../api/doctorProfit"
 import { toNumber } from "./profitRows";
 
 const GROUPS: { key: keyof ProfitOverhead; title: string; empty: string }[] = [
-  { key: "expenses", title: "Расходы по категориям", empty: "Расходов с отметкой «В прибыли» за месяц нет" },
+  { key: "expenses", title: "Расходы по категориям", empty: "Расходов за месяц нет — категории со статьёй «Не входит в ОПиУ» не учитываются" },
   { key: "staff", title: "Зарплата персонала без своих приёмов", empty: "Нет начислений" },
   { key: "fixed", title: "Постоянные расходы", empty: "Не внесены — аренда, коммунальные, налоги" },
 ];

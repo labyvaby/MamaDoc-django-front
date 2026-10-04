@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
+import type { PnlLineValue } from "../features/pnl/pnlLines";
 export { parseBackendError } from "./appointments";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -18,11 +19,8 @@ export interface ExpenseCategory {
    * списке не показываем. Ставится в админке. Нет поля — бэк ещё без него.
    */
   photoRequired?: boolean;
-  /**
-   * false — не расход клиники (инкассация): отчёт «Прибыль по врачам» не берёт
-   * такие расходы в общие. У аванса и ЗП не читается. Нет поля — бэк ещё без него.
-   */
-  includeInProfit?: boolean;
+  /** Строка отчёта «Прибыли и убытки». Нет поля — бэк ещё без него. */
+  pnlLine?: PnlLineValue;
 }
 
 export interface Expense {
@@ -85,14 +83,14 @@ export interface CreateCategoryPayload {
   isActive?: boolean;
   /** По умолчанию true; false — у категории чека не бывает (инкассация). */
   photoRequired?: boolean;
-  /** По умолчанию true; false — не расход клиники (инкассация). */
-  includeInProfit?: boolean;
+  /** Не прислали — бэк подберёт статью по названию. */
+  pnlLine?: PnlLineValue;
 }
 
 /** PATCH /finance/expense-categories/{id}/ — что прислали, то и меняется. */
 export interface UpdateCategoryPayload {
   photoRequired?: boolean;
-  includeInProfit?: boolean;
+  pnlLine?: PnlLineValue;
 }
 
 export interface CreateExpensePayload {
