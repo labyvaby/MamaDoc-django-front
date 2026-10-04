@@ -76,7 +76,7 @@ import { StaffRotationDialog, type RotationApply } from "./StaffRotationDialog";
 import { initialsOf } from "./mockDemoData";
 import type { RosterEmployee } from "./staffRosterDemo";
 import { useHotelProperty } from "./useHotelProperty";
-import { useAddDemoAdvance, useMonthAdvances, useRosterEmployees, useSaveShifts, useSaveStaffPost, useStaffPosts, useStaffShifts } from "./useStaffRoster";
+import { useAddDemoAdvance, useMonthAdvances, useRosterEmployees, useSaveShifts, useSaveStaffPost, useShiftWarnings, useStaffPosts, useStaffShifts } from "./useStaffRoster";
 
 type Tab = "grid" | "payroll" | "posts";
 const D = (d: Dayjs) => d.format("YYYY-MM-DD");
@@ -210,6 +210,14 @@ const GridTab: React.FC<{
   }, [shifts]);
   const byPost = (postId: number) => shifts.filter((s) => s.postId === postId).length;
   const overlaps = React.useMemo(() => findShiftOverlaps(shifts), [shifts]);
+  // Переработки и дни без выходного за месяц — подсветка ячеек сотрудника на эти даты (r4 §14).
+  const warningsQuery = useShiftWarnings(propertyId, D(month.startOf("month")), D(month.endOf("month")), isDemo);
+  const shiftWarnings = React.useMemo(() => warningsQuery.data ?? [], [warningsQuery.data]);
+  const overworkOf = React.useCallback(
+    (employeeId: number, date: string) => shiftWarnings.filter((w) => w.employeeId === employeeId && date >= w.dateFrom && date <= w.dateTo),
+    [shiftWarnings],
+  );
+  const [showAllWarnings, setShowAllWarnings] = React.useState(false);
   const overlapPeople = React.useMemo(() => new Set(shifts.filter((s) => overlaps.has(s.id)).map((s) => s.employeeId)).size, [shifts, overlaps]);
   const timeOf = (s: HotelStaffShift) => `${dayjs(s.startsAt).format("D MMM HH:mm")}–${dayjs(s.endsAt).format("HH:mm")}`;
 
@@ -217,9 +225,13 @@ const GridTab: React.FC<{
   const apply = async (inputs: HotelStaffShiftInput[], message?: string, allowOverlap = false) => {
     if (inputs.length === 0) return;
     try {
-      await save.mutateAsync({ shifts: inputs, allowOverlap });
+      const warnings = await save.mutateAsync({ shifts: inputs, allowOverlap });
       setOverlapAsk(null);
       if (message) enqueueSnackbar(message, { variant: "success" });
+      // Сохранено; предупреждение — чтобы заметили переработку сразу, а не в конце месяца.
+      if (warnings.length > 0) {
+        enqueueSnackbar(`${warnings[0].message}${warnings.length > 1 ? ` И ещё ${warnings.length - 1}.` : ""}`, { variant: "warning", autoHideDuration: 8000 });
+      }
     } catch (err) {
       // Один человек в двух сменах одновременно — сервер спрашивает, правда ли так задумано.
       if (err instanceof ApiError && err.code === "SHIFT_OVERLAP") {
@@ -401,6 +413,25 @@ const GridTab: React.FC<{
           обведены. Ставка за них начислится дважды: проверьте, что это правда (один человек на двух этажах), а не ошибка графика.
         </Alert>
       )}
+      {shiftWarnings.length > 0 && (
+        <Alert severity="warning" variant="outlined" icon={<WarningAmberRounded fontSize="inherit" />}>
+          <Typography variant="body2" fontWeight={600}>
+            Переработки в этом месяце — ячейки подсвечены. График сохранён, но людям нужен отдых.
+          </Typography>
+          <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.25 }}>
+            {(showAllWarnings ? shiftWarnings : shiftWarnings.slice(0, 3)).map((w) => (
+              <Typography component="li" variant="body2" key={`${w.kind}-${w.employeeId}-${w.dateFrom}`}>
+                {w.message}
+              </Typography>
+            ))}
+          </Box>
+          {shiftWarnings.length > 3 && (
+            <Button size="small" color="inherit" onClick={() => setShowAllWarnings((v) => !v)} sx={{ mt: 0.5, px: 0.5 }}>
+              {showAllWarnings ? "Свернуть" : `Ещё ${shiftWarnings.length - 3}`}
+            </Button>
+          )}
+        </Alert>
+      )}
       <Stack direction={{ xs: "column", md: "row" }} gap={1.5} alignItems={{ md: "center" }}>
         <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{ flex: 1 }}>
           {[...counts.entries()]
@@ -514,6 +545,7 @@ const GridTab: React.FC<{
                       const c = s ? employeeColor(s.employeeId) : undefined;
                       const dim = highlight != null && s?.employeeId !== highlight;
                       const clash = s ? overlaps.get(s.id) : undefined;
+                      const overwork = s && s.status !== "absent" ? overworkOf(s.employeeId, date) : [];
                       return (
                         <TableCell key={p.id} sx={{ bgcolor: rowBg, p: 0.5 }}>
                           <Tooltip
@@ -521,7 +553,9 @@ const GridTab: React.FC<{
                             title={
                               clash && s
                                 ? `Внахлёст: ${name(s.employeeId)} в это же время на «${clash.map((o) => o.postName).join("», «")}» (${clash.map(timeOf).join(", ")}). Ставка начислится дважды.`
-                                : ""
+                                : overwork.length > 0
+                                  ? overwork.map((w) => w.message).join(" ")
+                                  : ""
                             }
                           >
                           <ButtonBase
@@ -543,6 +577,7 @@ const GridTab: React.FC<{
                                 ? { bgcolor: alpha(c, dark ? 0.2 : 0.09), "&:hover": { bgcolor: alpha(c, dark ? 0.3 : 0.16) } }
                                 : { color: "text.disabled", "&:hover": { bgcolor: "action.hover", color: "text.secondary" } }),
                               ...(clash ? { outline: `2px solid ${theme.palette.warning.main}`, outlineOffset: -2 } : {}),
+                              ...(!clash && overwork.length > 0 ? { outline: `2px dashed ${theme.palette.warning.main}`, outlineOffset: -2 } : {}),
                             }}
                           >
                             {s && c ? (

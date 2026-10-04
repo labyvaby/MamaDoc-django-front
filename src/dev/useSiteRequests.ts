@@ -16,8 +16,11 @@ import { listReservations, type HotelReservation } from "../api/hotel";
 import { PAGE_PERMISSIONS } from "../config/accessPermissions";
 import { useCan } from "../hooks/useCan";
 import { useHotelProperty } from "./useHotelProperty";
+import { useHotelSocketConnected } from "./hotelRealtime";
 
 const POLL_MS = 45_000;
+// Сокет жив — новая заявка придёт событием hotel.reservation; опрос только страхует от «тихого» обрыва.
+const POLL_WITH_SOCKET_MS = 5 * 60_000;
 
 export const isPendingSiteRequest = (r: HotelReservation, now: number = Date.now()): boolean =>
   r.status === "hold" && r.source === "website" && (!r.expiresAt || Date.parse(r.expiresAt) > now);
@@ -26,11 +29,12 @@ export function useSiteRequests(enabled = true): { requests: HotelReservation[];
   const { property } = useHotelProperty();
   const canSee = useCan(PAGE_PERMISSIONS.hotelReception);
   const propertyId = property?.id;
+  const socket = useHotelSocketConnected();
   const query = useQuery({
     queryKey: ["hotel", "reservations", "siteRequests", propertyId],
     queryFn: ({ signal }) => listReservations({ propertyId: propertyId!, status: "hold", source: "website", limit: 50 }, signal),
     enabled: enabled && canSee && propertyId != null,
-    refetchInterval: POLL_MS,
+    refetchInterval: socket ? POLL_WITH_SOCKET_MS : POLL_MS,
     // Ресепшен держит CRM фоновой вкладкой — заявка должна прозвучать и там.
     refetchIntervalInBackground: true,
     staleTime: 30_000,

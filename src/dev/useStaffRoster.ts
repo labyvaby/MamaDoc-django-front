@@ -11,11 +11,13 @@ import {
   archiveStaffPost,
   createStaffPost,
   listStaffPosts,
+  listShiftWarnings,
   listStaffShifts,
   saveStaffShifts,
   updateStaffPost,
   type HotelStaffPost,
   type HotelStaffPostData,
+  type HotelShiftWarning,
   type HotelStaffShift,
   type HotelStaffShiftInput,
 } from "../api/hotel";
@@ -73,11 +75,33 @@ export function useSaveShifts(propertyId: number | undefined, isDemo: boolean) {
   const queryClient = useQueryClient();
   return useMutation({
     // allowOverlap — только после подтверждения: без него сервер отвечает 409 SHIFT_OVERLAP.
-    mutationFn: async ({ shifts, allowOverlap = false }: { shifts: HotelStaffShiftInput[]; allowOverlap?: boolean }) => {
-      if (isDemo) return saveDemoShifts(shifts);
-      await saveStaffShifts({ propertyId: propertyId!, shifts, allowOverlap });
+    // Ответ — предупреждения о переработках по тем, кого только что поставили (r4 §14); старый сервер их не шлёт.
+    mutationFn: async ({ shifts, allowOverlap = false }: { shifts: HotelStaffShiftInput[]; allowOverlap?: boolean }): Promise<HotelShiftWarning[]> => {
+      if (isDemo) {
+        await saveDemoShifts(shifts);
+        return [];
+      }
+      return (await saveStaffShifts({ propertyId: propertyId!, shifts, allowOverlap })).warnings ?? [];
     },
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["hotel", "staffShifts"] }),
+  });
+}
+
+/** Переработки и работа без выходного за период — для подсветки сетки. Нет ручки (старый сервер) — пусто. */
+export function useShiftWarnings(propertyId: number | undefined, from: string, to: string, isDemo: boolean | undefined) {
+  return useQuery<HotelShiftWarning[]>({
+    // Под ключом смен: сохранение графика сбрасывает и предупреждения.
+    queryKey: ["hotel", "staffShifts", "warnings", propertyId, from, to],
+    queryFn: async ({ signal }) => {
+      try {
+        return await listShiftWarnings({ propertyId: propertyId!, from, to }, signal);
+      } catch (err) {
+        if (isEndpointMissing(err)) return [];
+        throw err;
+      }
+    },
+    enabled: propertyId != null && isDemo === false,
+    retry: false,
   });
 }
 

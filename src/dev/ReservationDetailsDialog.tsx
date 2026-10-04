@@ -106,7 +106,7 @@ import {
   HOTEL_GUARANTEE_METHOD_LABELS,
 } from "./hotelDisplay";
 import { formatHotelDateRange, initialsOf, nightsBetween } from "./mockDemoData";
-import { StatusPill } from "./hotelUi";
+import { plural, StatusPill } from "./hotelUi";
 import { CheckInDocumentPanel, missingDocumentGuest } from "./CheckInDocumentPanel";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 
@@ -182,6 +182,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const [checkInNeedsDocument, setCheckInNeedsDocument] = React.useState(false);
   const [documentSaved, setDocumentSaved] = React.useState(false);
   const [checkOutNeedsForce, setCheckOutNeedsForce] = React.useState(false);
+  // Выезд в день заезда: сервер оставляет в счёте первую ночь, остальные освобождает (r3 §8) — спросим один раз.
+  const [checkOutSameDay, setCheckOutSameDay] = React.useState(false);
   const [cancelPromptOpen, setCancelPromptOpen] = React.useState(false);
   // Панель правки: "edit" — даты/гости/питание, "room" — другой номер.
   const [editMode, setEditMode] = React.useState<"edit" | "room" | null>(null);
@@ -218,6 +220,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setCheckInNeedsDocument(false);
     setDocumentSaved(false);
     setCheckOutNeedsForce(false);
+    setCheckOutSameDay(false);
     setCheckOutNeedsInspection(false);
     setCancelPromptOpen(false);
     setEditMode(null);
@@ -350,8 +353,13 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     }
   };
 
-  const handleCheckOut = async (force = false, skipInspection = false) => {
+  const handleCheckOut = async (force = false, skipInspection = false, sameDayConfirmed = false) => {
     if (!reservation || !item) return;
+    if (!sameDayConfirmed && !force && sameDayCheckOut) {
+      setCheckOutSameDay(true);
+      return;
+    }
+    setCheckOutSameDay(false);
     // Номер не проверен (или проверка ещё идёт) — спросим один раз, не блокируя.
     if (!skipInspection && inspection.visible && inspection.state !== "ok" && inspection.state !== "issues") {
       setCheckOutNeedsInspection(true);
@@ -425,6 +433,13 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     canManageReservation && reservation && CANCELLABLE_STATUSES.has(reservation.status) && item?.stayStatus !== "checked_out";
   const canCheckIn = canManageStays && reservation?.status === "confirmed" && item?.stayStatus === "expected";
   const canCheckOut = canManageStays && item?.stayStatus === "checked_in";
+  const todayIso = dayjs().format("YYYY-MM-DD");
+  const sameDayCheckOut = canCheckOut && item != null && item.checkIn === todayIso && item.nights.length > 1;
+  const firstNightPrice = item?.nights[0] ? Number(item.nights[0].price) - Number(item.nights[0].discount ?? 0) : 0;
+  // Штраф отмены на сегодня по условиям брони (r3 §4.3). Сервер его не начисляет и у закрытой брони долг обнуляет,
+  // поэтому показываем, что удержать из внесённого и сколько вернуть.
+  const cancelPenalty = reservation?.cancellationPenalty ?? null;
+  const penaltyAmount = cancelPenalty?.applies ? Number(cancelPenalty.amount) : 0;
   // Править можно живую бронь, пока гость не выехал. Номер: до заезда —
   // назначение (право на брони), у заселённого — переселение (право на заселение).
   const isLiveReservation = reservation != null && CANCELLABLE_STATUSES.has(reservation.status) && item?.stayStatus !== "checked_out";
@@ -954,6 +969,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               checkInNeedsDocument ||
               documentSaved ||
               checkOutNeedsForce ||
+              checkOutSameDay ||
               checkOutNeedsInspection ||
               cancelPromptOpen ||
               editMode != null) && (
@@ -981,7 +997,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     onClose={() => setCheckOutNeedsInspection(false)}
                     action={
                       <Stack direction="row" gap={0.5}>
-                        <Button size="small" color="inherit" onClick={() => void handleCheckOut(false, true)}>
+                        <Button size="small" color="inherit" onClick={() => void handleCheckOut(false, true, true)}>
                           Выселить без проверки
                         </Button>
                       </Stack>
@@ -1009,6 +1025,20 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     }
                   >
                     Номер не готов (грязный или в ремонте){!canForceCheckIn && " — нет прав заселить принудительно"}.
+                  </Alert>
+                )}
+                {checkOutSameDay && item && (
+                  <Alert
+                    severity="info"
+                    onClose={() => setCheckOutSameDay(false)}
+                    action={
+                      <Button size="small" color="inherit" onClick={() => void handleCheckOut(false, false, true)} disabled={actionBusy}>
+                        Выселить
+                      </Button>
+                    }
+                  >
+                    Выезд в день заезда: в счёте останется первая ночь ({money(firstNightPrice)}), остальные {item.nights.length - 1}{" "}
+                    {plural(item.nights.length - 1, "ночь", "ночи", "ночей")} освободятся и вернутся в продажу.
                   </Alert>
                 )}
                 {checkOutNeedsForce && (
@@ -1042,6 +1072,22 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 )}
                 <Collapse in={cancelPromptOpen}>
                   <Stack gap={1.5} sx={{ p: 2, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}>
+                    {cancelPenalty && (
+                      <Alert severity={cancelPenalty.applies ? "warning" : "success"} variant="outlined" sx={{ py: 0.25 }}>
+                        {cancelPenalty.applies ? (
+                          <>
+                            По условиям брони отмена сегодня — со штрафом <b>{money(penaltyAmount)}</b>.
+                            {paid > 0
+                              ? paid >= penaltyAmount
+                                ? ` Внесено ${money(paid)}: удержите штраф, к возврату ${money(paid - penaltyAmount)}.`
+                                : ` Внесено ${money(paid)} — меньше штрафа; остаток после отмены сервер не учтёт как долг.`
+                              : " Гость ничего не вносил — после отмены сервер долг не учитывает, штраф можно только принять оплатой до отмены."}
+                          </>
+                        ) : (
+                          <>Отмена бесплатна{cancelPenalty.freeUntil ? ` до ${dayjs(cancelPenalty.freeUntil).format("D MMMM")} включительно` : ""}.</>
+                        )}
+                      </Alert>
+                    )}
                     <FormField
                       icon={<EventBusyOutlined />}
                       label="Причина отмены"

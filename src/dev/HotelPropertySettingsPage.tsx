@@ -45,6 +45,7 @@ import { PublicBookingSettingsCard } from "./PublicBookingSettingsCard";
 import { ExchangeRatesSettingsCard } from "./ExchangeRatesSettingsCard";
 import { RequisitesSettingsCard } from "./RequisitesSettingsCard";
 import { ConsentSettingsCard } from "./ConsentSettingsCard";
+import { CancellationTermsSettingsCard, NightAuditSettingsCard, RosterLimitsSettingsCard, WebsiteHoldSettingsCard } from "./PropertyPolicySettingsCards";
 import { FilterChip } from "./hotelUi";
 
 /**
@@ -54,10 +55,13 @@ import { FilterChip } from "./hotelUi";
  */
 const SECTIONS = [
   { id: "check-in", label: "Заезд и правила" },
+  { id: "cancellation", label: "Отмена" },
+  { id: "night-audit", label: "Ночной аудит" },
   { id: "public-site", label: "Сайт" },
   { id: "requisites", label: "Реквизиты" },
   { id: "consent", label: "Согласие" },
   { id: "currencies", label: "Валюты" },
+  { id: "roster-limits", label: "График" },
 ] as const;
 
 const goTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -259,9 +263,19 @@ export const HotelPropertySettingsPage: React.FC = () => {
 
           <Divider />
 
+          <CancellationTermsSettingsCard property={property} />
+
+          <Divider />
+
+          <NightAuditSettingsCard property={property} />
+
+          <Divider />
+
           <Box id="public-site" sx={{ scrollMarginTop: 16 }}>
             <PublicBookingSettingsCard propertyId={property.id} />
           </Box>
+
+          <WebsiteHoldSettingsCard property={property} />
 
           <Divider />
 
@@ -278,6 +292,10 @@ export const HotelPropertySettingsPage: React.FC = () => {
           <Box id="currencies" sx={{ scrollMarginTop: 16 }}>
             <ExchangeRatesSettingsCard propertyId={property.id} baseCurrency={property.currency || "KGS"} />
           </Box>
+
+          <Divider />
+
+          <RosterLimitsSettingsCard property={property} />
         </Stack>
       )}
 
