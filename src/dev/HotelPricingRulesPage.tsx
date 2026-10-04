@@ -45,6 +45,7 @@ import { useHotelProperty } from "./useHotelProperty";
 import { HotelPropertyMissing } from "./HotelPropertyMissing";
 import { formatHotelDate } from "./mockDemoData";
 import { listRoomTypes, listPricingRules, updatePricingRule, type HotelPricingRule } from "../api/hotel";
+import { PricingRuleDraftsBlock } from "./PricingRuleDraftsBlock";
 import { getErrorMessage } from "../api/client";
 
 const DAY_LABELS_RU: Record<string, string> = {
@@ -109,7 +110,10 @@ export const HotelPricingRulesPage: React.FC = () => {
     queryFn: ({ signal }) => listPricingRules(property!.id, signal),
     enabled: property != null,
   });
-  const rules = rulesQuery.data ?? [];
+  // Черновики от событий (r4 §18) — отдельным блоком «Ждут подтверждения», не в общем списке.
+  const allRules = rulesQuery.data ?? [];
+  const drafts = allRules.filter((r) => r.isDraft);
+  const rules = allRules.filter((r) => !r.isDraft);
 
   const loading = propertyLoading || roomTypesQuery.isLoading || rulesQuery.isLoading;
   // Ошибку загрузки не выдаём за «Правил пока нет»: при сбое сети это увело бы человека заводить дубли.
@@ -247,7 +251,9 @@ export const HotelPricingRulesPage: React.FC = () => {
             Не удалось загрузить правила.
           </Alert>
         ) : (
-          roomTypes.length === 0 || rules.length === 0 ? (
+          <>
+          <PricingRuleDraftsBlock drafts={drafts} canManage={canManageRates} />
+          {roomTypes.length === 0 || rules.length === 0 ? (
             <Surface>
               <EmptyState
                 icon={<PriceChangeOutlined />}
@@ -371,7 +377,8 @@ export const HotelPricingRulesPage: React.FC = () => {
                 );
               })}
             </Surface>
-          )
+          )}
+          </>
         )}
     </HotelPage>
   );
