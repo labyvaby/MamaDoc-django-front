@@ -431,6 +431,30 @@ export function getMedicalConclusion(id: number): Promise<MedicalConclusion> {
 }
 
 /**
+ * Заключение из медистории пациента — GET /api/medical/patient-conclusions/.
+ * Без финансовых полей. Диагнозы лежат так, как их сохранил бланк: у живых
+ * записей `diagnosisCode`, у перенесённых из старой системы — `diagnosis_code`.
+ */
+export interface PatientConclusionRow {
+  id: number;
+  appointmentId: number;
+  serviceLineId: number;
+  occurredAt: string;
+  doctor: ConclusionDoctorShort | null;
+  serviceName: string;
+  diagnosisData: Array<DiagnosisDataItem & { diagnosis_code?: string }>;
+  status: "draft" | "completed";
+}
+
+/** Заключения пациента по всем филиалам клиники (право `medical.conclusions.view`). */
+export function getPatientConclusions(patientId: number, signal?: AbortSignal): Promise<PatientConclusionRow[]> {
+  return apiRequest<PatientConclusionRow[]>(
+    `/medical/patient-conclusions/?patientId=${encodeURIComponent(String(patientId))}&limit=500`,
+    { signal },
+  ).then((rows) => (Array.isArray(rows) ? rows : []));
+}
+
+/**
  * POST /api/appointments/service-lines/<lineId>/conclusion/
  * Creates or updates (upsert) the conclusion for a service line.
  */

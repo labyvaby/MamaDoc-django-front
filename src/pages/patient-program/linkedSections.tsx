@@ -91,7 +91,7 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
       content = <PatientVaccinationsPanel patient={patient} />;
       break;
     case "visits":
-      content = <BookAppointments patientId={patient.id} scope={scope} />;
+      content = <BookAppointments patientId={patient.id} birthDate={patient.birthDate ?? null} scope={scope} />;
       break;
     default:
       content = <Alert severity="info">Раздел «{module.name}» появится на следующих этапах.</Alert>;

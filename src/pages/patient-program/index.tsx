@@ -558,7 +558,7 @@ const PatientProgramPage: React.FC = () => {
               )}
 
               {view === "appointments" && showAppointmentsItem && (
-                <BookAppointments patientId={patient.id} scope={scope} />
+                <BookAppointments patientId={patient.id} birthDate={patient.birthDate ?? null} scope={scope} />
               )}
 
               {selectedModule && (isLinkedModule(selectedModule) ? (
