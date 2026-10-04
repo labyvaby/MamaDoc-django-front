@@ -116,6 +116,17 @@ export function buildBuckets(granularity: LoadGranularity, hourly: HourPoint[], 
   });
 }
 
+/**
+ * Приёмы вне графика — в процентах от времени по графику, чтобы сравнивать
+ * врачей с разной длиной смен (может быть больше 100%). Без графика процент
+ * не от чего — тогда часы.
+ */
+function outsideShare(outsideMinutes: number, scheduleMinutes: number): string {
+  if (scheduleMinutes <= 0) return `${formatHours(outsideMinutes)} ч`;
+  const pct = (outsideMinutes * 100) / scheduleMinutes;
+  return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}
+
 /** Подпись под полоской врача: только части, по которым есть данные. */
 export function employeeMeta(row: EmployeeLoad, countLabel: string): string {
   const parts = [countLabel];
@@ -123,6 +134,6 @@ export function employeeMeta(row: EmployeeLoad, countLabel: string): string {
     parts.push(`${formatHours(row.busyMinutes)} из ${formatHours(row.scheduleMinutes)} ч`);
   }
   if (row.attendanceUtilizationPct != null) parts.push(`СКУД ${row.attendanceUtilizationPct}%`);
-  if (row.outsideMinutes > 0) parts.push(`+${formatHours(row.outsideMinutes)} ч вне графика`);
+  if (row.outsideMinutes > 0) parts.push(`+${outsideShare(row.outsideMinutes, row.scheduleMinutes)} вне графика`);
   return parts.join(" · ");
 }
