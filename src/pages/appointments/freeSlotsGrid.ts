@@ -81,3 +81,35 @@ export function createIdentityStamper(): (value: object | null | undefined) => n
     return id;
   };
 }
+
+/** Цвет точки врача: окна в выбранный день / только в другие дни / нет окон. */
+export type DocStatus = "free" | "later" | "none";
+
+/**
+ * Статус врача на день, выбранный в ленте. Раньше точка и бейджи считались
+ * только «на сегодня» и не менялись при переключении дня — сетка показывала
+ * понедельник, а зелёные точки говорили про субботу. `nearestFree` у бэка —
+ * ближайшее окно с сегодняшнего дня; им отличаем «окна в другие дни» от
+ * «окон нет совсем».
+ */
+export function doctorDayStatus(
+  employee: {
+    days: readonly { date: string; freeCount: number }[];
+    nearestFree: { date: string } | null;
+  },
+  dayIso: string,
+): DocStatus {
+  const day = employee.days.find((d) => d.date === dayIso);
+  if ((day?.freeCount ?? 0) > 0) return "free";
+  return employee.nearestFree ? "later" : "none";
+}
+
+/**
+ * «Свободны» из сводки `availability/summary` для дня сводки. Для прошедших
+ * дней бэк ошибается: сравнивает окна того дня с нынешним временем суток
+ * (`_presence_and_free_slot_on_day`), и вчерашние вечерние окна выходят
+ * «свободными». Записать в прошлое нельзя — свободных там ноль.
+ */
+export function freeOnSummaryDay(free: number, summaryDate: string, todayIso: string): number {
+  return summaryDate < todayIso ? 0 : free;
+}

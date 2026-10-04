@@ -1078,7 +1078,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Нагрузка */}
         {show("management") && can_.load && (
-          <SidebarMenuItem to="/admin/load" icon={<AnalyticsOutlined />} label="Нагрузка" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/load" icon={<AnalyticsOutlined />} label="Нагрузка" collapsed={siderCollapsed} />
         )}
 
         {/* Уведомления */}

@@ -410,7 +410,7 @@ function App() {
                       },
                       {
                         name: "load",
-                        list: "/admin/load",
+                        list: "/load",
                         meta: { label: "Нагрузка" }
                       },
                       {
@@ -931,7 +931,7 @@ function App() {
                           }
                         />
                         <Route
-                          path="admin/load"
+                          path="load"
                           element={
                             <RequirePermission permission={PAGE_PERMISSIONS.reports}>
                               <Suspense fallback={<LinearProgress />}>
@@ -940,6 +940,10 @@ function App() {
                             </RequirePermission>
                           }
                         />
+                        {/* Старый адрес: /admin/* на сервере целиком уходит в админку
+                            Django, поэтому F5 и прямые ссылки давали «Not Found».
+                            Внутри приложения старые ссылки ведём на новый адрес. */}
+                        <Route path="admin/load" element={<Navigate to="/load" replace />} />
                         <>
                             <Route
                               path="appointments"
