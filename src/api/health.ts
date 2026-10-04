@@ -445,6 +445,42 @@ export interface FeedingInput {
   notes: string;
 }
 
+/** Журнал прикорма (ТЗ 2026-10-04-book-feeding §2.3): группа продукта. */
+export type FoodGroup = "vegetables" | "cereals" | "meat" | "fruits" | "egg" | "dairy" | "fish" | "other";
+export type FoodReaction = "none" | "rash" | "abdomen" | "stool" | "vomiting" | "other";
+/** Тяжесть есть только при реакции; без реакции — пусто. */
+export type FoodReactionSeverity = "mild" | "moderate" | "severe" | "";
+
+/** Отметка «продукт дали в этот день»: первая — введение, следующие — повторы. */
+export interface FoodIntroduction {
+  id: number;
+  /** Код каталога интерфейса; пусто — свой продукт. */
+  productCode: string;
+  productName: string;
+  foodGroup: FoodGroup;
+  givenOn: string;
+  reaction: FoodReaction;
+  reactionSeverity: FoodReactionSeverity;
+  /** Аллергия, внесённая по этой отметке; null — не вносили. */
+  allergy: { id: number; allergen: string; status: AllergyStatus } | null;
+  notes: string;
+  createdBy: EmployeeRef | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FoodIntroductionInput {
+  productCode: string;
+  productName: string;
+  foodGroup: FoodGroup;
+  givenOn: string;
+  reaction: FoodReaction;
+  reactionSeverity: FoodReactionSeverity;
+  notes: string;
+  /** null снимает связь с аллергией. */
+  allergyId: number | null;
+}
+
 export interface GrowthData {
   sex: string;
   birthDate: string | null;
@@ -454,6 +490,8 @@ export interface GrowthData {
   complementaryFeedingOn: string | null;
   measurements: GrowthMeasurement[];
   feeding: FeedingPeriod[];
+  /** Журнал прикорма, от ранних отметок к поздним. */
+  foods: FoodIntroduction[];
 }
 
 export function getGrowth(scope: Scope, patientId: number, signal?: AbortSignal): Promise<GrowthData> {
@@ -498,6 +536,24 @@ export function updateFeedingPeriod(
 
 export function deleteFeedingPeriod(scope: Scope, patientId: number, periodId: number): Promise<void> {
   return apiRequest<void>(patientPath(scope, patientId, `feeding/${periodId}/`), { method: "DELETE" });
+}
+
+export function createFood(scope: Scope, patientId: number, payload: FoodIntroductionInput): Promise<FoodIntroduction> {
+  return apiRequest<FoodIntroduction>(patientPath(scope, patientId, "foods/"), { method: "POST", body: payload });
+}
+
+export function updateFood(
+  scope: Scope,
+  patientId: number,
+  foodId: number,
+  payload: Partial<FoodIntroductionInput>,
+): Promise<FoodIntroduction> {
+  return apiRequest<FoodIntroduction>(patientPath(scope, patientId, `foods/${foodId}/`), { method: "PATCH", body: payload });
+}
+
+/** Удаляется только ошибочная отметка: без реакции и без аллергии (иначе 400). */
+export function deleteFood(scope: Scope, patientId: number, foodId: number): Promise<void> {
+  return apiRequest<void>(patientPath(scope, patientId, `foods/${foodId}/`), { method: "DELETE" });
 }
 
 // ── Курсы препаратов (этап 2в) ───────────────────────────────────────────────
