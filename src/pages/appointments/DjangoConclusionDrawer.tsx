@@ -57,6 +57,7 @@ import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import { ConclusionHealthStrip } from "../../components/health/ConclusionHealthStrip";
+import { InsertLifeAnamnesisButton } from "../../components/health/anamnesis/InsertLifeAnamnesisButton";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { useKeyboardViewportHeight } from "../../hooks/useKeyboardViewportHeight";
 import {
@@ -1176,13 +1177,24 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
    * Подпись поля. Кнопки AI у полей больше нет — одна на всю форму, в шапке
    * (AiAssistHeaderButton); под полем остаётся только плашка предложения.
    */
-  const fieldLabel = (label: React.ReactNode) => (
+  const fieldLabel = (label: React.ReactNode, action?: React.ReactNode) => (
     <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
       <Typography variant="body2" color="text.secondary" fontWeight={600}>
         {label}
       </Typography>
+      {action}
     </Stack>
   );
+
+  /**
+   * «Анамнез жизни из книжки» справа в подписи поля «Анамнез» (ТЗ анамнеза
+   * жизни §5.9): только у поля, которое врач правит сам (заблокированное
+   * поле textFieldNode действие не показывает, итог бланка — не поле ввода).
+   */
+  const lifeAnamnesisAction = () =>
+    readOnly ? undefined : (
+      <InsertLifeAnamnesisButton appointmentId={receiptAppointmentId} value={anamnesis} onChange={setAnamnesis} />
+    );
 
   /**
    * Плашка с предложением AI под полем. Текст поля не трогает: в него
@@ -1212,6 +1224,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       locked?: boolean;
       /** Поле AI-помощника; без него плашки предложения AI нет. */
       aiField?: AiAssistField;
+      /** Действие справа в подписи поля. */
+      action?: React.ReactNode;
     } = {},
   ) => {
     const aiField = options.locked ? undefined : options.aiField;
@@ -1221,6 +1235,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           <>
             {label} {options.required && !readOnly && "*"}
           </>,
+          options.locked ? undefined : options.action,
         )}
         <CollapsibleTextField
           value={value}
@@ -1561,7 +1576,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
             slotLabel(slot, t("conclusion.anamnesis")),
             anamnesis,
             setAnamnesis,
-            { minRows: 3, aiField: "anamnesis" },
+            { minRows: 3, aiField: "anamnesis", action: lifeAnamnesisAction() },
           );
           break;
         case "objective":
@@ -2534,6 +2549,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
               : textFieldNode(t("conclusion.anamnesis"), anamnesis, setAnamnesis, {
                   minRows: 3,
                   aiField: "anamnesis",
+                  action: lifeAnamnesisAction(),
                 }))}
 
           {/* ── objective ── */}
