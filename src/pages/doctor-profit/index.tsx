@@ -85,6 +85,9 @@ export const DoctorProfitPage: React.FC = () => {
           gap: 2,
           px: theme.appLayout.page.paddingX,
           py: 2,
+          // Колонка прокручивается целиком: без этого флекс сжимал карточку
+          // таблицы до одной строки.
+          "& > *": { flexShrink: 0 },
         }}
       >
         {needsOrg ? (
@@ -111,7 +114,7 @@ export const DoctorProfitPage: React.FC = () => {
             )}
             {warnings && warnings.employeesWithoutSchedule > 0 && (
               <Alert severity="info">
-                У {warnings.employeesWithoutSchedule} врачей нет графика на этот месяц — их часы для раздела общих
+                У {warnings.employeesWithoutSchedule} врачей нет графика на этот месяц — их часы для распределения общих
                 расходов взяты по времени приёмов.
               </Alert>
             )}
