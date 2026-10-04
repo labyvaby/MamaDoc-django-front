@@ -13,26 +13,29 @@ import {
 } from "../../api/health";
 import { subtleBg } from "../../theme/uiHelpers";
 import { AppButton } from "../ui";
-import { isPdfAttachment } from "./illnessData";
+import { HealthFileViewer } from "./HealthFileViewer";
+import { ATTACHMENT_KIND_LABELS as KIND_LABELS, isPdfAttachment } from "./illnessData";
 import { useHealthScope } from "./useHealth";
 
 /** Не больше 10 документов на запись (§2.5). */
 export const HEALTH_FILES_MAX = 10;
 
-const KIND_LABELS: Record<AttachmentKind, string> = { discharge: "Выписка", image: "Снимок", other: "Другое" };
-
-/** Миниатюра документа: снимок или значок PDF; открывается в новой вкладке. */
-export const AttachmentThumb: React.FC<{ attachment: HealthAttachment; size?: number }> = ({ attachment, size = 56 }) => {
+/** Миниатюра документа: снимок или значок PDF; по нажатию — просмотр в окне. */
+export const AttachmentThumb: React.FC<{ attachment: HealthAttachment; size?: number; onOpen: () => void }> = ({
+  attachment,
+  size = 56,
+  onOpen,
+}) => {
   const pdf = isPdfAttachment(attachment);
   return (
     <Tooltip title={`${KIND_LABELS[attachment.kind] ?? "Документ"}: ${attachment.name || "без имени"}`} arrow>
       <ButtonBase
-        component="a"
-        href={attachment.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(event: React.MouseEvent) => event.stopPropagation()}
-        aria-label={`Открыть документ «${attachment.name || KIND_LABELS[attachment.kind]}»`}
+        onClick={(event: React.MouseEvent) => {
+          // миниатюра лежит в нажимаемой карточке — карточку не открываем
+          event.stopPropagation();
+          onOpen();
+        }}
+        aria-label={`Посмотреть документ «${attachment.name || KIND_LABELS[attachment.kind]}»`}
         sx={(theme) => ({
           width: size,
           height: size,
@@ -63,22 +66,26 @@ export const AttachmentThumb: React.FC<{ attachment: HealthAttachment; size?: nu
   );
 };
 
-/** Миниатюры документов записи и подпись «выписка, снимки (2)» (§4.2). */
+/** Миниатюры документов записи и подпись «выписка, снимки (2)» (§4.2); документ открывается в окне. */
 export const AttachmentStrip: React.FC<{ attachments: ReadonlyArray<HealthAttachment>; caption: string; indent?: boolean }> = ({
   attachments,
   caption,
   indent = false,
-}) =>
-  attachments.length ? (
+}) => {
+  const [open, setOpen] = React.useState<number | null>(null);
+  if (!attachments.length) return null;
+  return (
     <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center" sx={{ mt: 1, pl: indent ? { xs: 0, md: "48px" } : 0 }}>
       {attachments.map((attachment, index) => (
-        <AttachmentThumb key={`${attachment.url}-${index}`} attachment={attachment} size={52} />
+        <AttachmentThumb key={`${attachment.url}-${index}`} attachment={attachment} size={52} onOpen={() => setOpen(index)} />
       ))}
       <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
         {caption}
       </Typography>
+      <HealthFileViewer attachments={attachments} index={open} onIndexChange={setOpen} onClose={() => setOpen(null)} />
     </Stack>
-  ) : null;
+  );
+};
 
 interface HealthFilesFieldProps {
   patientId: number;
@@ -109,6 +116,7 @@ export const HealthFilesField: React.FC<HealthFilesFieldProps> = ({
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [viewing, setViewing] = React.useState<number | null>(null);
   // Загрузка асинхронная — новые документы добавляем к актуальному списку.
   const latest = React.useRef(value);
   latest.current = value;
@@ -148,7 +156,7 @@ export const HealthFilesField: React.FC<HealthFilesFieldProps> = ({
           alignItems="center"
           sx={(theme) => ({ p: 1, borderRadius: "12px", border: `1px solid ${theme.palette.divider}` })}
         >
-          <AttachmentThumb attachment={attachment} size={48} />
+          <AttachmentThumb attachment={attachment} size={48} onOpen={() => setViewing(index)} />
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="body2" fontWeight={600} noWrap>
               {attachment.name || "Документ"}
@@ -208,8 +216,9 @@ export const HealthFilesField: React.FC<HealthFilesFieldProps> = ({
         </AppButton>
       )}
       <Typography variant="caption" color="text.secondary">
-        Фото или PDF до 10 МБ, не больше {HEALTH_FILES_MAX}. Документ откроется в новой вкладке.
+        Фото или PDF до 10 МБ, не больше {HEALTH_FILES_MAX}. Нажмите на документ, чтобы посмотреть его.
       </Typography>
+      <HealthFileViewer attachments={value} index={viewing} onIndexChange={setViewing} onClose={() => setViewing(null)} />
     </Stack>
   );
 };
