@@ -124,9 +124,14 @@ export function getDisabledModule(err: unknown): string | null {
   return typeof module === "string" && module ? module : null;
 }
 
-/** 403 из-за выключенного модуля, даже если `details.module` не пришёл. */
+/**
+ * 403 из-за выключенного модуля, даже если `details.module` не пришёл.
+ * Гайды AIVIO (04.10.2026) пишут код `FORBIDDEN_MODULE_DISABLED`, общий
+ * контракт ошибок — `MODULE_DISABLED`: принимаем оба, пока бэк не сверен.
+ */
 export function isModuleDisabled(err: unknown): boolean {
-  return getErrorCode(err) === "MODULE_DISABLED";
+  const code = getErrorCode(err);
+  return code === "MODULE_DISABLED" || code === "FORBIDDEN_MODULE_DISABLED";
 }
 
 /**

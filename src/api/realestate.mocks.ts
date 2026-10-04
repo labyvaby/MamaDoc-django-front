@@ -8,11 +8,13 @@
  * структурно, и мутация общего объекта «спрятала» бы смену статуса.
  */
 import { ApiError } from "./client";
-import { CONTRACT_PAYMENT_LABELS } from "./realestate";
+import { CONTRACT_PAYMENT_LABELS, sectionKey, withSectionPositions } from "./realestate";
 import type {
   Contract,
   ContractInput,
   MeetingInput,
+  NewProjectInput,
+  NewUnitInput,
   OperationInput,
   Orientation,
   OutdoorSpace,
@@ -340,6 +342,68 @@ export const listProjects = () => clone(seedProjects);
 export function listUnits(projectId: string): Unit[] {
   if (!findProject(projectId)) throw new ApiError("ЖК не найден", 404, { detail: "ЖК не найден" });
   return clone(units.filter((u) => u.projectId === projectId).map((u) => ({ ...u, hold: u.status === "reserved" ? (u.hold ?? seedHold(u)) : null })));
+}
+
+/**
+ * Мастер «Новый ЖК» на моках: ЖК и квартиры живут в памяти до перезагрузки.
+ * Правила бэка повторены те, что видит пользователь: номер уникален в ЖК.
+ */
+export function createProject(
+  input: NewProjectInput,
+  unitsFor: (sectionIds: ReadonlyMap<string, number>) => NewUnitInput[],
+): { projectId: string; created: number } {
+  const projectId = `mock-${seedProjects.length + 1}-${Date.now().toString(36)}`;
+  const sectionIds = new Map(input.sections.map((s, i) => [sectionKey(s.name), i + 1]));
+  const rows = unitsFor(sectionIds);
+  const numbers = new Set<number>();
+  for (const row of rows) {
+    if (numbers.has(row.number)) throw new ApiError(`Квартира №${row.number} уже есть в этом ЖК.`, 400, { detail: "duplicate" });
+    numbers.add(row.number);
+  }
+  const names = input.sections.map((s) => s.name);
+  seedProjects.push({
+    id: projectId,
+    name: input.name,
+    floorsCount: input.floors,
+    firstResidentialFloor: input.startFloor,
+    sections: names,
+    finish: "",
+    completionLabel: "",
+    queue: "",
+    stage: "",
+    manager: "",
+    buildings: names,
+  });
+  // position внутри корпуса считается так же, как для ответа бэка.
+  units.push(
+    ...withSectionPositions(rows.map((row, i): Unit => ({
+      id: `${projectId}-${i + 1}`,
+      projectId,
+      section: row.section,
+      sectionId: null,
+      floor: row.floor,
+      position: row.slot,
+      axis: row.slot,
+      number: String(row.number),
+      rooms: row.rooms,
+      totalArea: Number(row.area),
+      livingArea: Number(row.area),
+      price: Number(row.price),
+      pricePerSqm: Number(row.pricePerSqm),
+      status: "free",
+      orientation: "Юг",
+      view: "",
+      outdoor: null,
+      ceilingHeight: 3,
+      bathrooms: row.rooms >= 3 ? 2 : 1,
+      isCorner: false,
+      hasPanoramicWindows: false,
+      roomsBreakdown: [],
+      layoutCode: "",
+      layoutVariant: 0,
+    }))),
+  );
+  return { projectId, created: rows.length };
 }
 
 /** Бронь из сида: срок от 1 до 47 часов, у чётных номеров — ждёт предоплату. */
