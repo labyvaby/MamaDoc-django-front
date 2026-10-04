@@ -59,6 +59,7 @@ import {
   DialogContent,
   FormControlLabel,
   IconButton,
+  InputAdornment,
   Menu,
   MenuItem,
   Stack,
@@ -86,6 +87,7 @@ import {
   getHotelCatalogs,
   confirmReservation,
   cancelReservation,
+  listCharges,
   checkInReservationItem,
   checkOutReservationItem,
   addPayment,
@@ -191,6 +193,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const [cancelReason, setCancelReason] = React.useState("");
   const [messageAnchor, setMessageAnchor] = React.useState<HTMLElement | null>(null);
   const [cancelAsNoShow, setCancelAsNoShow] = React.useState(false);
+  // Штраф при отмене (r5): галочка и сумма — уходят в penaltyAmount запроса отмены.
+  const [chargePenalty, setChargePenalty] = React.useState(false);
+  const [penaltyInput, setPenaltyInput] = React.useState("");
 
   const [paymentFormOpen, setPaymentFormOpen] = React.useState(false);
   // «Оплата» или «Возврат» — тот же POST /payments/ с kind; возврат не больше принятого.
@@ -226,6 +231,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setEditMode(null);
     setCancelReason("");
     setCancelAsNoShow(false);
+    setChargePenalty(false);
+    setPenaltyInput("");
     setPaymentFormOpen(false);
     setPaymentKind("payment");
     setTab("overview");
@@ -314,6 +321,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
         reason: cancelReason.trim(),
         noShow: cancelAsNoShow,
         version: reservation.version,
+        ...(chargePenalty && penaltyNum > 0 ? { penaltyAmount: penaltyNum.toFixed(2) } : {}),
       });
       setCancelPromptOpen(false);
       setCancelReason("");
@@ -436,10 +444,25 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const todayIso = dayjs().format("YYYY-MM-DD");
   const sameDayCheckOut = canCheckOut && item != null && item.checkIn === todayIso && item.nights.length > 1;
   const firstNightPrice = item?.nights[0] ? Number(item.nights[0].price) - Number(item.nights[0].discount ?? 0) : 0;
-  // Штраф отмены на сегодня по условиям брони (r3 §4.3). Сервер его не начисляет и у закрытой брони долг обнуляет,
-  // поэтому показываем, что удержать из внесённого и сколько вернуть.
+  // Штраф отмены на сегодня по условиям брони (r3 §4.3). Начисляется галочкой в отмене (r5) и становится
+  // долгом закрытой брони; сумму можно поправить — например, уступить гостю.
   const cancelPenalty = reservation?.cancellationPenalty ?? null;
   const penaltyAmount = cancelPenalty?.applies ? Number(cancelPenalty.amount) : 0;
+  const penaltyNum = Number(penaltyInput.replace(",", ".")) || 0;
+  // Открыли отмену — штраф по условиям подставлен, если он есть.
+  React.useEffect(() => {
+    if (!cancelPromptOpen) return;
+    setChargePenalty(penaltyAmount > 0);
+    setPenaltyInput(penaltyAmount > 0 ? String(penaltyAmount) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- только при открытии
+  }, [cancelPromptOpen]);
+  // Допуслуги в счёте после отмены остаются долгом (r5) — предупредим до отмены.
+  const openChargesQuery = useQuery({
+    queryKey: ["hotel", "reservation", reservationId, "charges", false],
+    queryFn: ({ signal }) => listCharges(reservationId!, { includeVoided: false }, signal),
+    enabled: cancelPromptOpen && reservationId != null,
+  });
+  const servicesInBill = (openChargesQuery.data?.results ?? []).filter((c) => !c.voidedAt && c.kind !== "penalty").reduce((s, c) => s + Number(c.totalAmount), 0);
   // Править можно живую бронь, пока гость не выехал. Номер: до заезда —
   // назначение (право на брони), у заселённого — переселение (право на заселение).
   const isLiveReservation = reservation != null && CANCELLABLE_STATUSES.has(reservation.status) && item?.stayStatus !== "checked_out";
@@ -453,12 +476,17 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const total = Number(reservation?.totalAmount ?? 0);
   const paid = Number(reservation?.paidAmount ?? 0);
   const balance = Number(reservation?.balanceDue ?? 0);
+  // Сколько бронь должна на самом деле (r5): у закрытой — штраф и неснятые допуслуги, у живой — весь счёт.
+  const closedNow = reservation != null && ["cancelled", "no_show", "expired"].includes(reservation.status);
+  const billTotal = closedNow ? Math.max(0, paid + balance) : total;
 
   // «Принять оплату» — сразу с полной суммой остатка и первым способом
   // оплаты: чаще всего гость платит всё, что осталось, и администратору
   // остаётся нажать «Провести оплату». Частичную сумму можно поправить.
   const openPaymentForm = (kind: "payment" | "refund" = "payment") => {
     setPaymentError(null);
+    // У закрытой брони без долга принять нечего — только вернуть внесённое.
+    if (kind === "payment" && closedNow && balance <= 0) kind = "refund";
     setPaymentKind(kind);
     // Возврат: сумму вводят руками (обычно часть), причина обязательна.
     setPaymentAmount(kind === "payment" && balance > 0 ? String(balance) : "");
@@ -467,7 +495,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setPaymentFormOpen(true);
     setTab("billing");
   };
-  const paidShare = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const paidShare = billTotal > 0 ? Math.min(100, Math.round((paid / billTotal) * 100)) : paid > 0 ? 100 : 0;
   // Отменённая, незаезд, истёкшая: статус проживания («Подтверждена») рядом со статусом брони противоречил ему.
   const reservationClosed = reservation != null && ["cancelled", "no_show", "expired"].includes(reservation.status);
   const stayStatus = item && !reservationClosed ? mapStayDisplayStatus(item.stayStatus) : null;
@@ -526,6 +554,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   // Сумма формы в валюте объекта — для проверки возврата и подсказки пересчёта.
   const paymentAmountBase = Number(paymentAmount) * (paymentRate ?? 1);
   const refundExceeds = paymentKind === "refund" && paymentAmountBase > paid;
+  // Закрытая бронь принимает оплату только в счёт долга и не больше него (r5 §4).
+  const closedPayExceeds = closedNow && paymentKind === "payment" && paymentAmountBase > Math.max(0, balance);
   const paymentSummary = (
     <Box sx={{ p: 2, borderRadius: "12px", bgcolor: subtleBg(theme, true) }}>
       <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1 }}>
@@ -535,7 +565,8 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
         <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
           {money(paid)}{" "}
           <Typography component="span" variant="body2" color="text.secondary">
-            из {money(total)}
+            из {money(billTotal)}
+            {closedNow ? " · штраф и услуги в счёте" : ""}
           </Typography>
         </Typography>
       </Stack>
@@ -563,7 +594,9 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
           disabled={paymentSaving}
           sx={{ alignSelf: "flex-start", "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 600, px: 1.5 } }}
         >
-          <ToggleButton value="payment">Оплата</ToggleButton>
+          <ToggleButton value="payment" disabled={closedNow && balance <= 0}>
+            Оплата
+          </ToggleButton>
           <ToggleButton value="refund" disabled={paid <= 0}>
             Возврат
           </ToggleButton>
@@ -602,10 +635,12 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
             size="small"
             sx={{ flex: 1 }}
             disabled={paymentSaving}
-            error={refundExceeds}
+            error={refundExceeds || closedPayExceeds}
             helperText={
               refundExceeds
                 ? `Не больше принятого: ${money(paid)}`
+                : closedPayExceeds
+                  ? `Бронь закрыта: принять можно не больше долга — ${money(Math.max(0, balance))}`
                 : paymentCurrency && paymentRate && paymentAmount
                   ? `= ${money(Math.round(paymentAmountBase * 100) / 100)} по курсу ${paymentRate.toLocaleString("ru-RU")}`
                   : paymentKind === "refund"
@@ -836,20 +871,22 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               <Box sx={{ textAlign: { xs: "left", md: "right" } }}>
                 <Stack direction="row" alignItems="center" gap={1} justifyContent={{ xs: "flex-start", md: "flex-end" }}>
                   <DisplayCurrencySwitch propertyId={reservation.propertyId} baseCurrency={reservation.currency} />
+                  {/* У закрытой брони крупно — сколько она должна на самом деле (штраф и услуги), а не стоимость ночей. */}
                   <Typography sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                    {money(reservation.totalAmount)}
+                    {money(reservationClosed ? billTotal : reservation.totalAmount)}
                   </Typography>
                 </Stack>
                 <Stack direction="row" gap={0.75} justifyContent={{ xs: "flex-start", md: "flex-end" }} alignItems="baseline">
-                  <CurrencyEquivalent propertyId={reservation.propertyId} baseCurrency={reservation.currency} amount={Number(reservation.totalAmount)} />
-                  {/* У закрытой брони долга нет — это не значит, что её оплатили. */}
-                  <Typography variant="caption" color={reservationClosed ? "text.secondary" : balance > 0 ? "error.main" : "success.main"} fontWeight={600}>
+                  <CurrencyEquivalent propertyId={reservation.propertyId} baseCurrency={reservation.currency} amount={reservationClosed ? billTotal : Number(reservation.totalAmount)} />
+                  <Typography variant="caption" color={reservationClosed ? (balance > 0 ? "error.main" : "text.secondary") : balance > 0 ? "error.main" : "success.main"} fontWeight={600}>
                     {reservationClosed
-                      ? balance < 0
-                        ? `к возврату ${money(-balance)}`
-                        : paid > 0
-                          ? `внесено ${money(paid)}`
-                          : "без оплаты"
+                      ? balance > 0
+                        ? `долг ${money(balance)}`
+                        : balance < 0
+                          ? `к возврату ${money(-balance)}`
+                          : paid > 0
+                            ? `внесено ${money(paid)}`
+                            : "без оплаты"
                       : balance > 0
                         ? `к оплате ${money(balance)}`
                         : "оплачено полностью"}
@@ -1075,19 +1112,43 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     {cancelPenalty && (
                       <Alert severity={cancelPenalty.applies ? "warning" : "success"} variant="outlined" sx={{ py: 0.25 }}>
                         {cancelPenalty.applies ? (
-                          <>
-                            По условиям брони отмена сегодня — со штрафом <b>{money(penaltyAmount)}</b>.
-                            {paid > 0
-                              ? paid >= penaltyAmount
-                                ? ` Внесено ${money(paid)}: удержите штраф, к возврату ${money(paid - penaltyAmount)}.`
-                                : ` Внесено ${money(paid)} — меньше штрафа; остаток после отмены сервер не учтёт как долг.`
-                              : " Гость ничего не вносил — после отмены сервер долг не учитывает, штраф можно только принять оплатой до отмены."}
-                          </>
+                          <>По условиям брони отмена сегодня — со штрафом <b>{money(penaltyAmount)}</b>.</>
                         ) : (
                           <>Отмена бесплатна{cancelPenalty.freeUntil ? ` до ${dayjs(cancelPenalty.freeUntil).format("D MMMM")} включительно` : ""}.</>
                         )}
                       </Alert>
                     )}
+                    <Stack direction={{ xs: "column", md: "row" }} gap={1} alignItems={{ md: "center" }}>
+                      <FormControlLabel
+                        control={<Checkbox size="small" checked={chargePenalty} onChange={(e) => setChargePenalty(e.target.checked)} />}
+                        label={<Typography variant="body2">Начислить штраф</Typography>}
+                        sx={{ mr: 0 }}
+                      />
+                      {chargePenalty && (
+                        <TextField
+                          size="small"
+                          label="Сумма штрафа"
+                          value={penaltyInput}
+                          onChange={(e) => setPenaltyInput(e.target.value.replace(/[^\d.,]/g, "").slice(0, 10))}
+                          error={penaltyNum <= 0}
+                          slotProps={{ input: { endAdornment: <InputAdornment position="end">{reservation.currency === "KGS" ? "сом" : reservation.currency}</InputAdornment> }, htmlInput: { inputMode: "decimal" } }}
+                          sx={{ width: { xs: "100%", md: 200 } }}
+                        />
+                      )}
+                    </Stack>
+                    {(() => {
+                      // Что останется после отмены: штраф и неснятые допуслуги минус внесённое.
+                      const owedAfter = (chargePenalty ? penaltyNum : 0) + servicesInBill - paid;
+                      const lines: string[] = [];
+                      if (servicesInBill > 0) lines.push(`В счёте допуслуги на ${money(servicesInBill)} — после отмены они останутся долгом; неоказанные снимите во вкладке «Проживание».`);
+                      if (owedAfter > 0) lines.push(`После отмены долг гостя — ${money(owedAfter)}.`);
+                      else if (owedAfter < 0) lines.push(`После отмены к возврату ${money(-owedAfter)}.`);
+                      return lines.length ? (
+                        <Typography variant="caption" color={owedAfter > 0 || servicesInBill > 0 ? "warning.main" : "text.secondary"} component="div">
+                          {lines.join(" ")}
+                        </Typography>
+                      ) : null;
+                    })()}
                     <FormField
                       icon={<EventBusyOutlined />}
                       label="Причина отмены"
@@ -1114,7 +1175,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                           variant="contained"
                           color="error"
                           disableElevation
-                          disabled={!cancelReason.trim() || actionBusy}
+                          disabled={!cancelReason.trim() || actionBusy || (chargePenalty && penaltyNum <= 0)}
                           onClick={() => void handleCancelSubmit()}
                         >
                           Отменить бронь

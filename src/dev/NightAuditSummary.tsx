@@ -72,7 +72,11 @@ const CashBlock: React.FC<{ cash: HotelNightAuditCash }> = ({ cash }) => {
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, minmax(0, 1fr))" }, gap: 1.5, mt: 0.75 }}>
         {cell("Поступило", m(cash.net), `${cash.paymentsCount} ${plural(cash.paymentsCount, "оплата", "оплаты", "оплат")} · наличными ${m(cash.cashIn)}, безнал ${m(cash.cashlessIn)}`)}
         {cell("Возвраты", m(String(Number(cash.refundsCash) + Number(cash.refundsCashless))), `наличными ${m(cash.refundsCash)}`)}
-        {cell("Начислено", m(cash.accruedTotal), `номера ${m(cash.accruedRooms)}, услуги ${m(cash.accruedServices)}`)}
+        {cell(
+          "Начислено",
+          m(cash.accruedTotal),
+          `номера ${m(cash.accruedRooms)}, услуги ${m(cash.accruedServices)}${Number(cash.accruedPenalties ?? 0) > 0 ? `, из них штрафы ${m(cash.accruedPenalties!)}` : ""}`,
+        )}
         {cell(
           "Смены кассы",
           diff == null ? "не закрывали" : diff === 0 ? "сошлось" : `${diff > 0 ? "излишек" : "недостача"} ${m(String(Math.abs(diff)))}`,
