@@ -18,6 +18,11 @@ export interface ExpenseCategory {
    * списке не показываем. Ставится в админке. Нет поля — бэк ещё без него.
    */
   photoRequired?: boolean;
+  /**
+   * false — не расход клиники (инкассация): отчёт «Прибыль по врачам» не берёт
+   * такие расходы в общие. У аванса и ЗП не читается. Нет поля — бэк ещё без него.
+   */
+  includeInProfit?: boolean;
 }
 
 export interface Expense {
@@ -80,11 +85,14 @@ export interface CreateCategoryPayload {
   isActive?: boolean;
   /** По умолчанию true; false — у категории чека не бывает (инкассация). */
   photoRequired?: boolean;
+  /** По умолчанию true; false — не расход клиники (инкассация). */
+  includeInProfit?: boolean;
 }
 
 /** PATCH /finance/expense-categories/{id}/ — что прислали, то и меняется. */
 export interface UpdateCategoryPayload {
   photoRequired?: boolean;
+  includeInProfit?: boolean;
 }
 
 export interface CreateExpensePayload {

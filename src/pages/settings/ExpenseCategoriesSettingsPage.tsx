@@ -197,16 +197,20 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
     void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
   };
 
-  // Переключатель «Фото чека» сохраняется сразу, без кнопки: одна категория —
-  // одно действие. Пока запрос идёт, строка заблокирована; список расходов
-  // после ответа перечитывается — метка «нет фото» по категории гаснет/появляется.
+  // Переключатели «Фото чека» и «В прибыли» сохраняются сразу, без кнопки: одна
+  // категория — одно действие. Пока запрос идёт, строка заблокирована; список
+  // расходов после ответа перечитывается — метка «нет фото» гаснет/появляется.
   const canManage = useCan(["finance.expense.manage", "finance.manage"]);
   const { open: notify } = useNotification();
   const [savingId, setSavingId] = React.useState<number | null>(null);
-  const handlePhotoRequiredChange = async (category: ExpenseCategory, photoRequired: boolean) => {
+  const handleFlagChange = async (
+    category: ExpenseCategory,
+    patch: { photoRequired?: boolean; includeInProfit?: boolean },
+    errorKey: string,
+  ) => {
     setSavingId(category.id);
     try {
-      const updated = await updateExpenseCategory(category.id, { photoRequired });
+      const updated = await updateExpenseCategory(category.id, patch);
       queryClient.setQueryData<ExpenseCategoriesResponse>(
         djangoQueryKeys.expenses.categories(orgId ?? null),
         (prev) =>
@@ -216,8 +220,10 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
           },
       );
       void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.expenses.all });
+      // Флаг «В прибыли» меняет общие расходы отчёта «Прибыль по врачам».
+      void queryClient.invalidateQueries({ queryKey: ["django", "reports"] });
     } catch (e) {
-      notify?.({ type: "error", message: t("expenseCategories.photoRequired.saveError"), description: parseBackendError(e) });
+      notify?.({ type: "error", message: t(errorKey), description: parseBackendError(e) });
     } finally {
       setSavingId(null);
     }
@@ -291,6 +297,11 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
                       <span>{t("expenseCategories.columns.photoRequired")}</span>
                     </Tooltip>
                   </TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>
+                    <Tooltip title={t("expenseCategories.includeInProfit.description")} arrow>
+                      <span>{t("expenseCategories.columns.includeInProfit")}</span>
+                    </Tooltip>
+                  </TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{t("expenseCategories.columns.status")}</TableCell>
                 </TableRow>
               </TableHead>
@@ -317,11 +328,51 @@ const ExpenseCategoriesSettingsPage: React.FC = () => {
                             size="small"
                             checked={cat.photoRequired !== false}
                             disabled={!canManage || savingId === cat.id}
-                            onChange={(e) => void handlePhotoRequiredChange(cat, e.target.checked)}
+                            onChange={(e) =>
+                              void handleFlagChange(
+                                cat,
+                                { photoRequired: e.target.checked },
+                                "expenseCategories.photoRequired.saveError",
+                              )
+                            }
                             inputProps={{ "aria-label": t("expenseCategories.columns.photoRequired") }}
                           />
                         </span>
                       </Tooltip>
+                    </TableCell>
+                    <TableCell>
+                      {cat.kind === "general" ? (
+                        <Tooltip
+                          title={
+                            cat.includeInProfit === false
+                              ? t("expenseCategories.includeInProfit.off")
+                              : t("expenseCategories.includeInProfit.on")
+                          }
+                          arrow
+                        >
+                          <span>
+                            <Switch
+                              size="small"
+                              checked={cat.includeInProfit !== false}
+                              disabled={!canManage || savingId === cat.id}
+                              onChange={(e) =>
+                                void handleFlagChange(
+                                  cat,
+                                  { includeInProfit: e.target.checked },
+                                  "expenseCategories.includeInProfit.saveError",
+                                )
+                              }
+                              inputProps={{ "aria-label": t("expenseCategories.columns.includeInProfit") }}
+                            />
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip title={t("expenseCategories.includeInProfit.notApplicable")} arrow>
+                          <Typography variant="body2" color="text.disabled" component="span">
+                            —
+                          </Typography>
+                        </Tooltip>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Chip
