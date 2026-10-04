@@ -129,7 +129,8 @@ export const HOTEL_BOARD_TYPE_LABELS: Record<string, string> = {
 };
 
 export const HOTEL_BOOKING_SOURCE_LABELS: Record<string, string> = {
-  direct: "Сайт отеля",
+  // direct — бронь, которую завёл администратор в CRM (так шлёт форма без выбранного источника), не сайт.
+  direct: "Прямая",
   phone: "Звонок",
   walk_in: "Без брони",
   website: "Сайт отеля",
@@ -144,7 +145,7 @@ export const HOTEL_BOOKING_SOURCE_LABELS: Record<string, string> = {
  * как у большинства каналов-агрегаторов.
  */
 export const HOTEL_BOOKING_SOURCE_COLORS: Record<string, string> = {
-  direct: "#2563eb",
+  direct: "#db2777",
   website: "#2563eb",
   phone: "#16a34a",
   walk_in: "#ca8a04",
@@ -159,7 +160,7 @@ export const hotelSourceColor = (source: string | null | undefined): string =>
 
 /** Короткая подпись источника — для бара в шахматке, где места мало. */
 export const HOTEL_BOOKING_SOURCE_SHORT: Record<string, string> = {
-  direct: "Сайт",
+  direct: "Прямая",
   website: "Сайт",
   phone: "Звонок",
   walk_in: "С улицы",
