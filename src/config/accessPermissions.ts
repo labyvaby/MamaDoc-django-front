@@ -49,6 +49,8 @@ export const PAGE_PERMISSIONS = {
   conclusionPrint: "medical.conclusions.print",
   clients: "clients.view",
   pos: "pos.view",
+  // Застройщик (AIVIO): бэк пускает в биллинг по treasury.view или realty.view.
+  billing: ["treasury.view", "realty.view"],
   // Просмотр истории и незавершённых пересчётов доступен вместе со складом;
   // операции открытия/сканирования/завершения дополнительно проверяет API.
   inventory: "warehouse.view",

@@ -103,6 +103,7 @@ const AnnouncementsSettingsPage = lazy(() => import("./pages/settings/Announceme
 const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
+const BillingPage = lazy(() => import("./pages/billing"));
 const ReviewsSettingsPage = lazy(() => import("./pages/reviews/ReviewsSettingsPage"));
 const PublicRatePage = lazy(() => import("./pages/reviews/PublicRatePage"));
 const ReviewShortLinkPage = lazy(() => import("./pages/reviews/ShortLinkPage"));
@@ -1251,6 +1252,17 @@ function App() {
                                     <RealEstateChessboardPage />
                                   </Suspense>
                                 </RequireModule>
+                              }
+                            />
+                            {/* Биллинг рассрочек застройщика (AIVIO): treasury.view или realty.view. */}
+                            <Route
+                              path="finance/billing"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.billing}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <BillingPage />
+                                  </Suspense>
+                                </RequirePermission>
                               }
                             />
                             <Route

@@ -415,6 +415,7 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canKnowledge = moduleGate("knowledge");
   const canEmployees = can(PAGE_PERMISSIONS.employees);
   const canExpenses = can(PAGE_PERMISSIONS.expenses);
+  const canBilling = can(PAGE_PERMISSIONS.billing) && seen("billing");
 
   // Бейдж «Задачи» — тот же запрос и ключ, что в клиничном меню (кэш общий):
   // открытые задачи филиала, красный — если есть просроченные.
@@ -450,6 +451,9 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canBuyers && <SidebarMenuItem to="/patients" icon={<SearchOutlined />} label={t("allPatients")} collapsed={siderCollapsed} />}
       {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
       {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
+
+      {canBilling && sectionLabel("Финансы")}
+      {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
 
       {(canEmployees || canExpenses || canSettings) && sectionLabel("Компания")}
       {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />}
