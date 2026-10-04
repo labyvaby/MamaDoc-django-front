@@ -53,6 +53,9 @@ export interface DjangoOrganization {
    *  MamaDoc/backend_ticket_organization_vertical.md. Отсутствующее или
    *  незнакомое значение нормализуется в DEFAULT_VERTICAL. */
   vertical: Vertical;
+  /** Реквизиты для шапки формы №2 ОПиУ; старый бэкенд их не отдаёт —
+   *  нормализуется в пустые строки. */
+  requisites: OrganizationRequisites;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,6 +69,8 @@ export interface UpdateOrganizationPayload {
   appointmentOverlapMode?: AppointmentOverlapMode;
   themeConfig?: Record<string, any> | null;
   vertical?: Vertical;
+  /** Только изменённые поля реквизитов; "" очищает поле. */
+  requisites?: Partial<OrganizationRequisites>;
 }
 
 // ── Branch shape (mirrors BranchPayload rename='camel') ──────────────────────
@@ -126,10 +131,11 @@ function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
  *  отсутствующие поля к дефолтам (null / "forbid" = текущее поведение). */
 type DjangoOrganizationWire = Omit<
   DjangoOrganization,
-  "logoUrl" | "appointmentOverlapMode" | "themeConfig" | "vertical"
+  "logoUrl" | "appointmentOverlapMode" | "themeConfig" | "vertical" | "requisites"
 > &
   Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode" | "themeConfig">> & {
     vertical?: string | null;
+    requisites?: Partial<OrganizationRequisites> | null;
   };
 
 function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization {
@@ -139,6 +145,7 @@ function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization 
     appointmentOverlapMode: raw.appointmentOverlapMode ?? "forbid",
     themeConfig: raw.themeConfig ?? null,
     vertical: isVertical(raw.vertical) ? raw.vertical : DEFAULT_VERTICAL,
+    requisites: { ...EMPTY_REQUISITES, ...(raw.requisites ?? {}) },
   };
 }
 

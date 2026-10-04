@@ -457,6 +457,27 @@
     }
   },
   "organization": {
+    "requisites": {
+      "title": "Реквизиты",
+      "caption": "Нужны для шапки «Формы №2» в отчёте «Прибыли и убытки» и других документов. Можно заполнить частично.",
+      "save": "Сохранить реквизиты",
+      "saved": "Реквизиты сохранены",
+      "fields": {
+        "legalName": "Юридическое название",
+        "inn": "ИНН",
+        "okpo": "ОКПО",
+        "activityName": "Вид деятельности",
+        "activityCode": "Код ГКЭД",
+        "governingBody": "Орган управления",
+        "governingBodyCode": "Код ГКОУ",
+        "ownershipForm": "Форма собственности",
+        "ownershipFormCode": "Код ГКФС",
+        "legalAddress": "Юридический адрес",
+        "directorName": "Руководитель (ФИО)",
+        "chiefAccountantName": "Главный бухгалтер (ФИО)",
+        "chiefAccountantPhone": "Телефон главного бухгалтера"
+      }
+    },
     "title": "Организация",
     "noOrgSelected": "Активная организация не выбрана.",
     "logoReplace": "Заменить логотип",
