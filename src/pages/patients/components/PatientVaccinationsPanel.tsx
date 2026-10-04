@@ -20,6 +20,7 @@ import {
   ScheduleStatusChip,
 } from "../../../components/vaccinations/VaccinationChips";
 import { printVaccinationCertificate } from "../../../components/vaccinations/vaccinationCertificate";
+import { VaccinationHealthNote } from "../../../components/health/VaccinationHealthNote";
 import { injectionSiteLabel, scheduleDateInfo } from "../../vaccinations/meta";
 
 // Карточка пациента — только просмотр календаря/истории вакцин. Ввод
@@ -167,6 +168,8 @@ const PatientVaccinationsPanel: React.FC<PatientVaccinationsPanelProps> = ({ pat
           <Stack spacing={2.5}>
             {/* ── План ── */}
             <Box>
+              {/* Перенесённые инфекции и переливания — к решению о прививках (ТЗ 2026-10-04 §4.3). */}
+              <VaccinationHealthNote patientId={patient.id} gender={patient.gender} />
               <SectionTitle>Календарь вакцин</SectionTitle>
               {planned.length === 0 && other.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>

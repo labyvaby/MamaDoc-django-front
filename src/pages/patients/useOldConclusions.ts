@@ -54,7 +54,7 @@ export type OldConclusion = {
 };
 
 /** Ответ Django: GET /api/medical/legacy-conclusions/ (camelCase). */
-type DjangoLegacyConclusion = {
+export type DjangoLegacyConclusion = {
   id: number;
   source: "legacy_db" | "supabase";
   patientId: number | null;
@@ -107,7 +107,7 @@ function diagnosisLine(row: DjangoLegacyConclusion): string | null {
   return orNull(row.diagnosisCatalog);
 }
 
-function fromDjango(row: DjangoLegacyConclusion): OldConclusion {
+export function fromDjango(row: DjangoLegacyConclusion): OldConclusion {
   return {
     id: String(row.id),
     legacy_id: orNull(row.legacyId),

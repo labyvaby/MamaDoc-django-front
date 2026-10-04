@@ -292,6 +292,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
       notify?.({ type: "success", message: t("conclusionSlots.deleted") });
       setDeleteTarget(null);
       void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.health.all });
     } catch (err) {
       notify?.({
         type: "error",
@@ -369,6 +370,10 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
       // услуг с новыми id, и заключение тогда сохраняется в строку, которой в
       // кэше нет (перепривязка в DjangoConclusionDrawer). Догоняем сервером.
       void queryClient.invalidateQueries({ queryKey });
+      // Диагнозы и замеры заключения питают медпрофиль: история болезней, рост
+      // и приёмы книжки обновляются сразу. Панель знает только приём, поэтому
+      // сбрасываем медпрофиль целиком — перезапросятся лишь открытые экраны.
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.health.all });
     },
     [queryClient, queryKey],
   );

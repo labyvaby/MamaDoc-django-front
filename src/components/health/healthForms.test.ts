@@ -1,7 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import type { HealthProfile } from "../../api/health";
-import { buildProfilePatch, parseNumberField, toProfileForm, toggleCondition, toggleReaction } from "./healthForms";
+import type { ConditionInput, HealthProfile } from "../../api/health";
+import { buildConditionPayload, buildProfilePatch, parseNumberField, toProfileForm, toggleCondition, toggleReaction } from "./healthForms";
+
+const CONDITION: ConditionInput = {
+  kind: "chronic",
+  title: " Железодефицитная анемия ",
+  diagnosisId: 140,
+  diagnosisCode: "d50.9 ",
+  status: "active",
+  diagnosedOn: "2026-03-17",
+  datePrecision: "day",
+  place: "",
+  resolvedOn: null,
+  isFirstDiagnosis: true,
+  isDispensary: true,
+  dispensarySince: "2026-03-17",
+  dispensaryEndedOn: null,
+  dispensaryEndReason: "",
+  responsibleDoctorId: 12,
+  controlIntervalMonths: 3,
+  lastControlOn: null,
+  nextControlOn: null,
+  sourceConclusionId: 812,
+  notes: "",
+};
 
 const PROFILE: HealthProfile = {
   exists: true,
@@ -53,5 +76,38 @@ describe("healthForms", () => {
     const birth = buildProfilePatch(form, ["birth"]);
     expect(birth).toMatchObject({ gestationalAgeWeeks: 38, birthWeightG: 3350, birthLengthCm: 52, birthHeadCircumferenceCm: null });
     expect(buildProfilePatch({ ...form, birthWeightG: "три кило" }, ["birth"])).toBeNull();
+  });
+
+  it("keeps a chronic diagnosis with its observation and trims the text", () => {
+    expect(buildConditionPayload(CONDITION)).toMatchObject({
+      kind: "chronic",
+      title: "Железодефицитная анемия",
+      diagnosisCode: "D50.9",
+      status: "active",
+      isDispensary: true,
+      controlIntervalMonths: 3,
+      sourceConclusionId: 812,
+    });
+  });
+
+  it("brings the date to the first day of the month or year", () => {
+    expect(buildConditionPayload({ ...CONDITION, diagnosedOn: "2025-04-17", datePrecision: "month" }).diagnosedOn).toBe("2025-04-01");
+    expect(buildConditionPayload({ ...CONDITION, diagnosedOn: "2025-04-17", datePrecision: "year" }).diagnosedOn).toBe("2025-01-01");
+  });
+
+  it("makes a past illness resolved and off the dispensary without today's recovery date", () => {
+    const past = buildConditionPayload({ ...CONDITION, kind: "past", place: " Дома ", diagnosedOn: "2025-04-17", datePrecision: "month" });
+    expect(past).toMatchObject({
+      kind: "past",
+      status: "resolved",
+      resolvedOn: null,
+      place: "Дома",
+      diagnosedOn: "2025-04-01",
+      isDispensary: false,
+      dispensarySince: null,
+      responsibleDoctorId: null,
+      controlIntervalMonths: null,
+    });
+    expect(buildConditionPayload({ ...CONDITION, kind: "past", status: "refuted" }).status).toBe("refuted");
   });
 });
