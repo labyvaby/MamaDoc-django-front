@@ -15,6 +15,7 @@ import {
 import { SCRIBE_IN_PROGRESS, type ScribeRecording } from "../api/scribe";
 import { useT } from "../i18n/VerticalProvider";
 import { useScribeClock, type ScribeRecorderApi } from "./ScribeRecorderProvider";
+import { isScribeBusy } from "./recorderMachine";
 import { findUnfinishedRecording, unfinishedMinutes } from "./unfinishedRecording";
 
 const mmss = (ms: number) => {
@@ -37,10 +38,13 @@ export const ScribeStrip: React.FC<{
   recorder: ScribeRecorderApi;
   /** Записи строки, новые первыми (контекст строки). */
   recordings: readonly ScribeRecording[];
+  /** Когда контекст строки пришёл с сервера. */
+  fetchedAt: number;
+  /** Действия резолвятся после перечитывания строки — до этого кнопки серые. */
   onRetry: (id: number) => Promise<unknown>;
   onSendAbandoned: (rec: ScribeRecording) => Promise<unknown>;
   onDeleteAbandoned: (rec: ScribeRecording) => Promise<unknown>;
-}> = ({ lineId, recorder, recordings, onRetry, onSendAbandoned, onDeleteAbandoned }) => {
+}> = ({ lineId, recorder, recordings, fetchedAt, onRetry, onSendAbandoned, onDeleteAbandoned }) => {
   const { t } = useT("scribe");
   const [pending, setPending] = React.useState(false);
   const [toDelete, setToDelete] = React.useState<DeleteTarget | null>(null);
@@ -72,8 +76,21 @@ export const ScribeStrip: React.FC<{
       lines.push(<StripLine key="finishing" text={t("strip.finishing")} progress />);
     }
     // Незавершённую запись ищем по всем записям строки: более новая её не
-    // прячет, а звук на сервере ждёт решения врача.
-    const unfinished = findUnfinishedRecording(recordings, state.recordingId, Date.now());
+    // прячет, а звук на сервере ждёт решения врача. Своя — та, что сейчас
+    // пишется или досылается; только что остановленная здесь — не брошенная,
+    // пока строку не перечитали после «Стопа».
+    const unfinished = findUnfinishedRecording(
+      recordings,
+      isScribeBusy(state.phase) ? state.recordingId : null,
+      Date.now(),
+      {
+        justStopped:
+          state.lastRecordingId != null && state.lastStoppedAt != null
+            ? { id: state.lastRecordingId, at: state.lastStoppedAt }
+            : null,
+        fetchedAt,
+      },
+    );
     if (unfinished) {
       lines.push(
         <StripLine key="unfinished" text={t("strip.abandoned", { count: unfinishedMinutes(unfinished) })}>

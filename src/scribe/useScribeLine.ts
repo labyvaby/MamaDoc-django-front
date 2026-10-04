@@ -30,6 +30,8 @@ export function useScribeLine(lineId: number | null) {
   });
   return {
     line: lineId != null ? line.data ?? null : null,
+    /** Когда контекст строки пришёл с сервера (0 — ещё не приходил). */
+    fetchedAt: line.dataUpdatedAt,
     latest,
     detail: latest != null ? detail.data ?? null : null,
     refetch: line.refetch,

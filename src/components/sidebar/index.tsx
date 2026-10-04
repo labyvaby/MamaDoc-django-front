@@ -1356,20 +1356,35 @@ const SidebarFooter: React.FC = () => {
   const scribeBusy = useScribeBusy();
   const { t: ts } = useT("scribe");
   const [scribeFlushing, setScribeFlushing] = React.useState(false);
+  /** Досылка не уложилась в срок — предлагаем выйти без неё. */
+  const [scribeStuck, setScribeStuck] = React.useState(false);
+  /**
+   * Выход отменён («Отмена» или компонент размонтирован — например, сессия
+   * истекла и после повторного входа это уже другой экран): ожидание
+   * досылки не должно потом само вызвать выход и погасить новую сессию.
+   */
+  const logoutCancelled = React.useRef(false);
+  React.useEffect(
+    () => () => {
+      logoutCancelled.current = true;
+    },
+    [],
+  );
 
   const handleLogoutClick = () => {
+    logoutCancelled.current = false;
+    setScribeStuck(false);
     setLogoutOpen(true);
   };
 
-  const handleConfirmLogout = async () => {
-    if (scribe && scribeBusy) {
-      setScribeFlushing(true);
-      try {
-        await scribe.flush();
-      } finally {
-        setScribeFlushing(false);
-      }
-    }
+  const handleCancelLogout = () => {
+    logoutCancelled.current = true;
+    setScribeFlushing(false);
+    setScribeStuck(false);
+    setLogoutOpen(false);
+  };
+
+  const doLogout = async () => {
     try {
       await djangoLogout();
       window.location.href = '/login';
@@ -1377,6 +1392,28 @@ const SidebarFooter: React.FC = () => {
       console.error("Logout error:", e);
       window.location.href = '/login';
     }
+  };
+
+  const handleConfirmLogout = async () => {
+    logoutCancelled.current = false;
+    if (scribe && scribeBusy) {
+      setScribeFlushing(true);
+      const result = await scribe.flush(undefined, () => logoutCancelled.current);
+      if (logoutCancelled.current || result === "cancelled") return;
+      setScribeFlushing(false);
+      if (result === "timeout") {
+        setScribeStuck(true);
+        return;
+      }
+    }
+    await doLogout();
+  };
+
+  /** Сеть не даёт дослать: бросаем запись без запросов и выходим. */
+  const handleLogoutWithoutFlush = async () => {
+    scribe?.abandon();
+    setScribeStuck(false);
+    await doLogout();
   };
 
   return (
@@ -1431,7 +1468,7 @@ const SidebarFooter: React.FC = () => {
       {/* Confirmation Dialog */}
       <Dialog
         open={logoutOpen}
-        onClose={() => setLogoutOpen(false)}
+        onClose={handleCancelLogout}
         aria-labelledby="logout-dialog-title"
         aria-describedby="logout-dialog-description"
       >
@@ -1442,26 +1479,38 @@ const SidebarFooter: React.FC = () => {
           <DialogContentText id="logout-dialog-description">
             Вы действительно хотите выйти из аккаунта?
           </DialogContentText>
-          {(scribeBusy || scribeFlushing) && (
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              {scribeFlushing ? ts("busy.flushing") : ts("busy.logout")}
+          {scribeStuck ? (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {ts("busy.stuck")}
             </Alert>
+          ) : (
+            (scribeBusy || scribeFlushing) && (
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                {scribeFlushing ? ts("busy.flushing") : ts("busy.logout")}
+              </Alert>
+            )
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setLogoutOpen(false)} color="inherit">
+          <Button onClick={handleCancelLogout} color="inherit">
             Отмена
           </Button>
-          <Button
-            onClick={handleConfirmLogout}
-            color="error"
-            variant="contained"
-            autoFocus
-            disabled={scribeFlushing}
-            startIcon={scribeFlushing ? <CircularProgress size={16} color="inherit" /> : undefined}
-          >
-            Выйти
-          </Button>
+          {scribeStuck ? (
+            <Button onClick={handleLogoutWithoutFlush} color="error" variant="contained" autoFocus>
+              {ts("busy.logoutWithoutFlush")}
+            </Button>
+          ) : (
+            <Button
+              onClick={handleConfirmLogout}
+              color="error"
+              variant="contained"
+              autoFocus
+              disabled={scribeFlushing}
+              startIcon={scribeFlushing ? <CircularProgress size={16} color="inherit" /> : undefined}
+            >
+              Выйти
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>

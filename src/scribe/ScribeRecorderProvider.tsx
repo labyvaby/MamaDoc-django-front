@@ -33,6 +33,7 @@ import {
   type RecorderAction,
   type RecorderState,
 } from "./recorderMachine";
+import { waitFor, type WaitResult } from "./waitFor";
 
 const SLICE_MS = 15_000;
 const LIMIT_MS = 60 * 60_000;
@@ -40,6 +41,8 @@ const WARN_MS = 55 * 60_000;
 const RETRY_MAX_MS = 30_000;
 /** Кусок дольше минуты не грузится — обрываем и повторяем (сеть «висит»). */
 const CHUNK_TIMEOUT_MS = 60_000;
+/** Сколько выход из системы ждёт досылку, прежде чем предложить выйти без неё. */
+const FLUSH_TIMEOUT_MS = 20_000;
 const MIC_ERRORS: readonly string[] = MIC_ERROR_CODES;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
@@ -79,9 +82,15 @@ export interface ScribeRecorderApi {
   cancel: () => Promise<void>;
   /**
    * Остановить запись (если идёт) и дождаться конца досылки — перед выходом
-   * из системы. Завершается и при отказе сервера (фаза error).
+   * из системы, но не дольше `timeoutMs` (по умолчанию 20 с). Отказ сервера
+   * (фаза error) — тоже конец. `isCancelled` — выход отменили, ждать незачем.
    */
-  flush: () => Promise<void>;
+  flush: (timeoutMs?: number, isCancelled?: () => boolean) => Promise<WaitResult>;
+  /**
+   * Бросить запись без сетевых вызовов: погасить микрофон и очередь. Что
+   * уже на сервере, станет «незавершённой записью» (Отправить / Удалить).
+   */
+  abandon: () => void;
 }
 
 /**
@@ -122,6 +131,14 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
   const warned = React.useRef(false);
   /** Закрыть текущую запись ровно один раз: дослать и «Стоп» на сервере. */
   const finalizeRef = React.useRef<(() => void) | null>(null);
+  /**
+   * Поколение записи: меняется, когда запись гасят без досылки (отмена,
+   * отказ сервера, «выйти без досылки», размонтирование). Циклы досылки и
+   * «Стопа» сверяют его после каждого ожидания и молча выходят.
+   */
+  const epoch = React.useRef(0);
+  /** Провайдер смонтирован; после размонтирования — ни запросов, ни тостов. */
+  const alive = React.useRef(true);
   /** Записи, начатые в этой вкладке: только о них тост «готово». */
   const mine = React.useRef(new Set<number>());
   const { open: notify } = useNotification();
@@ -159,6 +176,7 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
 
   /** Погасить MediaRecorder без досылки и «Стоп» (отмена, отказ сервера). */
   const dropRecorder = React.useCallback(() => {
+    epoch.current += 1;
     const rec = recorder.current;
     if (rec) {
       rec.ondataavailable = null;
@@ -187,12 +205,19 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
   // Досылка: один кусок за раз, по порядку; сбой сети — повтор того же
   // номера с растущей паузой, пока не уйдёт.
   const pump = React.useCallback(async () => {
-    if (uploading.current) return;
+    if (uploading.current || !alive.current) return;
     uploading.current = true;
+    const myEpoch = epoch.current;
+    // Запись погасили без досылки или провайдер размонтирован — молча выходим.
+    const gone = () => !alive.current || epoch.current !== myEpoch;
     let delay = 1000;
     let restart = false;
     try {
       for (;;) {
+        if (gone()) {
+          restart = alive.current;
+          break;
+        }
         const current = stateRef.current;
         const seq = nextUpload(current);
         if (seq == null || current.recordingId == null || rejected.current) break;
@@ -202,14 +227,18 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
           await uploadScribeChunk(current.recordingId, seq, blob, chunkTimeout());
           // Пока кусок летел, запись отменили и начали новую — её очередь
           // разберёт следующий проход.
-          if (stateRef.current.recordingId !== current.recordingId) {
-            restart = true;
+          if (gone() || stateRef.current.recordingId !== current.recordingId) {
+            restart = alive.current;
             break;
           }
           blobs.current.delete(seq);
           send({ type: "uploaded", seq });
           delay = 1000;
         } catch (err) {
+          if (gone()) {
+            restart = alive.current;
+            break;
+          }
           if (isPermanentError(err)) {
             rejectRecording();
             break;
@@ -226,11 +255,13 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
 
   // После «Стоп»: дослать всё, затем остановить запись на сервере.
   const finish = React.useCallback(async () => {
-    while (!rejected.current && nextUpload(stateRef.current) != null) {
+    const myEpoch = epoch.current;
+    const gone = () => !alive.current || epoch.current !== myEpoch;
+    while (!rejected.current && !gone() && nextUpload(stateRef.current) != null) {
       await pump();
-      if (!rejected.current && nextUpload(stateRef.current) != null) await sleep(1000);
+      if (!rejected.current && !gone() && nextUpload(stateRef.current) != null) await sleep(1000);
     }
-    if (rejected.current) return;
+    if (rejected.current || gone()) return;
     const current = stateRef.current;
     if (current.recordingId != null) {
       let delay = 1000;
@@ -241,14 +272,17 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
         } catch (err) {
           // Уже остановлена или доступа нет — сервер сам покажет её
           // брошенной («Отправить / Удалить»), висеть в «досылаем» незачем.
+          if (gone()) return;
           if (isPermanentError(err)) break;
           await sleep(delay);
+          if (gone()) return;
           delay = Math.min(delay * 2, RETRY_MAX_MS);
         }
       }
+      if (gone()) return;
       refreshLine(current.lineId);
     }
-    send({ type: "stopped" });
+    send({ type: "stopped", now: Date.now() });
   }, [pump, refreshLine, send]);
 
   const start = React.useCallback(
@@ -268,7 +302,12 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
       try {
         media = await openMicrophone();
       } catch (err) {
+        if (!alive.current) return;
         return fail((err as { scribeCode?: MicErrorCode }).scribeCode ?? micErrorCode(err));
+      }
+      if (!alive.current) {
+        media.getTracks().forEach((track) => track.stop());
+        return;
       }
       let rec: MediaRecorder;
       try {
@@ -290,7 +329,14 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
         });
       } catch (err) {
         media.getTracks().forEach((track) => track.stop());
+        if (!alive.current) return;
         return fail(getErrorCode(err) ?? "start_failed", getErrorMessage(err, tRef.current("errors.start_failed")));
+      }
+      if (!alive.current) {
+        // Пока ждали сервер, провайдер размонтировали (сессия истекла):
+        // микрофон не держим, лишних запросов не шлём.
+        media.getTracks().forEach((track) => track.stop());
+        return;
       }
       stream.current = media;
       recorder.current = rec;
@@ -408,14 +454,29 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
     refreshLine(current.lineId);
   }, [dropRecorder, refreshLine, send]);
 
-  const flush = React.useCallback(async () => {
-    for (;;) {
-      const phase = stateRef.current.phase;
-      if (phase === "recording" || phase === "paused") stop();
-      else if (phase !== "starting" && phase !== "stopping") return;
-      await sleep(200);
-    }
-  }, [stop]);
+  const flush = React.useCallback(
+    (timeoutMs: number = FLUSH_TIMEOUT_MS, isCancelled?: () => boolean) =>
+      waitFor(
+        () => {
+          const phase = stateRef.current.phase;
+          if (phase === "recording" || phase === "paused") {
+            stop();
+            return false;
+          }
+          return phase !== "starting" && phase !== "stopping";
+        },
+        { timeoutMs, cancelled: () => !alive.current || Boolean(isCancelled?.()) },
+      ),
+    [stop],
+  );
+
+  const abandon = React.useCallback(() => {
+    const current = stateRef.current;
+    // Без единого запроса: сеть, видимо, лежит — потому и бросаем.
+    dropRecorder();
+    if (current.recordingId != null) mine.current.delete(current.recordingId);
+    send({ type: "reset" });
+  }, [dropRecorder, send]);
 
   // Тикер времени и лимит 60 минут.
   React.useEffect(() => {
@@ -471,9 +532,17 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
     return () => window.removeEventListener("mamadoc:django-context-switched", handler);
   }, [stop]);
 
-  // Размонтирование (сессия истекла — RequireAuth увёл на вход): отпускаем
-  // микрофон. Что успело уйти, на сервере станет «незавершённой записью».
-  React.useEffect(() => () => releaseMic(), [releaseMic]);
+  // Размонтирование (сессия истекла — RequireAuth увёл на вход): гасим
+  // рекордер без тоста «микрофон отключился» и останавливаем очередь — после
+  // размонтирования запросов нет. Что успело уйти, на сервере станет
+  // «незавершённой записью».
+  React.useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      dropRecorder();
+    };
+  }, [dropRecorder]);
 
   // Готово — тост, даже если окно заключения закрыто. Сокет — только у тех,
   // кому запись доступна: остальным лишнее соединение ни к чему.
@@ -502,8 +571,9 @@ export const ScribeRecorderProvider: React.FC<{ children: React.ReactNode }> = (
       stop,
       cancel,
       flush,
+      abandon,
     }),
-    [state, start, pause, resume, stop, cancel, flush],
+    [state, start, pause, resume, stop, cancel, flush, abandon],
   );
 
   const clock = React.useMemo<ScribeClock>(

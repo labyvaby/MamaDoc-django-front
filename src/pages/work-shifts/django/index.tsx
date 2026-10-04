@@ -46,6 +46,7 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useDjangoSkudActions } from "../../../hooks/useDjangoSkud";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
+import { getErrorMessage } from "../../../api/client";
 import { getDjangoEmployees } from "../../../api/staff";
 import {
   createShift,
@@ -486,9 +487,16 @@ const DjangoWorkShiftsPage: React.FC = () => {
                       value=""
                       onChange={(e) => {
                         if (!e.target.value || !activeMembership) return;
+                        // Переключение могут отклонить (например, идёт
+                        // ИИ-запись приёма) — показываем причину.
                         void switchContext?.({
                           membershipId: activeMembership.id,
                           branchId: Number(e.target.value),
+                        })?.catch((err: unknown) => {
+                          notify?.({
+                            type: "error",
+                            message: getErrorMessage(err, "Не удалось выбрать филиал смены"),
+                          });
                         });
                       }}
                       sx={{ minWidth: 200 }}

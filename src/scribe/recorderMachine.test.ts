@@ -54,9 +54,14 @@ describe("recorderMachine", () => {
     expect(s.phase).toBe("stopping");
     expect(s.durationMs).toBe(19_000);
     s = recorderReducer(s, { type: "uploaded", seq: 0 });
-    s = recorderReducer(s, { type: "stopped" });
+    s = recorderReducer(s, { type: "stopped", now: 25_000 });
     expect(s.phase).toBe("idle");
     expect(s.lastRecordingId).toBe(7);
+    expect(s.lastStoppedAt).toBe(25_000);
+    // Следующий старт помнит, что остановили последним.
+    s = recorderReducer(s, { type: "start" });
+    expect(s.lastRecordingId).toBe(7);
+    expect(s.lastStoppedAt).toBe(25_000);
   });
 
   it("занята — от старта до конца досылки", () => {

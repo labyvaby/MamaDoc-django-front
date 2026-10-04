@@ -25,6 +25,11 @@ export interface RecorderState {
   error: string | null;
   /** Последняя завершённая запись — чтобы окно знало, чего ждать. */
   lastRecordingId: number | null;
+  /**
+   * Когда её остановили (мс). Пока контекст строки старше этого момента, в
+   * нём она ещё «recording» — это не брошенная запись.
+   */
+  lastStoppedAt: number | null;
 }
 
 export type RecorderAction =
@@ -35,7 +40,7 @@ export type RecorderAction =
   | { type: "pause"; now: number }
   | { type: "resume"; now: number }
   | { type: "stop"; now: number }
-  | { type: "stopped" }
+  | { type: "stopped"; now: number }
   | { type: "failed"; error: string }
   | { type: "reset" };
 
@@ -53,6 +58,7 @@ export const INITIAL_RECORDER: RecorderState = {
   durationMs: 0,
   error: null,
   lastRecordingId: null,
+  lastStoppedAt: null,
 };
 
 /**
@@ -91,7 +97,12 @@ export function savedMs(state: RecorderState): number {
 export function recorderReducer(state: RecorderState, action: RecorderAction): RecorderState {
   switch (action.type) {
     case "start":
-      return { ...INITIAL_RECORDER, phase: "starting", lastRecordingId: state.lastRecordingId };
+      return {
+        ...INITIAL_RECORDER,
+        phase: "starting",
+        lastRecordingId: state.lastRecordingId,
+        lastStoppedAt: state.lastStoppedAt,
+      };
     case "started":
       return {
         ...state,
@@ -121,7 +132,7 @@ export function recorderReducer(state: RecorderState, action: RecorderAction): R
     case "stop":
       return { ...state, phase: "stopping", durationMs: elapsedMs(state, action.now) };
     case "stopped":
-      return { ...INITIAL_RECORDER, lastRecordingId: state.recordingId };
+      return { ...INITIAL_RECORDER, lastRecordingId: state.recordingId, lastStoppedAt: action.now };
     case "failed":
       return { ...state, phase: "error", error: action.error };
     case "reset":

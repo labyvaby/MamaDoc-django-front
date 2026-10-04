@@ -1928,15 +1928,21 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
     setScribeDiagnoses((prev) => prev.filter((item) => item.code !== d.code));
   };
 
-  const scribeRefresh = () =>
-    void queryClient.invalidateQueries({ queryKey: scribeQueryKey(serviceLineId) });
-  /** Действие с записью из полосы: ошибка — тостом, затем свежий контекст строки. */
-  const scribeAction = (run: () => Promise<unknown>) =>
-    run()
-      .catch((err) => {
-        notify?.({ type: "error", message: getErrorMessage(err, ts("errors.action_failed")) });
-      })
-      .finally(scribeRefresh);
+  /**
+   * Действие с записью из полосы: ошибка — тостом, затем свежий контекст
+   * строки. Промис завершается только после перечитывания строки — до этого
+   * кнопка в полосе остаётся серой (повторное нажатие по старым данным).
+   */
+  const scribeAction = async (run: () => Promise<unknown>) => {
+    try {
+      await run();
+    } catch (err) {
+      notify?.({ type: "error", message: getErrorMessage(err, ts("errors.action_failed")) });
+    }
+    await queryClient
+      .invalidateQueries({ queryKey: scribeQueryKey(serviceLineId) })
+      .catch(() => undefined);
+  };
   const startScribe = (mode: ScribeMode, consent?: "yes" | "no") =>
     void recorder?.start({ lineId: serviceLineId, mode, consent });
 
@@ -2975,6 +2981,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           lineId={serviceLineId}
           recorder={recorder}
           recordings={scribe.line?.recordings ?? []}
+          fetchedAt={scribe.fetchedAt}
           onRetry={(id) => scribeAction(() => retryScribeRecording(id))}
           onSendAbandoned={(rec) =>
             scribeAction(() => stopScribeRecording(rec.id, rec.chunkCount * SCRIBE_SLICE_MS))
