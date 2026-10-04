@@ -266,7 +266,10 @@ export const ProfitTable: React.FC<{ rows: ProfitRow[]; totals: ProfitTotals }> 
             {unallocated > 0 && (
               <TableRow>
                 <TableCell sx={stickySx}>
-                  <Tooltip title="Расходы филиала, в котором за месяц не было часов ни одного врача" arrow>
+                  <Tooltip
+                    title="Общие расходы, на которые не пришлось ни одного часа врачей: например, расходы филиала без графика и приёмов"
+                    arrow
+                  >
                     <span>Не распределено</span>
                   </Tooltip>
                 </TableCell>

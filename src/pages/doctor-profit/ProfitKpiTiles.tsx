@@ -77,7 +77,10 @@ const Tile: React.FC<{
   </Box>
 );
 
-export const ProfitKpiTiles: React.FC<{ totals: ProfitTotals }> = ({ totals }) => {
+export const ProfitKpiTiles: React.FC<{ totals: ProfitTotals; branchSelected: boolean }> = ({
+  totals,
+  branchSelected,
+}) => {
   const direct = toNumber(totals.salary) + toNumber(totals.cost);
   const unallocated = toNumber(totals.unallocated);
   const profit = toNumber(totals.profit);
@@ -98,7 +101,7 @@ export const ProfitKpiTiles: React.FC<{ totals: ProfitTotals }> = ({ totals }) =
       />
       <Tile
         icon={profit < 0 ? <TrendingDownOutlined /> : <TrendingUpOutlined />}
-        label="Прибыль клиники"
+        label={branchSelected ? "Прибыль филиала" : "Прибыль клиники"}
         value={formatKGS(totals.profit)}
         sub={`маржа ${formatMargin(totals.marginPct)}`}
         tone={profit < 0 ? "error" : "success"}

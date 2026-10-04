@@ -119,7 +119,7 @@ export const DoctorProfitPage: React.FC = () => {
               </Alert>
             )}
 
-            <ProfitKpiTiles totals={data.totals} />
+            <ProfitKpiTiles totals={data.totals} branchSelected={branchId != null} />
 
             {data.rows.length === 0 ? (
               <Stack alignItems="center" sx={{ py: 6 }}>

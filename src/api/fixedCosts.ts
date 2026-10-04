@@ -16,6 +16,11 @@ export interface FixedCost {
   /** YYYY-MM; null — бессрочно. */
   monthTo: string | null;
   createdAt: string;
+  /**
+   * false — запись всей организации у сотрудника с ограничением по филиалам:
+   * она входит в его отчёт, но править её он не может.
+   */
+  canEdit?: boolean;
 }
 
 export interface FixedCostInput {

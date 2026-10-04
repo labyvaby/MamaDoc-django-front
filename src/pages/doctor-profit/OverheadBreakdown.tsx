@@ -29,9 +29,10 @@ const Group: React.FC<{ title: string; empty: string; items: ProfitOverheadItem[
           {empty}
         </Typography>
       ) : (
-        items.map((it) => (
+        items.map((it, index) => (
           <Box
-            key={`${it.id}-${it.branchId ?? "org"}`}
+            // У начислений удалённых сотрудников номер 0 — ключу нужна позиция.
+            key={`${it.id}-${it.branchId ?? "org"}-${index}`}
             sx={{ display: "flex", justifyContent: "space-between", gap: 2, py: 0.25 }}
           >
             <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0 }} noWrap>

@@ -169,7 +169,9 @@ export const FixedCostsDialog: React.FC<Props> = ({
                 </Button>
               )}
             </Stack>
-            {costsQuery.isLoading ? (
+            {costsQuery.isError ? (
+              <Alert severity="error">{parseBackendError(costsQuery.error)}</Alert>
+            ) : costsQuery.isLoading ? (
               <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
                 <CircularProgress size={24} />
               </Box>
@@ -193,6 +195,7 @@ export const FixedCostsDialog: React.FC<Props> = ({
                       {formatKGS(cost.amount)}
                     </Typography>
                     {canManage &&
+                      cost.canEdit !== false &&
                       (confirmDelete === cost.id ? (
                         <Stack direction="row" spacing={0.5}>
                           <Button
