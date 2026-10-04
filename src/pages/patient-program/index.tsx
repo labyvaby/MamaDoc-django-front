@@ -61,6 +61,8 @@ import { InteractionHistory } from "./InteractionHistory";
 import { LinkedSection } from "./linkedSections";
 import { isLinkedModule, systemType } from "./linkedSectionTypes";
 import { ModuleRecords } from "./ModuleRecords";
+import { isOrthoModule } from "./ortho/orthoData";
+import { OrthoModule } from "./ortho/OrthoModule";
 import { isVisionModule } from "./vision/visionData";
 import { VisionModule } from "./vision/VisionModule";
 import { UpcomingEvents } from "./UpcomingEvents";
@@ -571,6 +573,15 @@ const PatientProgramPage: React.FC = () => {
                 />
               ) : isVisionModule(selectedModule) ? (
                 <VisionModule
+                  enrollmentId={selectedEnrollment.id}
+                  module={selectedModule}
+                  scope={scope}
+                  canManage={canManageEnrollments && selectedEnrollment.isEffectivelyActive}
+                  icon={moduleIcon(selectedModule)}
+                  birthDate={patient.birthDate ?? null}
+                />
+              ) : isOrthoModule(selectedModule) ? (
+                <OrthoModule
                   enrollmentId={selectedEnrollment.id}
                   module={selectedModule}
                   scope={scope}
