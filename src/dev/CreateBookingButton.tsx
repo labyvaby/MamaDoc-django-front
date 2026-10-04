@@ -1178,7 +1178,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
             )}
             {/* Число гостей — счётчиками с границами из категории номера: больше, чем
                 вмещает номер, ввести нельзя ни кнопками, ни с клавиатуры. */}
-            <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+            {/* sm в теме — 360 px (телефон): два счётчика с подсказками в ряд — только с md. */}
+            <Stack direction={{ xs: "column", md: "row" }} gap={1.5}>
               <CountStepper
                 label="Взрослые"
                 hint={selectedRoomType ? `до ${selectedRoomType.adultsCapacity} в номере` : "выберите номер"}
@@ -1251,7 +1252,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         );
                       })}
                     </TextField>
-                    <Stack direction={{ xs: "column", sm: "row" }} gap={1.5}>
+                    <Stack direction={{ xs: "column", md: "row" }} gap={1.5}>
                       <CountStepper
                         label="Взрослые"
                         hint={rt ? `до ${rt.adultsCapacity} в номере` : "выберите номер"}
