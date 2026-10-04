@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProfitRow } from "../../api/doctorProfit";
-import { formatMargin, formatMinutes, rowLabel, sortRows, toNumber } from "./profitTable";
+import { formatMargin, formatMinutes, formatMonth, rowLabel, sortRows, toNumber } from "./profitRows";
 
 const row = (over: Partial<ProfitRow>): ProfitRow => ({
   employeeId: 1,
@@ -76,6 +76,11 @@ describe("форматирование", () => {
     expect(formatMinutes(45)).toBe("45 мин");
     expect(formatMinutes(180)).toBe("3 ч");
     expect(formatMinutes(195)).toBe("3 ч 15 мин");
+  });
+
+  it("месяц", () => {
+    expect(formatMonth("2026-10")).toBe("октябрь 2026");
+    expect(formatMonth("2026-01")).toBe("январь 2026");
   });
 
   it("маржа", () => {

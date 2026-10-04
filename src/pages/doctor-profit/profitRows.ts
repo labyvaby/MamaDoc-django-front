@@ -27,6 +27,28 @@ export function formatMinutes(minutes: number): string {
   return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
 }
 
+const MONTHS = [
+  "январь",
+  "февраль",
+  "март",
+  "апрель",
+  "май",
+  "июнь",
+  "июль",
+  "август",
+  "сентябрь",
+  "октябрь",
+  "ноябрь",
+  "декабрь",
+];
+
+/** «2026-10» → «октябрь 2026». */
+export function formatMonth(month: string): string {
+  const [year, m] = month.split("-");
+  const name = MONTHS[Number(m) - 1];
+  return name ? `${name} ${year}` : month;
+}
+
 /** Маржа «12,5 %»; без выручки — прочерк. */
 export const formatMargin = (value: number | null): string =>
   value == null ? "—" : `${value.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} %`;
