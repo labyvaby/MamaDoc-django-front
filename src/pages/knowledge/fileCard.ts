@@ -3,7 +3,7 @@ import { alpha, type Theme } from "@mui/material/styles";
 import { FILE_LINK_TITLE, PDF_LINK_TITLE } from "../../api/knowledge";
 import { attachmentLabel } from "./attachmentTypes";
 
-/** Селектор ссылок-вложений (обе метки, см. FileAttachment). */
+/** Селектор ссылок-вложений (обе метки, см. articleBlocks.tsx). */
 export const FILE_CARD_SELECTOR = `a[title="${PDF_LINK_TITLE}"], a[title="${FILE_LINK_TITLE}"]`;
 
 /**

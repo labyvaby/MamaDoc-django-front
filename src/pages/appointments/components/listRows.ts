@@ -6,6 +6,7 @@
 import dayjs from "dayjs";
 
 import type { DjangoAppointment } from "../../../api/appointments";
+import type { PrepaidHold } from "./prepaidHolds";
 
 export type GapSlot = {
   isGap: true;
@@ -27,9 +28,27 @@ export function itemStartTs(item: RenderItem): number {
   return dayjs(isGap(item) ? item.dateIso : item.scheduledAt).valueOf();
 }
 
+/**
+ * Одна плашка окна на время в группе. Окна строятся несколькими ветками
+ * (между приёмами, на месте отменённого, перед первым, по сменам), и разные
+ * ветки могут прийти к одному времени: 13:00 активный, 13:30 отменён, 14:00
+ * активный — окно 13:30 давали и промежуток 13:00→14:00, и отменённая запись.
+ * Оставляем первое по порядку, приёмы не трогаем.
+ */
+export function dedupeGapsByTime(items: RenderItem[]): RenderItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (!isGap(item)) return true;
+    if (seen.has(item.dateIso)) return false;
+    seen.add(item.dateIso);
+    return true;
+  });
+}
+
 export type ListRow = { /** Над этим рядом рисуется линия «сейчас». */ nowLine: boolean } & (
   | { kind: "gaps"; gaps: GapSlot[] }
   | { kind: "appt"; appt: DjangoAppointment }
+  | { kind: "hold"; hold: PrepaidHold }
 );
 
 /**
@@ -70,4 +89,37 @@ export function buildListRows(
     }
   }
   return rows;
+}
+
+function rowStartTs(row: ListRow): number {
+  if (row.kind === "gaps") return dayjs(row.gaps[0].dateIso).valueOf();
+  if (row.kind === "hold") return row.hold.start;
+  return dayjs(row.appt.scheduledAt).valueOf();
+}
+
+/**
+ * Вставляет брони с предоплатой (см. prepaidHolds.ts) в ряды группы по времени.
+ * Хвост группы (`isTailRow` — отменённые приёмы, уведённые вниз) брони не
+ * обгоняют: они встают перед ним. Линия «сейчас» переезжает на бронь, если та
+ * оказалась первым ещё не начавшимся элементом.
+ */
+export function interleaveHolds(
+  rows: ListRow[],
+  holds: PrepaidHold[],
+  nowTs: number | null,
+  isTailRow: (row: ListRow) => boolean = () => false,
+): ListRow[] {
+  if (holds.length === 0) return rows;
+  const result = [...rows];
+  for (const hold of [...holds].sort((a, b) => a.start - b.start)) {
+    let index = result.findIndex((row) => isTailRow(row) || rowStartTs(row) > hold.start);
+    if (index === -1) index = result.length;
+    result.splice(index, 0, { kind: "hold", hold, nowLine: false });
+  }
+  if (nowTs == null) return result;
+  const firstUpcoming = result.findIndex((row) => !isTailRow(row) && rowStartTs(row) >= nowTs);
+  if (firstUpcoming !== -1 && result[firstUpcoming].kind === "hold") {
+    return result.map((row, i) => ({ ...row, nowLine: i === firstUpcoming }));
+  }
+  return result;
 }

@@ -8,11 +8,13 @@
  * структурно, и мутация общего объекта «спрятала» бы смену статуса.
  */
 import { ApiError } from "./client";
-import { CONTRACT_PAYMENT_LABELS } from "./realestate";
+import { CONTRACT_PAYMENT_LABELS, sectionKey, withSectionPositions } from "./realestate";
 import type {
   Contract,
   ContractInput,
   MeetingInput,
+  NewProjectInput,
+  NewUnitInput,
   OperationInput,
   Orientation,
   OutdoorSpace,
@@ -342,6 +344,68 @@ export function listUnits(projectId: string): Unit[] {
   return clone(units.filter((u) => u.projectId === projectId).map((u) => ({ ...u, hold: u.status === "reserved" ? (u.hold ?? seedHold(u)) : null })));
 }
 
+/**
+ * Мастер «Новый ЖК» на моках: ЖК и квартиры живут в памяти до перезагрузки.
+ * Правила бэка повторены те, что видит пользователь: номер уникален в ЖК.
+ */
+export function createProject(
+  input: NewProjectInput,
+  unitsFor: (sectionIds: ReadonlyMap<string, number>) => NewUnitInput[],
+): { projectId: string; created: number } {
+  const projectId = `mock-${seedProjects.length + 1}-${Date.now().toString(36)}`;
+  const sectionIds = new Map(input.sections.map((s, i) => [sectionKey(s.name), i + 1]));
+  const rows = unitsFor(sectionIds);
+  const numbers = new Set<number>();
+  for (const row of rows) {
+    if (numbers.has(row.number)) throw new ApiError(`Квартира №${row.number} уже есть в этом ЖК.`, 400, { detail: "duplicate" });
+    numbers.add(row.number);
+  }
+  const names = input.sections.map((s) => s.name);
+  seedProjects.push({
+    id: projectId,
+    name: input.name,
+    floorsCount: input.floors,
+    firstResidentialFloor: input.startFloor,
+    sections: names,
+    finish: "",
+    completionLabel: "",
+    queue: "",
+    stage: "",
+    manager: "",
+    buildings: names,
+  });
+  // position внутри корпуса считается так же, как для ответа бэка.
+  units.push(
+    ...withSectionPositions(rows.map((row, i): Unit => ({
+      id: `${projectId}-${i + 1}`,
+      projectId,
+      section: row.section,
+      sectionId: null,
+      floor: row.floor,
+      position: row.slot,
+      axis: row.slot,
+      number: String(row.number),
+      rooms: row.rooms,
+      totalArea: Number(row.area),
+      livingArea: Number(row.area),
+      price: Number(row.price),
+      pricePerSqm: Number(row.pricePerSqm),
+      status: "free",
+      orientation: "Юг",
+      view: "",
+      outdoor: null,
+      ceilingHeight: 3,
+      bathrooms: row.rooms >= 3 ? 2 : 1,
+      isCorner: false,
+      hasPanoramicWindows: false,
+      roomsBreakdown: [],
+      layoutCode: "",
+      layoutVariant: 0,
+    }))),
+  );
+  return { projectId, created: rows.length };
+}
+
 /** Бронь из сида: срок от 1 до 47 часов, у чётных номеров — ждёт предоплату. */
 function seedHold(unit: Unit): UnitHold {
   const n = Number(unit.number);
@@ -539,6 +603,26 @@ export function confirmPrepayment(unitId: string): UnitDetails {
     buyer: reservation.buyer,
     stage: "Оплачено",
     details: `Получена предоплата ${money(reservation.amount)} по QR. Сумма зачтена в стоимость квартиры.`,
+  });
+  return unitDetails(unit);
+}
+
+export function extendReservation(unitId: string, hours: number): UnitDetails {
+  const unit = findUnitOrThrow(unitId);
+  const reservation = stateOf(unit).reservation;
+  if (unit.status !== "reserved" || !reservation) throw conflict("Бронь уже снята");
+  const base = unit.hold?.endsAt ? new Date(unit.hold.endsAt).getTime() : Date.now();
+  const endsAt = new Date(Math.max(base, Date.now()) + hours * 3_600_000);
+  unit.hold = { endsAt: endsAt.toISOString(), awaitingPayment: unit.hold?.awaitingPayment ?? false };
+  reservation.termHours += hours;
+  reservation.expiresAt = endsAt.toLocaleString("ru-RU");
+  addEvent(unit, {
+    type: "reserve",
+    title: "Бронь продлена",
+    actor: projectOf(unit).manager,
+    buyer: reservation.buyer,
+    stage: `+${hours} ч`,
+    details: `Бронь продлена до ${reservation.expiresAt}.`,
   });
   return unitDetails(unit);
 }

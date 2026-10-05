@@ -532,6 +532,8 @@ const ArticleViewPage: React.FC = () => {
               "& h3": { mt: 2, mb: 1, fontSize: "1.1rem" },
               "& ul, & ol": { pl: 3, mb: 1.25 },
               "& li": { mb: 0.5 },
+              // BlockNote кладёт текст пункта в <p> — без сброса поля пункты разъезжаются.
+              "& li > p": { m: 0 },
               "& blockquote": {
                 borderLeft: `3px solid ${theme.palette.divider}`,
                 m: 0,
@@ -562,7 +564,22 @@ const ArticleViewPage: React.FC = () => {
               // знаний половина иллюстраций — сфотографированные памятки, и в
               // колонке шириной в телефон надписи на них не разобрать.
               "& img": { maxWidth: "100%", borderRadius: 1.5, cursor: "zoom-in" },
-              // Видео в статье (@tiptap/extension-youtube).
+              // Видео в статье: BlockNote отдаёт голый <iframe>, старые статьи —
+              // <div data-youtube-video><iframe>.
+              "& iframe": {
+                display: "block",
+                width: "100%",
+                maxWidth: 720,
+                aspectRatio: "16/9",
+                height: "auto",
+                border: 0,
+                borderRadius: 1.5,
+                my: 2,
+              },
+              // Чек-лист BlockNote: <ul><li><input type=checkbox>текст</li></ul>.
+              "& ul:has(> li > input[type=checkbox])": { listStyle: "none", pl: 1 },
+              "& li > input[type=checkbox]": { mr: 1 },
+              // Старый формат видео.
               "& div[data-youtube-video]": {
                 my: 2,
                 "& iframe": {

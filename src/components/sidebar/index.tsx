@@ -59,6 +59,9 @@ import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import EmojiEventsOutlined from "@mui/icons-material/EmojiEventsOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
+import DrawOutlined from "@mui/icons-material/DrawOutlined";
+import HandshakeOutlined from "@mui/icons-material/HandshakeOutlined";
+import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import HourglassEmptyOutlined from "@mui/icons-material/HourglassEmptyOutlined";
@@ -74,6 +77,7 @@ import { DEALS_MODULE_ENABLED } from "../../api/deals";
 import { getBookings } from "../../api/bookings";
 import { getDraftCount } from "../../api/vaccinations";
 import { useModuleGate } from "../../hooks/useModuleGate";
+import { useEstateNav } from "../../hooks/useEstateNav";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -404,8 +408,11 @@ const RealEstateSidebarMenu: React.FC = () => {
   const { moduleGate } = useModuleGate();
   const canSettings = useHasVisibleSettingsTab();
   const orgId = useApiOrgId();
+  // Экраны AIVIO — ещё и по матрице ролей бэка: у юриста шахматки в меню нет, хотя realty.view есть.
+  const estateNav = useEstateNav();
+  const seen = (screen: string) => estateNav?.(screen) ?? true;
 
-  const canChessboard = moduleGate("realty");
+  const canChessboard = moduleGate("realty") && seen("inventory");
   const canDeals = DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals);
   const canTasks = can(PAGE_PERMISSIONS.tasks);
   const canBuyers = can(PAGE_PERMISSIONS.patients);
@@ -413,6 +420,17 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canKnowledge = moduleGate("knowledge");
   const canEmployees = can(PAGE_PERMISSIONS.employees);
   const canExpenses = can(PAGE_PERMISSIONS.expenses);
+  const canBilling = can(PAGE_PERMISSIONS.billing) && seen("billing");
+  const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
+  const canEdo = can(PAGE_PERMISSIONS.edo);
+  const docsItems = canEdo
+    ? ([
+        ["edo", "/edo", "ЭДО", <DrawOutlined key="i" />],
+        ["contracts", "/edo/contracts", "Договоры", <HandshakeOutlined key="i" />],
+        ["templates", "/edo/templates", "Шаблоны", <ContentCopyOutlined key="i" />],
+        ["archive", "/edo/archive", "Архив", <Inventory2Outlined key="i" />],
+      ] as const).filter(([screen]) => seen(screen))
+    : [];
 
   // Бейдж «Задачи» — тот же запрос и ключ, что в клиничном меню (кэш общий):
   // открытые задачи филиала, красный — если есть просроченные.
@@ -441,6 +459,7 @@ const RealEstateSidebarMenu: React.FC = () => {
   return (
     <List sx={{ py: 0, mt: 0.5 }}>
       {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
+      {canSalesDocs && <SidebarMenuItem to="/realestate/documents" icon={<FolderOutlined />} label="Документы CRM" collapsed={siderCollapsed} />}
       {canDeals && <SidebarMenuItem to="/deals" icon={<FilterAltOutlined />} label="Воронка продаж" collapsed={siderCollapsed} />}
       {canTasks && (
         <SidebarMenuItem to="/tasks" icon={<AssignmentOutlined />} label="Задачи" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
@@ -448,6 +467,14 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canBuyers && <SidebarMenuItem to="/patients" icon={<SearchOutlined />} label={t("allPatients")} collapsed={siderCollapsed} />}
       {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
       {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
+
+      {docsItems.length > 0 && sectionLabel("Документы")}
+      {docsItems.map(([screen, to, label, icon]) => (
+        <SidebarMenuItem key={screen} to={to} icon={icon} label={label} collapsed={siderCollapsed} />
+      ))}
+
+      {canBilling && sectionLabel("Финансы")}
+      {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
 
       {(canEmployees || canExpenses || canSettings) && sectionLabel("Компания")}
       {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />}
@@ -560,7 +587,7 @@ const SidebarSecondary: React.FC = () => {
     reports: can(PAGE_PERMISSIONS.reports),
     cashbox: can(PAGE_PERMISSIONS.cashbox),
     pnl: can(PAGE_PERMISSIONS.pnl),
-    load: !isRetail && can(PAGE_PERMISSIONS.reports),
+    load: !isRetail && can(PAGE_PERMISSIONS.load),
     notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
   };
