@@ -192,10 +192,11 @@ export function defaultMessage(
       ? { channel: PROFICHAT_PUSH_CHANNEL }
       : {}),
     title: "Начисления за {{work_date}}",
+    // «Из чего сложилось» собирает бэк: без нулевых частей и с верным
+    // склонением — шаблон сам «часы 0 ч» не выкинет.
     body:
-      "{{employee_name}}, за {{work_date}} начислено {{earned_total}} сом: " +
-      "часы {{hours}} ч — {{hours_sum}} сом, услуги и товары — " +
-      "{{services_sum}} сом ({{appointments_count}} приёмов).",
+      "{{employee_name}}, за {{work_date}} начислено {{earned_total}} сом. " +
+      "{{breakdown}}.",
   };
 }
 

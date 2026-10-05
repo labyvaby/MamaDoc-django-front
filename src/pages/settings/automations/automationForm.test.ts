@@ -632,6 +632,7 @@ describe("зарплата за вчера — каждому сотрудник
     expect(withPush?.channel).toBe(PROFICHAT_PUSH_CHANNEL);
     expect(withPush?.title).toBe("Начисления за {{work_date}}");
     expect(withPush?.body).toContain("{{earned_total}}");
+    expect(withPush?.body).toContain("{{breakdown}}");
 
     expect(defaultMessage(PAYROLL_DAILY_EVENT_CODE, ["sms"])?.channel).toBeUndefined();
     expect(defaultMessage("appointment.created", ["sms"])).toBeNull();
