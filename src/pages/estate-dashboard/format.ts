@@ -51,6 +51,8 @@ export function estateHref(view: string, objectId?: number | null): string | nul
       return "/realestate/funnel";
     case "leads":
       return "/realestate/leads";
+    case "partners":
+      return objectId ? `/realestate/partners?partner=${objectId}` : "/realestate/partners";
     case "mortgage":
       return objectId ? `/realestate/mortgage?application=${objectId}` : "/realestate/mortgage";
     case "objects":

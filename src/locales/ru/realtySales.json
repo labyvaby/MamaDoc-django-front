@@ -725,5 +725,151 @@
       "submit": "Создать",
       "created": "Заявка {{number}} создана"
     }
+  },
+  "partners": {
+    "title": "Риелторы и партнёры",
+    "subtitle": "Агентства, партнёрские лиды, комиссии и выплаты",
+    "loadError": "Не удалось загрузить партнёров",
+    "kpi": {
+      "partners": "Партнёров",
+      "agents_one": "{{count}} агент",
+      "agents_few": "{{count}} агента",
+      "agents_many": "{{count}} агентов",
+      "leads": "Партнёрских лидов",
+      "leadsMonth": "{{count}} в этом месяце",
+      "share": "Доля партнёрских продаж",
+      "shareHint": "от всех продаж",
+      "toPay": "К выплате",
+      "approved_one": "{{count}} утверждена",
+      "approved_few": "{{count}} утверждено",
+      "approved_many": "{{count}} утверждено"
+    },
+    "tabs": {
+      "partners": "Партнёры",
+      "leads": "Лиды партнёров",
+      "commissions": "Комиссии"
+    },
+    "newPartner": "Партнёр",
+    "newLead": "Лид от партнёра",
+    "export": "Реестр",
+    "exportFailed": "Не удалось выгрузить реестр",
+    "payAll": "Выплатить все утверждённые",
+    "payAllDone": "Выплачено комиссий: {{count}} на {{total}}",
+    "payAllNone": "Утверждённых комиссий нет",
+    "payAllTitle": "Выплатить все утверждённые комиссии?",
+    "payAllText": "Будут отмечены выплаченными {{count}} комиссий на {{total}}. Сам платёж проводится в «Касса и банк».",
+    "statusAll": "Все",
+    "partnerStatus": {
+      "active": "Активные",
+      "paused": "На паузе"
+    },
+    "leadStatus": {
+      "active": "Закреплены",
+      "expired": "Истекли",
+      "converted": "В CRM"
+    },
+    "commissionStatus": {
+      "accrued": "Начислены",
+      "approved": "К выплате",
+      "paid": "Выплачены"
+    },
+    "commissionOne": {
+      "accrued": "Начислена",
+      "approved": "К выплате",
+      "paid": "Выплачена"
+    },
+    "card": {
+      "agents_one": "{{count}} агент",
+      "agents_few": "{{count}} агента",
+      "agents_many": "{{count}} агентов",
+      "leads": "Лидов",
+      "deals": "Сделок",
+      "commission": "Комиссии",
+      "rate": "Ставка",
+      "unpaid": "есть к выплате",
+      "settled": "расчёты закрыты",
+      "paused": "пауза"
+    },
+    "drawer": {
+      "title": "Партнёр",
+      "contact": "Контакт",
+      "phone": "Телефон",
+      "agents": "Агенты",
+      "revenue": "Выручка по сделкам",
+      "commissionTotal": "Комиссий начислено",
+      "commissionPaid": "Выплачено",
+      "toPay": "К выплате",
+      "rates": "Ставки по ЖК",
+      "noRates": "Ставки не заданы",
+      "editRates": "Изменить ставки",
+      "pause": "Приостановить",
+      "activate": "Активировать",
+      "paused": "Партнёр на паузе",
+      "activated": "Партнёр активен",
+      "leads": "Лиды партнёра",
+      "commissions": "Комиссии партнёра",
+      "none": "Нет",
+      "projectFallback": "ЖК №{{id}}"
+    },
+    "table": {
+      "number": "№",
+      "partner": "Партнёр",
+      "client": "Клиент",
+      "project": "ЖК",
+      "stage": "Этап",
+      "budget": "Бюджет",
+      "status": "Статус",
+      "fixed": "Закреплён до",
+      "deal": "Договор",
+      "buyer": "Покупатель",
+      "amount": "Сделка",
+      "pct": "%",
+      "commission": "Комиссия",
+      "toCrm": "В CRM",
+      "approve": "Утвердить",
+      "pay": "Выплатить",
+      "open": "Открыть",
+      "emptyLeads": "Лидов нет",
+      "emptyCommissions": "Комиссий нет",
+      "emptyFiltered": "Под фильтр ничего не попало"
+    },
+    "toast": {
+      "converted": "Лид передан в CRM",
+      "approved": "Комиссия утверждена",
+      "paid": "Комиссия выплачена",
+      "created": "Партнёр добавлен",
+      "leadCreated": "Лид {{number}} закреплён за партнёром",
+      "ratesSaved": "Ставки сохранены"
+    },
+    "form": {
+      "partnerTitle": "Новый партнёр",
+      "name": "Название",
+      "type": "Тип",
+      "types": {
+        "agency": "Агентство",
+        "private": "Частный риелтор",
+        "platform": "Онлайн-платформа"
+      },
+      "contact": "Контактное лицо",
+      "phone": "Телефон",
+      "agents": "Агенты",
+      "agentsHint": "Через запятую",
+      "rates": "Ставка по ЖК, %",
+      "ratesHint": "Пусто — партнёр не работает с этим ЖК",
+      "ratesTitle": "Ставки: {{name}}",
+      "leadTitle": "Лид от партнёра",
+      "partner": "Партнёр",
+      "agent": "Агент",
+      "client": "Клиент",
+      "project": "ЖК",
+      "projectNone": "Не выбран",
+      "budget": "Бюджет, сом",
+      "required": "Обязательное поле",
+      "number": "Введите число",
+      "range": "От {{min}} до {{max}}",
+      "save": "Сохранить",
+      "create": "Добавить",
+      "pausedPartner": "на паузе"
+    }
   }
 }
