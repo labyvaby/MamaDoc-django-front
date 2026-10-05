@@ -90,6 +90,13 @@ export const djangoQueryKeys = {
       ["django", "patients", patientId, "balance-transactions", params] as const,
   },
 
+  /** Файлы карточки пациента или клиента (src/api/attachments.ts). */
+  attachments: {
+    all: ["django", "attachments"] as const,
+    list: (ownerKind: "patient" | "client", ownerId: number) =>
+      ["django", "attachments", ownerKind, ownerId] as const,
+  },
+
   programs: {
     all: ["django", "programs"] as const,
     list: (scope: unknown) => ["django", "programs", "list", scope] as const,

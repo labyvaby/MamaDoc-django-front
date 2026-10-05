@@ -36,6 +36,8 @@ import {
 } from "../../api/patientBalance";
 import { getAppointments, type DjangoAppointment } from "../../api/appointments";
 import { getPatientLabOrders, type LabOrder } from "../../api/lab";
+import type { AttachmentOwner } from "../../api/attachments";
+import CardAttachmentsPanel from "../../components/attachments/CardAttachmentsPanel";
 
 import PatientListPanel from "./components/PatientListPanel";
 import PatientCard from "./components/PatientCard";
@@ -58,7 +60,7 @@ import type { OldConclusion } from "./useOldConclusions";
 
 const MotionBox = motion(Box);
 
-type RightTabKey = "card" | "history" | "old" | "vaccinations" | "lab";
+type RightTabKey = "card" | "history" | "old" | "vaccinations" | "lab" | "files";
 
 const DjangoPatientsPage: React.FC = () => {
   const { t } = useT("patients");
@@ -121,6 +123,13 @@ const DjangoPatientsPage: React.FC = () => {
     loading: oldConclusionsLoading,
     errorMsg: oldConclusionsError,
   } = useOldConclusions(selected?.phone, selected?.id);
+
+  // Файлы карточки: панель грузит их сама, ей нужен только владелец.
+  const selectedId = selected?.id ?? null;
+  const attachmentsOwner = React.useMemo<AttachmentOwner | null>(
+    () => (selectedId === null ? null : { kind: "patient", id: selectedId }),
+    [selectedId],
+  );
 
   // ── Selected patient: balance + history (Django API, AbortSignal) ──────────
   const [balance, setBalance] = React.useState<PatientBalance | null>(null);
@@ -452,6 +461,10 @@ const DjangoPatientsPage: React.FC = () => {
     />
   );
 
+  const filesNode = (
+    <CardAttachmentsPanel owner={attachmentsOwner} canManage={canUpdate} />
+  );
+
   const oldConclusionsNode = (
     <PatientOldConclusionsPanel
       selected={!!selected}
@@ -494,6 +507,7 @@ const DjangoPatientsPage: React.FC = () => {
     { key: "old", label: t("tabs.old") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
     ...(canViewLab ? [{ key: "lab" as const, label: LAB_TAB_LABEL }] : []),
+    { key: "files", label: t("tabs.files") },
   ];
 
   // Десктоп: карточка уже отдельной колонкой, правая колонка — история/архив.
@@ -502,6 +516,7 @@ const DjangoPatientsPage: React.FC = () => {
     { key: "old", label: t("tabs.oldFull") },
     ...(canViewVaccinations ? [{ key: "vaccinations" as const, label: t("tabs.vaccinations") }] : []),
     ...(canViewLab ? [{ key: "lab" as const, label: LAB_TAB_LABEL }] : []),
+    { key: "files", label: t("tabs.files") },
   ];
 
   return (
@@ -552,6 +567,7 @@ const DjangoPatientsPage: React.FC = () => {
                   {tabletTab === "old" && oldConclusionsNode}
                   {tabletTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
                   {tabletTab === "lab" && canViewLab && labOrdersNode}
+                  {tabletTab === "files" && filesNode}
                 </Box>
               </>
             ) : (
@@ -579,6 +595,7 @@ const DjangoPatientsPage: React.FC = () => {
                 {desktopRightTab === "old" && oldConclusionsNode}
                 {desktopRightTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
                 {desktopRightTab === "lab" && canViewLab && labOrdersNode}
+                {desktopRightTab === "files" && filesNode}
               </Box>
             </MotionBox>
           </>
@@ -602,6 +619,7 @@ const DjangoPatientsPage: React.FC = () => {
             {mobileTab === "old" && oldConclusionsNode}
             {mobileTab === "vaccinations" && canViewVaccinations && vaccinationsNode}
             {mobileTab === "lab" && canViewLab && labOrdersNode}
+            {mobileTab === "files" && filesNode}
           </Box>
         </AppBottomSheet>
       )}
