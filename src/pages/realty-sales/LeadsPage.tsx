@@ -1,5 +1,5 @@
 import React from "react";
-import { Alert, Box, Button, ButtonBase, Typography } from "@mui/material";
+import { Box, Button, ButtonBase, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
@@ -8,9 +8,7 @@ import { useSnackbar } from "notistack";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 
-import { ApiError, isModuleDisabled } from "../../api/client";
 import { downloadLeadsCsv, getLeads, getLeadsConversion, leadsStats, realtyLeadKeys, type Lead, type LeadsFilter } from "../../api/realtyLeads";
-import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { pillSx } from "../../components/ui";
 import { useCan } from "../../hooks/useCan";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
@@ -23,7 +21,7 @@ import { cardSx } from "../estate-dashboard/format";
 import { tempColor } from "./format";
 import { LeadDrawer } from "./LeadDrawer";
 import { NewLeadDrawer } from "./NewLeadDrawer";
-import { LeadsKpis, SearchBox } from "./shared";
+import { LeadsKpis, ScreenError, SearchBox } from "./shared";
 import { useLeadParam } from "./useLeadParam";
 
 const FILTERS: readonly LeadsFilter[] = ["active", "notask", "overdue"];
@@ -77,23 +75,8 @@ function LeadsScreen() {
     onError: () => enqueueSnackbar(t("toolbar.exportFailed"), { variant: "error" }),
   });
 
-  if (list.error) {
-    const error = list.error;
-    if (isModuleDisabled(error)) return <AccessDenied title={t("common.moduleOff")} description={t("common.moduleOffHint")} showBack={false} />;
-    if (error instanceof ApiError && error.status === 403) return <AccessDenied />;
-    return (
-      <Alert
-        severity="error"
-        action={
-          <Button color="inherit" size="small" onClick={() => void list.refetch()}>
-            {t("common.retry")}
-          </Button>
-        }
-      >
-        {t("common.loadError")}: {error instanceof Error ? error.message : ""}
-      </Alert>
-    );
-  }
+  if (list.error) return <ScreenError error={list.error} onRetry={() => void list.refetch()} />;
+
 
   const all = list.data;
   const stats = all ? leadsStats(all) : null;

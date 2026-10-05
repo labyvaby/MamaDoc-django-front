@@ -108,6 +108,7 @@ const EstateDashboardPage = lazy(() => import("./pages/estate-dashboard"));
 const RealtyTodayPage = lazy(() => import("./pages/estate-dashboard/TodayPage"));
 const RealtyFunnelPage = lazy(() => import("./pages/realty-sales/FunnelPage"));
 const RealtyLeadsPage = lazy(() => import("./pages/realty-sales/LeadsPage"));
+const RealtyCallsPage = lazy(() => import("./pages/realty-sales/CallsPage"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const EdoRegistryPage = lazy(() => import("./pages/edo/EdoRegistryPage"));
 const EdoTemplatesPage = lazy(() => import("./pages/edo/TemplatesPage"));
@@ -1279,11 +1280,12 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            {/* Продажи застройщика (AIVIO): воронка и лиды на /api/v2/realty/leads/, не MamaDoc /deals и /patients. */}
+                            {/* Продажи застройщика (AIVIO) на /api/v2/realty/: воронка и лиды (не MamaDoc /deals и /patients), звонки. */}
                             {(
                               [
                                 ["realestate/funnel", RealtyFunnelPage],
                                 ["realestate/leads", RealtyLeadsPage],
+                                ["realestate/calls", RealtyCallsPage],
                               ] as const
                             ).map(([path, Page]) => (
                               <Route
@@ -1580,7 +1582,9 @@ function App() {
                             return `${resourceLabel} | ${baseTitle}`;
                           }
                         }
-                        return baseTitle;
+                        // Заголовок экрана пишет TitleProvider (usePageTitle); Refine срабатывает на каждую
+                        // смену адреса — и `?call=`/`?lead=` затирали его до «Aximo». Без ресурса не трогаем.
+                        return document.title || baseTitle;
                       }}
                     />
                   </Refine>

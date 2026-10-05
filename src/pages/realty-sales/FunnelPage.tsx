@@ -1,12 +1,11 @@
 import React from "react";
-import { Alert, Box, Button, ButtonBase, Typography } from "@mui/material";
+import { Box, Button, ButtonBase, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import WhatshotOutlined from "@mui/icons-material/WhatshotOutlined";
 
-import { ApiError, isModuleDisabled } from "../../api/client";
 import { estateDashboardKeys } from "../../api/estateDashboard";
 import {
   LEAD_STAGES,
@@ -19,7 +18,6 @@ import {
   type LeadStage,
 } from "../../api/realtyLeads";
 import { Board, type BoardCardSpec, type BoardColumnDef } from "../../components/board";
-import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { pillSx } from "../../components/ui";
 import { useCan } from "../../hooks/useCan";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
@@ -29,7 +27,7 @@ import { useT } from "../../i18n/VerticalProvider";
 import { compactMoney } from "../estate-dashboard/format";
 import { LeadDrawer } from "./LeadDrawer";
 import { NewLeadDrawer } from "./NewLeadDrawer";
-import { LeadsKpis, SearchBox } from "./shared";
+import { LeadsKpis, ScreenError, SearchBox } from "./shared";
 import { useLeadParam } from "./useLeadParam";
 import { tempColor } from "./format";
 
@@ -103,23 +101,8 @@ function FunnelScreen() {
     },
   });
 
-  if (list.error) {
-    const error = list.error;
-    if (isModuleDisabled(error)) return <AccessDenied title={t("common.moduleOff")} description={t("common.moduleOffHint")} showBack={false} />;
-    if (error instanceof ApiError && error.status === 403) return <AccessDenied />;
-    return (
-      <Alert
-        severity="error"
-        action={
-          <Button color="inherit" size="small" onClick={() => void list.refetch()}>
-            {t("common.retry")}
-          </Button>
-        }
-      >
-        {t("common.loadError")}: {error instanceof Error ? error.message : ""}
-      </Alert>
-    );
-  }
+  if (list.error) return <ScreenError error={list.error} onRetry={() => void list.refetch()} />;
+
 
   const all = list.data;
   const shown = all?.filter((lead) => managerId == null || lead.managerId === managerId);

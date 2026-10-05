@@ -18,14 +18,17 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
+import { useNavigate } from "react-router";
 import dayjs from "dayjs";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import AddIcCallOutlined from "@mui/icons-material/AddIcCallOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 
 import { getSalesManagers, realEstateKeys } from "../../api/realestate";
 import { estateDashboardKeys } from "../../api/estateDashboard";
+import { formatCallDuration, getCalls, realtyCallKeys } from "../../api/realtyCalls";
 import {
   LEAD_STAGES,
   LEAD_TEMPS,
@@ -43,13 +46,15 @@ import { useT } from "../../i18n/VerticalProvider";
 import { formatDateRu, formatKGS } from "../../utility/format";
 import { formatPhoneDisplay } from "../../utility/phone";
 import { TaskDrawer, type TaskDrawerMode } from "../estate-dashboard/TaskDrawer";
-import { tempColor } from "./format";
+import { CallDirectionChip } from "./CallDirectionChip";
+import { callTimeLabel, tempColor } from "./format";
+import { NewCallDrawer, type CallPreset } from "./NewCallDrawer";
 
 /**
  * Карточка заявки — шторка справа на воронке и в «Лидах» (`?lead=<id>`).
  * Этап, температура и ответственный меняются прямо здесь; комментарии,
  * задачи по заявке и история этапов — снизу. Менять — `realty.manage`.
- * «☎ Позвонить» и «▣ Бронь» появятся с экранами звонков и шахматки-брони.
+ * «☎ Позвонить» записывает звонок по заявке, «⌖ Показ» ставит задачу-показ.
  */
 export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose: () => void }) {
   const { t } = useT("realtySales");
@@ -62,6 +67,10 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
   const [comment, setComment] = React.useState("");
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [taskMode, setTaskMode] = React.useState<TaskDrawerMode | null>(null);
+  // Данные заявки держим и после закрытия шторки звонка — иначе форма мигнёт пустой на анимации.
+  const [callPreset, setCallPreset] = React.useState<CallPreset | null>(null);
+  const [callOpen, setCallOpen] = React.useState(false);
+  const navigate = useNavigate();
 
   React.useEffect(() => {
     setComment("");
@@ -73,6 +82,13 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
     queryFn: ({ signal }) => getLead(leadId as number, scope, signal),
     enabled: leadId != null && scope.orgReady !== false,
     staleTime: 15_000,
+  });
+  const callsParams = React.useMemo(() => ({ leadId }), [leadId]);
+  const calls = useQuery({
+    queryKey: realtyCallKeys.list(scope, callsParams),
+    queryFn: ({ signal }) => getCalls(callsParams, scope, signal),
+    enabled: leadId != null && scope.orgReady !== false,
+    staleTime: 30_000,
   });
   const managers = useQuery({
     queryKey: realEstateKeys.managers(scope),
@@ -220,6 +236,17 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
                   <Button
                     variant="outlined"
                     size="small"
+                    startIcon={<AddIcCallOutlined />}
+                    onClick={() => {
+                      setCallPreset({ leadId: data.id, client: data.client, phone: data.phone, projectId: data.projectId, deal: data.project });
+                      setCallOpen(true);
+                    }}
+                  >
+                    {t("card.call")}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
                     startIcon={<PlaceOutlined />}
                     onClick={() =>
                       setTaskMode({
@@ -274,6 +301,32 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
                 ))}
               </Section>
 
+              <Section title={t("card.calls")}>
+                {calls.data?.length === 0 && <Muted>{t("card.noCalls")}</Muted>}
+                {calls.data?.map((call) => (
+                  <Box
+                    key={call.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/realestate/calls?call=${call.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") navigate(`/realestate/calls?call=${call.id}`);
+                    }}
+                    sx={{ py: 0.75, display: "flex", alignItems: "center", gap: 1, cursor: "pointer", borderRadius: "8px", "&:hover .call-result": { textDecoration: "underline" } }}
+                  >
+                    <CallDirectionChip call={call} />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography className="call-result" noWrap sx={{ fontSize: "0.875rem" }}>
+                        {call.result || call.statusLabel}
+                      </Typography>
+                      <Typography noWrap sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
+                        {[callTimeLabel(call.at, t), call.seconds > 0 && formatCallDuration(call.seconds), call.manager].filter(Boolean).join(" · ")}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Section>
+
               <Section title={t("card.history")}>
                 {data.stageHistory.map((h) => (
                   <Box key={h.id} sx={{ py: 0.5 }}>
@@ -315,6 +368,17 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
       </Dialog>
 
       {canManage && <TaskDrawer mode={taskMode} onClose={() => setTaskMode(null)} />}
+      {canManage && (
+        <NewCallDrawer
+          open={callOpen}
+          preset={callPreset}
+          onClose={() => setCallOpen(false)}
+          onCreated={() => {
+            setCallOpen(false);
+            invalidate();
+          }}
+        />
+      )}
     </>
   );
 }

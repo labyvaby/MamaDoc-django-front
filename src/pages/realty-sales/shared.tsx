@@ -1,8 +1,10 @@
 import React from "react";
-import { Box, InputBase, Skeleton, Typography } from "@mui/material";
+import { Alert, Box, Button, InputBase, Skeleton, Typography } from "@mui/material";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 
+import { ApiError, isModuleDisabled } from "../../api/client";
 import { leadsStats, type Lead } from "../../api/realtyLeads";
+import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { useT } from "../../i18n/VerticalProvider";
 import { subtleBg } from "../../theme/uiHelpers";
 import { cardSx, compactMoney } from "../estate-dashboard/format";
@@ -14,23 +16,52 @@ import { cardSx, compactMoney } from "../estate-dashboard/format";
 export function LeadsKpis({ list, conversion }: { list: Lead[] | undefined; conversion: number | null | undefined }) {
   const { t } = useT("realtySales");
   const stats = list ? leadsStats(list) : null;
-  const items = stats
-    ? [
-        { key: "active", value: String(stats.count), hint: null },
-        { key: "budget", value: compactMoney(stats.budget, t), hint: null },
-        { key: "conversion", value: conversion != null ? `${conversion}%` : "—", hint: t("kpi.conversionHint") },
-        { key: "hot", value: String(stats.hot), hint: null },
-      ]
-    : null;
+  return (
+    <KpiCards
+      items={
+        stats
+          ? [
+              { key: "active", label: t("kpi.active"), value: String(stats.count) },
+              { key: "budget", label: t("kpi.budget"), value: compactMoney(stats.budget, t) },
+              { key: "conversion", label: t("kpi.conversion"), value: conversion != null ? `${conversion}%` : "—", hint: t("kpi.conversionHint") },
+              { key: "hot", label: t("kpi.hot"), value: String(stats.hot) },
+            ]
+          : null
+      }
+    />
+  );
+}
+
+export interface KpiItem {
+  key: string;
+  label: string;
+  value: string;
+  hint?: string | null;
+  /** Цвет числа: красный — проблема, зелёный — хорошо. */
+  tone?: "error" | "success" | "warning" | null;
+}
+
+/** Ряд KPI-карточек экранов продаж; `null` — скелетоны на время загрузки. */
+export function KpiCards({ items, skeletons = 4 }: { items: KpiItem[] | null; skeletons?: number }) {
   return (
     <Box sx={{ mb: 2, display: "grid", gap: 1.5, gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(4, minmax(0, 1fr))" } }}>
       {items
         ? items.map((item) => (
             <Box key={item.key} sx={{ ...cardSx, p: { xs: 1.75, md: 2.25 }, minWidth: 0 }}>
               <Typography noWrap sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>
-                {t(`kpi.${item.key}`)}
+                {item.label}
               </Typography>
-              <Typography noWrap sx={{ mt: 0.75, fontSize: { xs: "1.2rem", md: "1.6rem" }, fontWeight: 700, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>
+              <Typography
+                noWrap
+                sx={{
+                  mt: 0.75,
+                  fontSize: { xs: "1.2rem", md: "1.6rem" },
+                  fontWeight: 700,
+                  lineHeight: 1.15,
+                  fontVariantNumeric: "tabular-nums",
+                  color: item.tone ? `${item.tone}.main` : "text.primary",
+                }}
+              >
                 {item.value}
               </Typography>
               {item.hint && (
@@ -43,7 +74,20 @@ export function LeadsKpis({ list, conversion }: { list: Lead[] | undefined; conv
               )}
             </Box>
           ))
-        : [0, 1, 2, 3].map((i) => <Skeleton key={i} variant="rounded" height={104} sx={{ borderRadius: "14px" }} />)}
+        : Array.from({ length: skeletons }, (_, i) => <Skeleton key={i} variant="rounded" height={104} sx={{ borderRadius: "14px" }} />)}
+    </Box>
+  );
+}
+
+/** Заголовок карточки-секции экрана: название и подзаголовок слева, действие справа. */
+export function CardHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
+  return (
+    <Box sx={{ px: 2.25, pt: 2, pb: 1.5, display: "flex", alignItems: "flex-start", gap: 1 }}>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontWeight: 700, fontSize: "1rem" }}>{title}</Typography>
+        {subtitle && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{subtitle}</Typography>}
+      </Box>
+      {action}
     </Box>
   );
 }
@@ -70,5 +114,27 @@ export function SearchBox({ value, onChange, placeholder }: { value: string; onC
       <SearchOutlined />
       <InputBase value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} inputProps={{ "aria-label": placeholder }} sx={{ flex: 1, fontSize: "0.875rem" }} />
     </Box>
+  );
+}
+
+/**
+ * Ошибка загрузки экрана продаж: выключенный модуль и 403 — экраном «нет
+ * доступа», остальное — плашкой с «Повторить».
+ */
+export function ScreenError({ error, onRetry, title }: { error: unknown; onRetry: () => void; title?: string }) {
+  const { t } = useT("realtySales");
+  if (isModuleDisabled(error)) return <AccessDenied title={t("common.moduleOff")} description={t("common.moduleOffHint")} showBack={false} />;
+  if (error instanceof ApiError && error.status === 403) return <AccessDenied />;
+  return (
+    <Alert
+      severity="error"
+      action={
+        <Button color="inherit" size="small" onClick={onRetry}>
+          {t("common.retry")}
+        </Button>
+      }
+    >
+      {title ?? t("common.loadError")}: {error instanceof Error ? error.message : ""}
+    </Alert>
   );
 }

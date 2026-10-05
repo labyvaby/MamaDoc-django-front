@@ -32,6 +32,7 @@ import { useT } from "../../i18n/VerticalProvider";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
@@ -421,6 +422,7 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canChessboard = moduleGate("realty") && seen("inventory");
   const canFunnel = can(PAGE_PERMISSIONS.realtySales) && seen("funnel");
   const canLeads = can(PAGE_PERMISSIONS.realtySales) && seen("leads");
+  const canCalls = can(PAGE_PERMISSIONS.realtySales) && seen("calls");
   // «Мой день» — задачи CRM застройщика; внутренние заявки MamaDoc («Задачи»)
   // застройщику не нужны: его звонки и показы живут в /api/v2/realty/tasks/.
   const canToday = can(PAGE_PERMISSIONS.realtyToday) && seen("today");
@@ -474,9 +476,10 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
       {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
 
-      {(canFunnel || canLeads || canChessboard) && sectionLabel("Продажи")}
+      {(canFunnel || canLeads || canCalls || canChessboard) && sectionLabel("Продажи")}
       {canFunnel && <SidebarMenuItem to="/realestate/funnel" icon={<FilterAltOutlined />} label="CRM · воронка" collapsed={siderCollapsed} />}
       {canLeads && <SidebarMenuItem to="/realestate/leads" icon={<SearchOutlined />} label="Лиды и клиенты" collapsed={siderCollapsed} />}
+      {canCalls && <SidebarMenuItem to="/realestate/calls" icon={<PhoneInTalkOutlined />} label="Звонки и записи" collapsed={siderCollapsed} />}
       {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
 
       {(docsItems.length > 0 || canSalesDocs) && sectionLabel("Документы")}
