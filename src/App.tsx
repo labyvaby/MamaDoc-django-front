@@ -105,6 +105,7 @@ const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
 const EstateDashboardPage = lazy(() => import("./pages/estate-dashboard"));
+const RealtyTodayPage = lazy(() => import("./pages/estate-dashboard/TodayPage"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const EdoRegistryPage = lazy(() => import("./pages/edo/EdoRegistryPage"));
 const EdoTemplatesPage = lazy(() => import("./pages/edo/TemplatesPage"));
@@ -1272,6 +1273,17 @@ function App() {
                                 <RequirePermission permission={PAGE_PERMISSIONS.estateDashboard}>
                                   <Suspense fallback={<LinearProgress />}>
                                     <EstateDashboardPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            {/* «Мой день» застройщика (AIVIO): задачи CRM, не внутренние заявки MamaDoc. */}
+                            <Route
+                              path="realestate/today"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.realtyToday}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <RealtyTodayPage />
                                   </Suspense>
                                 </RequirePermission>
                               }

@@ -45,6 +45,8 @@ export function estateHref(view: string, objectId?: number | null): string | nul
       return "/realestate/chessboard";
     case "documents":
       return "/realestate/documents";
+    case "today":
+      return "/realestate/today";
     default:
       return null;
   }

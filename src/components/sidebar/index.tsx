@@ -77,6 +77,8 @@ import { getBookings } from "../../api/bookings";
 import { getDraftCount } from "../../api/vaccinations";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import { useEstateNav } from "../../hooks/useEstateNav";
+import { useRealtyScope } from "../../hooks/useRealtyScope";
+import { getRealtyTasks, realtyTaskKeys } from "../../api/realtyTasks";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -411,14 +413,15 @@ const RealEstateSidebarMenu: React.FC = () => {
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const canSettings = useHasVisibleSettingsTab();
-  const orgId = useApiOrgId();
   // Экраны AIVIO — ещё и по матрице ролей бэка: у юриста шахматки в меню нет, хотя realty.view есть.
   const estateNav = useEstateNav();
   const seen = (screen: string) => estateNav?.(screen) ?? true;
 
   const canDashboard = can(PAGE_PERMISSIONS.estateDashboard) && seen("dashboard");
   const canChessboard = moduleGate("realty") && seen("inventory");
-  const canTasks = can(PAGE_PERMISSIONS.tasks);
+  // «Мой день» — задачи CRM застройщика; внутренние заявки MamaDoc («Задачи»)
+  // застройщику не нужны: его звонки и показы живут в /api/v2/realty/tasks/.
+  const canToday = can(PAGE_PERMISSIONS.realtyToday) && seen("today");
   const canChats = can(PAGE_PERMISSIONS.chats);
   const canKnowledge = moduleGate("knowledge");
   const canEmployees = can(PAGE_PERMISSIONS.employees);
@@ -434,18 +437,20 @@ const RealEstateSidebarMenu: React.FC = () => {
       ] as const).filter(([screen]) => seen(screen))
     : [];
 
-  // Бейдж «Задачи» — тот же запрос и ключ, что в клиничном меню (кэш общий):
-  // открытые задачи филиала, красный — если есть просроченные.
-  const tasksSummary = useQuery({
-    queryKey: djangoQueryKeys.tasks.summary(orgId),
-    queryFn: ({ signal }) => getTasksSummary(orgId, signal),
-    enabled: canTasks,
+  // Бейдж «Мой день» — открытые задачи CRM на сегодня, красный — если есть
+  // просроченные. Ключ тот же, что у экрана без фильтров: кэш общий.
+  const realtyScope = useRealtyScope();
+  const todayParams = React.useMemo(() => ({ date: dayjs().format("YYYY-MM-DD"), managerId: null }), []);
+  const todayTasks = useQuery({
+    queryKey: realtyTaskKeys.list(realtyScope, todayParams),
+    queryFn: ({ signal }) => getRealtyTasks(todayParams, realtyScope, signal),
+    enabled: canToday && realtyScope.orgReady !== false,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
     refetchOnWindowFocus: true,
   }).data;
-  const tasksBadgeCount = (tasksSummary?.new ?? 0) + (tasksSummary?.inProgress ?? 0) + (tasksSummary?.awaitingApproval ?? 0);
-  const tasksBadgeColor: "error" | "primary" = (tasksSummary?.overdue ?? 0) > 0 ? "error" : "primary";
+  const tasksBadgeCount = todayTasks?.filter((task) => !task.done).length ?? 0;
+  const tasksBadgeColor: "error" | "primary" = todayTasks?.some((task) => task.overdue && !task.done) ? "error" : "primary";
 
   const sectionLabel = (text: string) =>
     siderCollapsed && !isMobile ? (
@@ -461,10 +466,10 @@ const RealEstateSidebarMenu: React.FC = () => {
   return (
     <List sx={{ py: 0, mt: 0.5 }}>
       {canDashboard && <SidebarMenuItem to="/realestate/dashboard" icon={<InsightsOutlined />} label="Рабочий стол" collapsed={siderCollapsed} />}
-      {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
-      {canTasks && (
-        <SidebarMenuItem to="/tasks" icon={<AssignmentOutlined />} label="Задачи" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
+      {canToday && (
+        <SidebarMenuItem to="/realestate/today" icon={<AssignmentOutlined />} label="Мой день" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
       )}
+      {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
       {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
       {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
 

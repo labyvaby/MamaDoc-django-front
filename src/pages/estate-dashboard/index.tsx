@@ -14,11 +14,11 @@ import {
   estateDashboardKeys,
   getEstateAlerts,
   getEstateDashboard,
-  setRealtyTaskDone,
   type DashboardKpis,
   type EstateRole,
   type RealtyTask,
 } from "../../api/estateDashboard";
+import { realtyTaskKeys, updateRealtyTask } from "../../api/realtyTasks";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -78,8 +78,11 @@ function DashboardScreen() {
   });
 
   const toggleTask = useMutation({
-    mutationFn: ({ task, done }: { task: RealtyTask; done: boolean }) => setRealtyTaskDone(task.id, done, scope),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: estateDashboardKeys.all }),
+    mutationFn: ({ task, done }: { task: RealtyTask; done: boolean }) => updateRealtyTask(task.id, { done }, scope),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: estateDashboardKeys.all });
+      void queryClient.invalidateQueries({ queryKey: realtyTaskKeys.all });
+    },
     onError: (error) => enqueueSnackbar(error instanceof Error && error.message ? error.message : t("panels.tasks.failed"), { variant: "error" }),
   });
 

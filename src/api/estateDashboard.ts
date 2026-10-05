@@ -18,7 +18,6 @@ import { realtyHeaders, type RealtyScope } from "./realestate";
  */
 
 const DASHBOARD_API = "/v2/estate-dashboard";
-const TASKS_API = "/v2/realty/tasks";
 
 type Decimal = string;
 const money = (value: Decimal | number | null | undefined) => Number(value ?? 0) || 0;
@@ -305,11 +304,6 @@ export async function getEstateAlerts(scope?: RealtyScope, signal?: AbortSignal)
   const raw = await apiRequest<{ count?: number; items?: EstateAlert[] }>(`${DASHBOARD_API}/alerts/`, { headers: realtyHeaders(scope), signal });
   const items = raw.items ?? [];
   return { count: raw.count ?? items.length, items };
-}
-
-/** Галочка «Мой день»: бэк сам ставит/снимает `doneAt`. Только `realty.manage`. */
-export async function setRealtyTaskDone(id: number, done: boolean, scope?: RealtyScope): Promise<void> {
-  await apiRequest(`${TASKS_API}/${id}/`, { method: "PATCH", body: { done }, headers: realtyHeaders(scope) });
 }
 
 const scopeKey = (scope: RealtyScope | undefined) => [scope?.organizationId ?? "session", scope?.branchId ?? "all"] as const;

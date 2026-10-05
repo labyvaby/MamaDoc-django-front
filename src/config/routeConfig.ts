@@ -136,6 +136,12 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.ESTATE_DASHBOARD_VIEW],
   },
 
+  // «Мой день» застройщика: задачи CRM (realty)
+  {
+    path: '/realestate/today',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+
   // Квартиры и шахматка застройщика (модуль бэка realty)
   {
     path: '/realestate/chessboard',

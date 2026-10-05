@@ -255,7 +255,7 @@ function Sales({ data }: { data: SalesPanel }) {
 function Tasks({ data, canManage, onToggle }: { data: TasksPanel; canManage: boolean; onToggle: (task: RealtyTask, done: boolean) => void }) {
   const { t } = useT("estateDashboard");
   return (
-    <Panel title={t("panels.tasks.title")} summary={t("panels.tasks.summary", { open: data.open, done: data.done })}>
+    <Panel title={t("panels.tasks.title")} summary={t("panels.tasks.summary", { open: data.open, done: data.done })} to={estateHref("today")}>
       {data.items.length === 0 ? (
         <Empty />
       ) : (

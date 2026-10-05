@@ -54,6 +54,8 @@ export const PAGE_PERMISSIONS = {
   // Рабочий стол застройщика: экран и его панели — estate_dashboard.view,
   // остальные панели бэк режет правами своих модулей сам.
   estateDashboard: "estate_dashboard.view",
+  // «Мой день» застройщика — задачи CRM `/api/v2/realty/tasks/`, менять — realty.manage.
+  realtyToday: "realty.view",
   // ЭДО застройщика: реестр, договоры, шаблоны, архив — edo.view (менять — edo.manage).
   edo: "edo.view",
   // «Документы (CRM)» — файлы сделок модуля продаж.
