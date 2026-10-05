@@ -4,6 +4,7 @@ import {
   Avatar,
   Box,
   Chip,
+  Divider,
   FormControl,
   FormControlLabel,
   FormLabel,
@@ -23,6 +24,7 @@ import FileUploadOutlined from "@mui/icons-material/FileUploadOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 
 import SettingsLayout from "./SettingsLayout";
+import { RequisitesSection } from "./organization/RequisitesSection";
 import { AppButton } from "../../components/ui/AppButton";
 import { CanAccess } from "../../components/rbac/CanAccess";
 import { usePermissions, retryAuth } from "../../hooks/usePermissions";
@@ -595,6 +597,14 @@ const OrganizationSettingsPage: React.FC = () => {
                 </AppButton>
               </Box>
             </CanAccess>
+
+            {/* Реквизиты сохраняются отдельно: своя кнопка, свой PATCH только по ним. */}
+            {org && (
+              <>
+                <Divider />
+                <RequisitesSection organization={org} canUpdate={canUpdate} onSaved={setOrg} />
+              </>
+            )}
           </>
         )}
       </Stack>

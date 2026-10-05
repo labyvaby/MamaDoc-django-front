@@ -32,6 +32,7 @@ export const PAGE_PERMISSIONS = {
   attendanceSettings: "attendance.manage",
   cashbox: "finance.view",
   reports: "reports.view",
+  pnl: "pnl.view",
   // «Нагрузка» — своё право, отдельно от финансовых отчётов. Ни в шаблонах,
   // ни бэкфиллом: после выкладки страницу видит только суперадминистратор,
   // пока право не отметят роли в редакторе.

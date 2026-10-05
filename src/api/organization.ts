@@ -13,6 +13,29 @@ export type PatientScope = "shared" | "per_branch";
  *  подтверждения (бэк отвечает 409 со списком конфликтов). */
 export type AppointmentOverlapMode = "forbid" | "warn";
 
+/** Реквизиты организации (шапка формы №2 ОПиУ); "" — не заполнено. */
+export interface OrganizationRequisites {
+  legalName: string;
+  inn: string;
+  okpo: string;
+  activityName: string;
+  activityCode: string;
+  governingBody: string;
+  governingBodyCode: string;
+  ownershipForm: string;
+  ownershipFormCode: string;
+  legalAddress: string;
+  directorName: string;
+  chiefAccountantName: string;
+  chiefAccountantPhone: string;
+}
+
+export const EMPTY_REQUISITES: OrganizationRequisites = {
+  legalName: "", inn: "", okpo: "", activityName: "", activityCode: "", governingBody: "",
+  governingBodyCode: "", ownershipForm: "", ownershipFormCode: "", legalAddress: "",
+  directorName: "", chiefAccountantName: "", chiefAccountantPhone: "",
+};
+
 export interface DjangoOrganization {
   id: number;
   name: string;
@@ -30,6 +53,9 @@ export interface DjangoOrganization {
    *  MamaDoc/backend_ticket_organization_vertical.md. Отсутствующее или
    *  незнакомое значение нормализуется в DEFAULT_VERTICAL. */
   vertical: Vertical;
+  /** Реквизиты для шапки формы №2 ОПиУ; старый бэкенд их не отдаёт —
+   *  нормализуется в пустые строки. */
+  requisites: OrganizationRequisites;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,6 +69,8 @@ export interface UpdateOrganizationPayload {
   appointmentOverlapMode?: AppointmentOverlapMode;
   themeConfig?: Record<string, any> | null;
   vertical?: Vertical;
+  /** Только изменённые поля реквизитов; "" очищает поле. */
+  requisites?: Partial<OrganizationRequisites>;
 }
 
 // ── Branch shape (mirrors BranchPayload rename='camel') ──────────────────────
@@ -103,10 +131,11 @@ function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
  *  отсутствующие поля к дефолтам (null / "forbid" = текущее поведение). */
 type DjangoOrganizationWire = Omit<
   DjangoOrganization,
-  "logoUrl" | "appointmentOverlapMode" | "themeConfig" | "vertical"
+  "logoUrl" | "appointmentOverlapMode" | "themeConfig" | "vertical" | "requisites"
 > &
   Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode" | "themeConfig">> & {
     vertical?: string | null;
+    requisites?: Partial<OrganizationRequisites> | null;
   };
 
 function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization {
@@ -116,6 +145,7 @@ function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization 
     appointmentOverlapMode: raw.appointmentOverlapMode ?? "forbid",
     themeConfig: raw.themeConfig ?? null,
     vertical: isVertical(raw.vertical) ? raw.vertical : DEFAULT_VERTICAL,
+    requisites: { ...EMPTY_REQUISITES, ...(raw.requisites ?? {}) },
   };
 }
 

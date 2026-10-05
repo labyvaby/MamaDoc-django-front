@@ -48,6 +48,8 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   lab: 'lab',
   // Закупки — свой модуль, отдельный от склада (см. rbac/module_mapping.py).
   procurement: 'procurement',
+  // Отчёт «Прибыли и убытки» (server/apps/pnl) — только при включённом модуле.
+  pnl: 'pnl',
 };
 
 /**
