@@ -194,6 +194,11 @@ export function isEmptyPayrollRow(row: PayrollRow): boolean {
     row.bonus,
     row.productPay,
     row.cleaningEarnings,
+    row.dealPay,
+    row.customAccruals,
+    row.customDeductions,
+    row.incomeTax,
+    row.socialFundEmployee,
     row.earnings,
     row.advances,
     row.netSalary,
@@ -220,6 +225,8 @@ function earningsBreakdown(row: PayrollRow, t: TFunc): { label: string; value: s
     [t("row.breakdown.hourly"), row.hourlyPay],
     [t("row.breakdown.cleaning"), row.cleaningEarnings],
     [t("row.breakdown.bonus"), row.bonus],
+    [t("row.breakdown.deals"), row.dealPay],
+    [t("row.breakdown.customAccruals"), row.customAccruals],
   ];
   return parts
     .filter(([, v]) => parseFloat(v || "0") > 0)
@@ -243,6 +250,24 @@ function monthlyOnlyBreakdown(row: PayrollRow, t: TFunc): { label: string; value
     [t("row.breakdown.products"), row.productPay],
     [t("row.breakdown.cleaning"), row.cleaningEarnings],
     [t("row.breakdown.bonus"), row.bonus],
+    [t("row.breakdown.deals"), row.dealPay],
+    [t("row.breakdown.customAccruals"), row.customAccruals],
+  ];
+  return parts
+    .filter(([, v]) => parseFloat(v || "0") > 0)
+    .map(([label, v]) => ({ label, value: v as string }));
+}
+
+/**
+ * Что уходит из начисленного до авансов: налоги (ПН и Соцфонд работника)
+ * и свои удержания организации. Соцфонд работодателя сюда не входит — его
+ * организация платит сверху, на «к выплате» он не влияет.
+ */
+function deductionsBreakdown(row: PayrollRow, t: TFunc): { label: string; value: string }[] {
+  const parts: [string, string | undefined][] = [
+    [t("row.deductions.incomeTax"), row.incomeTax],
+    [t("row.deductions.socialFund"), row.socialFundEmployee],
+    [t("row.deductions.custom"), row.customDeductions],
   ];
   return parts
     .filter(([, v]) => parseFloat(v || "0") > 0)
@@ -300,6 +325,8 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
   const hasHours = parseFloat(row.dayHours || "0") > 0 || parseFloat(row.nightHours || "0") > 0;
   const breakdown = earningsBreakdown(row, t);
   const monthlyOnly = monthlyOnlyBreakdown(row, t);
+  const deductions = deductionsBreakdown(row, t);
+  const employerSocialFund = parseFloat(row.socialFundEmployer || "0");
 
   // payable — есть остаток к выплате; paid — начислено, но авансы всё покрыли; none — начислений нет.
   const netPayable = Math.round(parseFloat(row.netSalary || "0"));
@@ -749,6 +776,16 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       {formatKGS(row.earnings)}
                     </Typography>
                   </Stack>
+                  {deductions.map((p) => (
+                    <Stack key={p.label} direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        {p.label}
+                      </Typography>
+                      <Typography variant="body2" fontWeight={700} color="error.main">
+                        − {formatKGS(p.value)}
+                      </Typography>
+                    </Stack>
+                  ))}
                   <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
                     <Typography variant="caption" color="text.secondary">
                       {t("row.totalAdvances")}
@@ -766,6 +803,16 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                       {formatKGS(row.netSalary)}
                     </Typography>
                   </Stack>
+                  {employerSocialFund > 0 && (
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.65rem" }}>
+                        {t("row.employerSocialFund")}
+                      </Typography>
+                      <Typography variant="caption" fontWeight={700} sx={{ fontSize: "0.7rem" }}>
+                        + {formatKGS(row.socialFundEmployer)}
+                      </Typography>
+                    </Stack>
+                  )}
                   {onPayout && payState === "payable" && (
                     <Button
                       fullWidth
@@ -1232,6 +1279,12 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                         <Typography variant="body2" color="text.secondary">{t("row.accruedMonth")}</Typography>
                         <Typography variant="body2" fontWeight={700}>{formatKGS(row.earnings)}</Typography>
                       </Stack>
+                      {deductions.map((p) => (
+                        <Stack key={p.label} direction="row" justifyContent="space-between">
+                          <Typography variant="body2" color="text.secondary">{p.label}:</Typography>
+                          <Typography variant="body2" fontWeight={700} color="error.main">− {formatKGS(p.value)}</Typography>
+                        </Stack>
+                      ))}
                       <Stack direction="row" justifyContent="space-between">
                         <Typography variant="body2" color="text.secondary">{t("row.advancesPaidColon")}</Typography>
                         <Typography variant="body2" fontWeight={700} color="error.main">− {formatKGS(row.advances)}</Typography>
@@ -1241,6 +1294,12 @@ const SalaryReportRow: React.FC<SalaryReportRowProps> = ({
                         <Typography variant="body2" fontWeight={800}>{t("row.totalPayableColon")}</Typography>
                         <Typography variant="body2" fontWeight={800} color="primary.main">{formatKGS(row.netSalary)}</Typography>
                       </Stack>
+                      {employerSocialFund > 0 && (
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography variant="caption" color="text.secondary">{t("row.employerSocialFund")}:</Typography>
+                          <Typography variant="caption" fontWeight={700}>+ {formatKGS(row.socialFundEmployer)}</Typography>
+                        </Stack>
+                      )}
                     </Stack>
                   </Box>
                   )}

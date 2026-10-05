@@ -75,6 +75,7 @@
       "salarySubtitle": "К выплате за месяц"
     },
     "manageAction": "Управление",
+    "salaryAction": "Зарплата",
     "loadingServices": "Загрузка...",
     "noServices": "Нет привязанных услуг",
     "passportAlt": "Паспорт {{index}}",
