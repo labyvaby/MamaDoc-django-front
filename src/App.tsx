@@ -154,6 +154,8 @@ const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPag
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
+const DoctorProfitPage = lazy(() => import("./pages/doctor-profit"));
+const PnlPage = lazy(() => import("./pages/pnl").then(module => ({ default: module.PnlPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
 const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
 // Касса (POS) — полноэкранный модуль: собственная шапка вместо общей, поэтому
@@ -410,12 +412,22 @@ function App() {
                       {
                         name: "reports",
                         list: "/reports",
-                        meta: { label: "Отчеты" }
+                        meta: { label: "Отчет о доходах" }
                       },
                       {
                         name: "load",
                         list: "/load",
                         meta: { label: "Нагрузка" }
+                      },
+                      {
+                        name: "doctor-profit",
+                        list: "/doctor-profit",
+                        meta: { label: "Прибыль по врачам" }
+                      },
+                      {
+                        name: "pnl",
+                        list: "/pnl",
+                        meta: { label: "Прибыли и убытки" }
                       },
                       {
                         name: "salary-reports",
@@ -939,6 +951,27 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.load}>
                               <Suspense fallback={<LinearProgress />}>
                                 <LoadAnalyticsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="doctor-profit"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.doctorProfit}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DoctorProfitPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        {/* Прибыли и убытки: право pnl.view + модуль pnl (canAccess проверяет оба). */}
+                        <Route
+                          path="pnl"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.pnl}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <PnlPage />
                               </Suspense>
                             </RequirePermission>
                           }
