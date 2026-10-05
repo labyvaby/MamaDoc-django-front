@@ -1,14 +1,14 @@
 import React from "react";
 
 import { type ArtColors, type ArtStatus, artSvgStyle, useArtColors } from "./artColors";
-import { along, curve, pt, round1, type Point } from "./geometry";
+import { along, curve, pt, round1, tail, type Point } from "./geometry";
 
 export type PostureType = "normal" | "stooped" | "round" | "roundConcave" | "flat" | "flatConcave";
 
 export interface PostureStripProps {
   /** Выбранный тип осанки; null — все шесть без выделения. */
   selected: PostureType | null;
-  /** Оценка выбранного типа: цвет рамки и позвонков. */
+  /** Оценка выбранного типа: цвет рамки и позвоночника. */
   status: ArtStatus;
 }
 
@@ -35,142 +35,201 @@ const POSTURES: ReadonlyArray<PostureShape> = [
   { type: "flatConcave", name: "Плоско-вогнутая", h: 2, c: 3, k: 3, l: 13, ky: 96 },
 ];
 
-/** Ширина ячейки одного типа. */
+/** Ширина ячейки одного типа, низ силуэта (уходит в прозрачность), подпись. */
 const W = 120;
+const BOTTOM = 246;
+const LABEL_Y = 264;
+const HEIGHT = 274;
 
-/** Опорные точки столба сверху вниз; лицо смотрит вправо. */
-const colPts = (x0: number, t: PostureShape): Point[] => [
-  [x0 + t.h + 2, 38],
-  [x0 + t.h * 0.55 + t.c, 56],
-  [x0 + t.h * 0.2 - t.k, t.ky],
-  [x0 + t.l, 152],
-  [x0 - 2, 186],
+/** Позвоночник сверху вниз (C1 — S1); лицо смотрит вправо, спина — влево. */
+const spinePts = (x0: number, t: PostureShape): Point[] => [
+  [x0 + t.h + 3, 46],
+  [x0 + t.h * 0.55 + t.c, 64],
+  [x0 + t.h * 0.2 - t.k, t.ky + 8],
+  [x0 + t.l, 162],
+  [x0 - 2, 194],
 ];
 
-/** Позвоночный столб в профиль: канал, 24 позвонка с остистыми отростками, крестец, череп. */
-function column(x0: number, t: PostureShape, tone: string | null, fill: string | null, c: ArtColors): React.ReactNode {
-  const pts = colPts(x0, t);
-  const v = along(pts, 24);
-  const bodyFill = fill ?? c.bone;
-  const bodyStroke = tone ?? c.ink;
-  const vertebrae = v.map((q, i) => {
-    const w = i < 7 ? 6.2 : i < 19 ? 7.4 + (i - 7) * 0.16 : 10.8;
-    const h = i < 7 ? 3.2 : i < 19 ? 4.3 : 5.4;
-    const sp = i < 7 ? 3.4 : i < 19 ? 6.4 : 5.2;
-    const ca = Math.cos(q.a);
-    const sa = Math.sin(q.a);
-    const fx = sa;
-    const fy = -ca;
-    const bx = -sa;
-    const by = ca;
-    const cx = q.p[0] + fx * (w / 2 + 1.3);
-    const cy = q.p[1] + fy * (w / 2 + 1.3);
-    const deg = (q.a * 180) / Math.PI - 90;
-    // остистый отросток: от задней стенки тела назад и чуть вниз
-    const root: Point = [q.p[0] + bx * 1.4, q.p[1] + by * 1.4];
-    const end: Point = [q.p[0] + bx * sp + ca * sp * 0.55, q.p[1] + by * sp + sa * sp * 0.55];
+/** Значение по доле длины позвоночника: кусочно-линейно по опорным [доля, значение]. */
+const lerp = (rows: ReadonlyArray<readonly [number, number]>, u: number): number => {
+  for (let i = 1; i < rows.length; i++) {
+    const [u0, v0] = rows[i - 1];
+    const [u1, v1] = rows[i];
+    if (u <= u1) return v0 + ((v1 - v0) * (u - u0)) / (u1 - u0 || 1);
+  }
+  return rows[rows.length - 1][1];
+};
+
+/** Толщина тела за позвоночником: грудной отдел у самой спины, поясничный — глубже, под мышцами. */
+const BACK: ReadonlyArray<readonly [number, number]> = [
+  [0, 6],
+  [0.12, 7],
+  [0.26, 9],
+  [0.5, 9.5],
+  [0.7, 13.5],
+  [0.88, 13],
+  [1, 10],
+];
+/** Толщина тела перед позвоночником: горло, грудь, талия, живот. */
+const FRONT: ReadonlyArray<readonly [number, number]> = [
+  [0, 10],
+  [0.1, 12],
+  [0.22, 25],
+  [0.36, 30],
+  [0.5, 27],
+  [0.64, 20.5],
+  [0.8, 20],
+  [0.92, 20.5],
+  [1, 21.5],
+];
+
+/** Силуэт ребёнка в профиль вокруг позвоночника: от шеи до бёдер. */
+function bodyPath(spine: ReadonlyArray<Point>, t: PostureShape): string {
+  const samples = along(spine, 36);
+  // при поясничном лордозе живот выдаётся вперёд
+  const belly = Math.max(0, t.l) * 0.45;
+  const back: Point[] = [];
+  const front: Point[] = [];
+  samples.forEach((s, i) => {
+    const u = (i + 0.5) / samples.length;
+    const nx = -Math.sin(s.a);
+    const ny = Math.cos(s.a);
+    const b = lerp(BACK, u);
+    const f = lerp(FRONT, u) + (u > 0.68 && u < 0.95 ? belly * Math.sin(((u - 0.68) / 0.27) * Math.PI) : 0);
+    back.push([s.p[0] + nx * b, s.p[1] + ny * b]);
+    front.push([s.p[0] - nx * f, s.p[1] - ny * f]);
+  });
+  // шея уходит под голову, чтобы срез не торчал из-под подбородка
+  front.unshift([spine[0][0] + 10, 34]);
+  back.unshift([spine[0][0] - 6, 34]);
+  const s1 = spine[spine.length - 1];
+  // ягодица и задняя поверхность бедра; спереди — пах и бедро
+  back.push([s1[0] - 13, 206], [s1[0] - 13.5, 216], [s1[0] - 10, 228], [s1[0] - 8.5, BOTTOM]);
+  front.push([s1[0] + 23, 206], [s1[0] + 21, 224], [s1[0] + 19.5, BOTTOM]);
+  return `${curve(front)} L${pt(back[back.length - 1])} ${tail([...back].reverse())} Z`;
+}
+
+/** Голова в профиль: центр, ухо (от него отвес). */
+const headOf = (spine: ReadonlyArray<Point>): { cx: number; cy: number; ear: Point } => {
+  const cx = spine[0][0] + 8;
+  const cy = 28;
+  return { cx, cy, ear: [cx - 3, cy + 3] };
+};
+
+/** Силуэт: подложка, заливка тканей, мягкая тень по краю — объём. */
+const Body: React.FC<{ d: string; c: ArtColors; clip: string; blur: string }> = ({ d, c, clip, blur }) => (
+  <>
+    <path d={d} fill={c.surface} />
+    <path d={d} fill={c.tissue} stroke={c.tissueLine} strokeWidth={1.1} strokeLinejoin="round" />
+    <g clipPath={`url(#${clip})`}>
+      <path d={d} fill="none" stroke={c.shade} strokeWidth={9} filter={`url(#${blur})`} />
+    </g>
+  </>
+);
+
+/** Тела позвонков вдоль изгиба: шейные мельче, поясничные крупнее. */
+function vertebrae(spine: ReadonlyArray<Point>, color: string): React.ReactNode {
+  return along(spine, 24).map((q, i) => {
+    const across = i < 7 ? 4.2 : i < 19 ? 5 + (i - 7) * 0.08 : 6.4;
+    const len = i < 7 ? 3.2 : i < 19 ? 4.3 : 5;
+    const deg = round1((q.a * 180) / Math.PI);
     return (
-      <React.Fragment key={i}>
-        <rect
-          x={round1(cx - w / 2)}
-          y={round1(cy - h / 2)}
-          width={round1(w)}
-          height={round1(h)}
-          rx={1.4}
-          transform={`rotate(${round1(deg)} ${round1(cx)} ${round1(cy)})`}
-          fill={bodyFill}
-          stroke={bodyStroke}
-          strokeWidth={0.9}
-        />
-        <path
-          d={`M${pt(root)} L${pt(end)}`}
-          fill="none"
-          stroke={tone ?? c.ink}
-          strokeWidth={1.5}
-          strokeLinecap="round"
-        />
-      </React.Fragment>
+      <rect
+        key={i}
+        x={round1(q.p[0] - len / 2)}
+        y={round1(q.p[1] - across / 2)}
+        width={len}
+        height={round1(across)}
+        rx={1.3}
+        transform={`rotate(${deg} ${round1(q.p[0])} ${round1(q.p[1])})`}
+        fill={color}
+      />
     );
   });
+}
 
-  // крестец и копчик продолжают последний позвонок
-  const last = v[v.length - 1];
-  const ca = Math.cos(last.a);
-  const sa = Math.sin(last.a);
-  const fx = sa;
-  const fy = -ca;
-  const bx = -sa;
-  const by = ca;
-  const base: Point = [last.p[0] + ca * 5, last.p[1] + sa * 5];
-  const a1: Point = [base[0] + fx * 12, base[1] + fy * 12];
-  const a2: Point = [base[0] + bx * 2, base[1] + by * 2];
-  const tip: Point = [base[0] + ca * 23 + bx * 6, base[1] + sa * 23 + by * 6];
-  const toTip: Point = [tip[0] + bx * 2 - ca * 4, tip[1] + by * 2 - sa * 4];
-  const fromTip: Point = [a1[0] + ca * 13, a1[1] + sa * 13];
-  const sacrum = `M${pt(a1)} L${pt(a2)} Q${pt(toTip)} ${pt(tip)} Q${pt(fromTip)} ${pt(a1)} Z`;
-
-  const hx = x0 + t.h + 13;
-  const hy = 20;
+/** Голова: круг, нос, ухо. */
+function head(cx: number, cy: number, c: ArtColors): React.ReactNode {
+  const d = `M${round1(cx)} ${round1(cy - 15)} C${round1(cx + 9)} ${round1(cy - 15)} ${round1(cx + 15)} ${round1(cy - 8)} ${round1(
+    cx + 15,
+  )} ${round1(cy - 1)} L${round1(cx + 17.2)} ${round1(cy + 3)} L${round1(cx + 14.6)} ${round1(cy + 4.4)} C${round1(cx + 13)} ${round1(
+    cy + 11,
+  )} ${round1(cx + 7)} ${round1(cy + 15)} ${round1(cx)} ${round1(cy + 15)} C${round1(cx - 9)} ${round1(cy + 15)} ${round1(cx - 15)} ${round1(
+    cy + 8,
+  )} ${round1(cx - 15)} ${round1(cy)} C${round1(cx - 15)} ${round1(cy - 8)} ${round1(cx - 9)} ${round1(cy - 15)} ${round1(cx)} ${round1(cy - 15)} Z`;
   return (
     <>
-      <path d={curve(pts)} fill="none" stroke={tone ?? c.inkSoft} strokeWidth={1} />
-      {vertebrae}
-      <path d={sacrum} fill={bodyFill} stroke={bodyStroke} strokeWidth={0.9} />
-      <ellipse
-        cx={round1(hx)}
-        cy={hy}
-        rx={15.5}
-        ry={12.5}
-        transform={`rotate(-12 ${round1(hx)} ${hy})`}
-        fill={c.bone}
-        stroke={c.ink}
-        strokeWidth={1}
-      />
-      <path d={`M${round1(hx + 9)} ${hy + 9} q4 6 -2 9`} fill="none" stroke={c.ink} strokeWidth={1.1} />
-      <circle cx={round1(hx - 6)} cy={hy + 3} r={1.7} fill={c.ink} />
+      <path d={d} fill={c.surface} />
+      <path d={d} fill={c.tissue} stroke={c.tissueLine} strokeWidth={1.1} strokeLinejoin="round" />
+      <ellipse cx={round1(cx - 3)} cy={round1(cy + 3)} rx={2.6} ry={3.6} fill="none" stroke={c.tissueLine} strokeWidth={1} />
     </>
   );
 }
 
 /**
- * Шесть типов осанки сбоку. Выбранный — в рамке цвета оценки и с цветными
- * позвонками; у всех, кроме нормы, — пунктир нормальных изгибов для сравнения;
- * от уха — отвес.
+ * Шесть типов осанки сбоку: силуэт ребёнка, внутри — позвоночник. Выбранный
+ * тип — в рамке цвета оценки, позвоночник того же цвета; у всех, кроме нормы,
+ * — пунктир нормальных изгибов для сравнения; от уха — отвес.
  */
 export const PostureStrip: React.FC<PostureStripProps> = ({ selected, status }) => {
   const c = useArtColors();
+  const id = React.useId().replace(/:/g, "");
   const tone = c.status(status);
   const fill = c.statusFill(status);
   const chosen = POSTURES.find((t) => t.type === selected);
   const label = chosen ? `Шесть типов осанки, выбрана ${chosen.name.toLowerCase()}` : "Шесть типов осанки";
-  const ghost = (x0: number) => curve(colPts(x0, POSTURES[0]));
 
   return (
-    <svg viewBox={`0 0 ${W * 6} 238`} role="img" aria-label={label} style={artSvgStyle}>
+    <svg viewBox={`0 0 ${W * 6} ${HEIGHT}`} role="img" aria-label={label} style={artSvgStyle}>
+      <defs>
+        <linearGradient id={`${id}g`} x1={0} y1={BOTTOM - 26} x2={0} y2={BOTTOM} gradientUnits="userSpaceOnUse">
+          <stop offset={0} stopColor="#fff" stopOpacity={1} />
+          <stop offset={1} stopColor="#fff" stopOpacity={0} />
+        </linearGradient>
+        <mask id={`${id}m`} maskUnits="userSpaceOnUse" x={0} y={0} width={W * 6} height={HEIGHT}>
+          <rect x={0} y={0} width={W * 6} height={HEIGHT} fill={`url(#${id}g)`} />
+        </mask>
+        <filter id={`${id}b`} x="-30%" y="-10%" width="160%" height="120%">
+          <feGaussianBlur stdDeviation={2.4} />
+        </filter>
+        {POSTURES.map((t, i) => (
+          <clipPath key={t.type} id={`${id}c${i}`}>
+            <path d={bodyPath(spinePts(i * W + 52, t), t)} />
+          </clipPath>
+        ))}
+      </defs>
       {POSTURES.map((t, i) => {
         const x0 = i * W + 52;
         const on = t.type === selected;
-        const ear: Point = [x0 + t.h + 13 - 6, 23];
+        const spine = spinePts(x0, t);
+        const { cx, cy, ear } = headOf(spine);
+        const s1 = spine[spine.length - 1];
+        const sacrum = `M${round1(s1[0] - 3.2)} ${s1[1] - 2} L${round1(s1[0] + 3.4)} ${s1[1] + 2} L${round1(s1[0] - 7.5)} ${s1[1] + 20} Z`;
+        const spineTone = on ? tone : c.inkSoft;
         return (
           <g key={t.type}>
-            {on && (
-              <rect x={i * W + 4} y={2} width={W - 8} height={232} rx={10} fill={fill} stroke={tone} strokeWidth={1} />
-            )}
-            {i > 0 && <path d={ghost(x0)} fill="none" stroke={c.inkSoft} strokeWidth={1.1} strokeDasharray="3.5 3" />}
+            {on && <rect x={i * W + 4} y={2} width={W - 8} height={HEIGHT - 4} rx={10} fill={fill} stroke={tone} strokeWidth={1} />}
+            <g mask={`url(#${id}m)`}>
+              <Body d={bodyPath(spine, t)} c={c} clip={`${id}c${i}`} blur={`${id}b`} />
+              {i > 0 && <path d={curve(spinePts(x0, POSTURES[0]))} fill="none" stroke={c.inkSoft} strokeWidth={1.1} strokeDasharray="3.5 3" />}
+              {vertebrae(spine, spineTone)}
+              <path d={sacrum} fill={spineTone} strokeLinejoin="round" />
+            </g>
+            {head(cx, cy, c)}
             <line
               x1={round1(ear[0])}
               y1={round1(ear[1])}
               x2={round1(ear[0])}
-              y2={204}
-              fill="none"
+              y2={BOTTOM - 6}
+              mask={`url(#${id}m)`}
               stroke={c.accent}
               strokeWidth={1}
               strokeDasharray="2 3"
             />
-            {column(x0, t, on ? tone : null, on ? fill : null, c)}
+            <circle cx={round1(ear[0])} cy={round1(ear[1])} r={1.6} fill={c.accent} />
             <text
               x={i * W + W / 2}
-              y={224}
+              y={LABEL_Y}
               textAnchor="middle"
               fill={on ? tone : c.ink}
               fontSize={on ? 12 : 11.5}
