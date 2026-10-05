@@ -36,7 +36,7 @@ import {
   TILE_RADIUS,
   nearestTone,
 } from "./theme";
-import { useT } from "../../i18n/VerticalProvider";
+import { useT } from "../../i18n/context";
 
 /** Сколько окон помещается в карточку до счётчика «+N». */
 const SLOTS_PREVIEW = 3;
@@ -494,7 +494,7 @@ const DoctorsPage: React.FC = () => {
   const { t } = useT("publicBooking");
   const { orgSlug, go } = useBookingNav();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { specialties } = useSpecialties();
+  const { specialties, loading: specialtiesLoading } = useSpecialties();
   /** Телефон клиники — на него уводим врачей без свободных окон. */
   const { branches } = useBookingOrg();
   const clinicPhone = primaryPhone(branches);
@@ -514,6 +514,7 @@ const DoctorsPage: React.FC = () => {
   const [doctors, setDoctors] = React.useState<ProfessionalPreview[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [resolvedScope, setResolvedScope] = React.useState<string | null>(null);
 
   // Специализации из адреса может не оказаться в справочнике (старая ссылка) —
   // тогда снимаем фильтр, иначе список пуст без видимой причины.
@@ -528,11 +529,19 @@ const DoctorsPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [search]);
 
+  const specialistIdsKey = activeSpecialty
+    ? specialties.find((s) => s.key === activeSpecialty)?.ids.join(",") ?? ""
+    : "";
+  const specialtyFilterReady = !activeSpecialty || !specialtiesLoading;
+  const queryScope = JSON.stringify([orgSlug, specialistIdsKey, debouncedSearch]);
+  const listLoading = loading || !specialtyFilterReady || resolvedScope !== queryScope;
+
   React.useEffect(() => {
-    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    const specialistIds = specialties.find((s) => s.key === activeSpecialty)?.ids;
+    if (!specialtyFilterReady) return;
+    const controller = new AbortController();
+    const specialistIds = specialistIdsKey ? specialistIdsKey.split(",").map(Number) : undefined;
     getProfessionals(
       {
         organizationSlug: orgSlug,
@@ -545,16 +554,20 @@ const DoctorsPage: React.FC = () => {
       // Порядок задаёт бэк: сквозной по всей выборке — по числу свободных окон
       // сегодня, затем по дате ближайшего окна. Пересортировывать страницу на
       // клиенте нельзя: она только часть выборки.
-      .then((res) => setDoctors(res.items))
+      .then((res) => {
+        if (controller.signal.aborted) return;
+        setDoctors(res.items);
+        setResolvedScope(queryScope);
+      })
       .catch((e) => {
-        if (isAbortError(e)) return;
+        if (controller.signal.aborted || isAbortError(e)) return;
+        setDoctors([]);
+        setResolvedScope(queryScope);
         setError(e instanceof Error ? e.message : "Ошибка загрузки");
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-    // specialties в зависимостях: id специализации известны только после
-    // загрузки справочника, и запрос должен уйти с актуальными.
-  }, [activeSpecialty, debouncedSearch, specialties, orgSlug]);
+  }, [specialtyFilterReady, specialistIdsKey, debouncedSearch, orgSlug, queryScope]);
 
   const hasFilters = Boolean(activeSpecialty || debouncedSearch);
   const cardsGrid = {
@@ -609,13 +622,13 @@ const DoctorsPage: React.FC = () => {
 
         {/* Врачи */}
         <Box>
-          {error && (
+          {error && resolvedScope === queryScope && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
             </Alert>
           )}
 
-          {loading ? (
+          {listLoading ? (
             <Box sx={cardsGrid}>
               {Array.from({ length: 8 }).map((_, i) => (
                 <CardSkeleton key={i} />

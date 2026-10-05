@@ -16,7 +16,7 @@ import StarRounded from "@mui/icons-material/StarRounded";
 import type { ProfessionalReview } from "../../../api/publicBooking";
 import { BOOKING_RADIUS, DIVIDER, MUTED, RATING_COLOR, neutralTone } from "../theme";
 import { formatReviewsCount, monogram } from "../format";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 
 /** Когда оставлен отзыв: «Вчера 12:36», «3 августа 12:36». */
 function formatReviewDate(iso: string): string {

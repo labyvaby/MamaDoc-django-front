@@ -16,7 +16,7 @@ import {
   serviceTone,
 } from "../theme";
 import { formatDuration, formatPrice, formatServicesCount } from "../format";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 
 /** Услуга в выборе: и из карточки врача, и из available-services одна форма. */
 export interface PickableService {

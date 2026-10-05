@@ -23,7 +23,7 @@ import {
   type PublicBookingDetail,
 } from "../../../api/publicBooking";
 import { PaymentBlock } from "../BookingByCodePage";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 import { capitalizeFullName } from "../../../utility/name";
 import {
   BOOKING_PRIMARY,

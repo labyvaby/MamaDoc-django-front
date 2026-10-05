@@ -13,7 +13,7 @@ dayjs.tz.setDefault("Asia/Bishkek");
 // (отель), показывал «We» и «September».
 dayjs.locale("ru");
 
-import App from "./App";
+import { ApplicationRouter } from "./ApplicationRouter";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { initInstallPrompt, registerServiceWorker } from "./pwa";
 import { installStaleBuildRecovery } from "./pwa/staleBuildRecovery";
@@ -44,7 +44,7 @@ const root = createRoot(container);
 root.render(
   <ErrorBoundary>
     <BrowserRouter>
-      <App />
+      <ApplicationRouter />
     </BrowserRouter>
   </ErrorBoundary>
 );

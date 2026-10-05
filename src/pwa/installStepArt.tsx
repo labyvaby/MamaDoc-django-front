@@ -1,7 +1,7 @@
 import React from "react";
 import { useTheme, alpha } from "@mui/material/styles";
 
-import { subtleBg } from "../theme";
+import { subtleBg } from "../theme/buildAppTheme";
 
 /**
  * Картинки к шагам инструкции по установке приложения.

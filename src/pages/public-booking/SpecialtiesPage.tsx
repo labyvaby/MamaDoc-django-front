@@ -7,7 +7,7 @@ import { TILE_RADIUS } from "./theme";
 import { specialtyIconUrl } from "./specialtyIcons";
 import { useSpecialties, type SpecialtyGroup } from "./useSpecialties";
 import { useBookingNav } from "./orgSlug";
-import { useT } from "../../i18n/VerticalProvider";
+import { useT } from "../../i18n/context";
 
 /** Рамка и фон плитки специализации — значения эталона. */
 const TILE_BORDER = "#E6EAF0";

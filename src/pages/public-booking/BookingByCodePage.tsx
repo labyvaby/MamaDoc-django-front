@@ -25,7 +25,7 @@ import {
   type PublicBookingPayment,
 } from "../../api/publicBooking";
 import { ApiError, isAbortError } from "../../api/client";
-import { useT } from "../../i18n/VerticalProvider";
+import { useT } from "../../i18n/context";
 import { PublicBookingShell, PAGE_GUTTER } from "./shell";
 import { bookingCodeUrl, formatPrice } from "./format";
 import { buildBookingIcs, downloadIcs } from "./ics";
