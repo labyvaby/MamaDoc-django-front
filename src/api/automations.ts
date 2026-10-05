@@ -54,6 +54,13 @@ export interface AutomationCatalogEvent {
    * показываем сам код (бэк может добавить переменную раньше подписи).
    */
   variableLabels: Record<string, string>;
+  /** Правило заводится расписанием (`schedule` обязателен), а не событием. */
+  scheduled?: boolean;
+  /**
+   * Срабатывание пишет каждому сотруднику своё: получатель — переменная
+   * события, условия есть, номер в правило не вписывается.
+   */
+  perEmployee?: boolean;
 }
 
 /** Подпись переменной для интерфейса; фолбэк — сам код. */
@@ -116,6 +123,11 @@ export interface AutomationActionConfig {
    * расписанию: события там нет, брать номер из payload неоткуда.
    */
   recipientPhone?: string;
+  /**
+   * Пробный номер правила «каждому сотруднику»: пока заполнен, все
+   * сообщения правила уходят на него, а не сотрудникам.
+   */
+  testRecipientPhone?: string;
   /** Заголовок push-уведомления; у SMS и WhatsApp заголовка нет. */
   title?: string;
   body?: string;
@@ -224,6 +236,11 @@ export interface AutomationRun {
   jobs: AutomationJob[];
   createdAt: string;
   completedAt: string | null;
+  /**
+   * Тексты, получатели и данные события вырезаны бэком: у смотрящего нет
+   * права, которого требует событие правила (зарплата — `payroll.view`).
+   */
+  hidden?: boolean;
 }
 
 export interface AutomationTestInput {
@@ -386,9 +403,33 @@ export const PROFICHAT_PUSH_CHANNEL = "profichat_push";
  */
 export const SCHEDULE_EVENT_CODE = "schedule.recurring";
 
-/** Правило запускается расписанием, а не событием домена. */
-export function isScheduledEvent(eventCode: string): boolean {
-  return eventCode === SCHEDULE_EVENT_CODE;
+/**
+ * «Зарплата за вчера — каждому сотруднику»: расписание, которое пишет каждому
+ * сотруднику с начислениями за вчера его собственные цифры.
+ */
+export const PAYROLL_DAILY_EVENT_CODE = "payroll.daily_earnings";
+
+/**
+ * Правило запускается расписанием, а не событием домена.
+ *
+ * Источник правды — флаг `scheduled` из каталога; по коду — запасной путь,
+ * когда события в каталоге нет (нет права) или каталог ещё не загружен.
+ */
+export function isScheduledEvent(
+  eventCode: string,
+  event?: AutomationCatalogEvent,
+): boolean {
+  if (event?.code === eventCode && event.scheduled != null) return event.scheduled;
+  return eventCode === SCHEDULE_EVENT_CODE || eventCode === PAYROLL_DAILY_EVENT_CODE;
+}
+
+/** Срабатывание расписания пишет каждому сотруднику своё сообщение. */
+export function isPerEmployeeEvent(
+  eventCode: string,
+  event?: AutomationCatalogEvent,
+): boolean {
+  if (event?.code === eventCode && event.perEmployee != null) return event.perEmployee;
+  return eventCode === PAYROLL_DAILY_EVENT_CODE;
 }
 
 /** Верхняя граница `intervalDays` — ограничение бэка. */

@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PAYROLL_DAILY_EVENT_CODE,
   PROFICHAT_PUSH_CHANNEL,
   SCHEDULE_EVENT_CODE,
+  isPerEmployeeEvent,
+  isScheduledEvent,
   type Automation,
   type AutomationCatalogEvent,
 } from "../../../api/automations";
 import {
   automationToForm,
+  defaultMessage,
+  defaultRecipientField,
   emptySchedule,
   makeGroup,
   makeLeaf,
@@ -109,6 +114,7 @@ function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
         channel: "sms",
         recipientField: "client_phone",
         recipientPhone: "",
+        testRecipientPhone: "",
         title: "",
         body: "Здравствуйте, {{client_name}}!",
       },
@@ -451,6 +457,7 @@ describe("правило по расписанию", () => {
           channel: "sms",
           recipientField: "client_phone",
           recipientPhone: "+996700000001",
+          testRecipientPhone: "",
           title: "",
           body: "Планёрка.",
         },
@@ -503,6 +510,7 @@ describe("правило по расписанию", () => {
             channel: "sms",
             recipientField: "client_phone",
             recipientPhone: "",
+            testRecipientPhone: "",
             title: "",
             body: "Планёрка.",
           },
@@ -526,5 +534,110 @@ describe("правило по расписанию", () => {
     );
 
     expect(errors.schedule).toBe("interval");
+  });
+});
+
+describe("зарплата за вчера — каждому сотруднику", () => {
+  const PAYROLL_EVENT: AutomationCatalogEvent = {
+    code: PAYROLL_DAILY_EVENT_CODE,
+    label: "Зарплата за вчера — каждому сотруднику",
+    module: "payroll",
+    fields: [
+      {
+        code: "clinical_role",
+        label: "Клиническая роль",
+        fieldType: "select",
+        operators: ["eq", "neq", "in", "not_in", "exists"],
+        options: [{ value: "doctor", label: "Врач" }],
+      },
+    ],
+    variables: ["employee_name", "employee_phone", "work_date", "earned_total"],
+    variableLabels: { employee_phone: "Телефон сотрудника" },
+    scheduled: true,
+    perEmployee: true,
+  };
+
+  const payroll = (overrides: Partial<AutomationForm> = {}) =>
+    baseForm({
+      eventCode: PAYROLL_DAILY_EVENT_CODE,
+      actions: [
+        {
+          key: "a1",
+          actionType: "send_message",
+          delayMinutes: "0",
+          channel: PROFICHAT_PUSH_CHANNEL,
+          recipientField: "employee_phone",
+          recipientPhone: "",
+          testRecipientPhone: "",
+          title: "Начисления за {{work_date}}",
+          body: "{{employee_name}}: {{earned_total}} сом",
+        },
+      ],
+      ...overrides,
+    });
+
+  it("по флагам каталога — расписание с рассылкой каждому", () => {
+    expect(isScheduledEvent(PAYROLL_DAILY_EVENT_CODE, PAYROLL_EVENT)).toBe(true);
+    expect(isPerEmployeeEvent(PAYROLL_DAILY_EVENT_CODE, PAYROLL_EVENT)).toBe(true);
+    expect(isPerEmployeeEvent(SCHEDULE_EVENT_CODE)).toBe(false);
+    // Без каталога (нет права) правило всё равно узнаётся по коду.
+    expect(isScheduledEvent(PAYROLL_DAILY_EVENT_CODE)).toBe(true);
+    expect(
+      isScheduledEvent("appointment.created", { ...APPOINTMENT_EVENT, scheduled: false }),
+    ).toBe(false);
+  });
+
+  it("отправляет расписание, условия и переменную получателя", () => {
+    const leaf = makeLeaf("clinical_role", "eq");
+    leaf.value = "doctor";
+
+    const input = toSaveInput(payroll({ conditions: leaf }));
+
+    expect(input.schedule).toEqual({ kind: "weekly", time: "10:00", weekdays: [0] });
+    expect(input.conditions).toEqual({
+      field: "clinical_role",
+      operator: "eq",
+      value: "doctor",
+    });
+    expect(input.actions[0].config.recipientField).toBe("employee_phone");
+    expect(input.actions[0].config.recipientPhone).toBeUndefined();
+    expect(input.actions[0].config).not.toHaveProperty("testRecipientPhone");
+  });
+
+  it("пробный номер уходит, только когда заполнен", () => {
+    const form = payroll();
+    form.actions[0].testRecipientPhone = " +996700970070 ";
+
+    expect(toSaveInput(form).actions[0].config.testRecipientPhone).toBe(
+      "+996700970070",
+    );
+  });
+
+  it("не требует номера и проверяет условия", () => {
+    const leaf = makeLeaf("clinical_role", "eq");
+
+    const errors = validateForm(payroll({ conditions: leaf }), PAYROLL_EVENT, LABELS);
+
+    expect(errors.actionFields.a1?.recipientPhone).toBeUndefined();
+    expect(errors.conditions[leaf.key]).toBe("value");
+  });
+
+  it("получатель по умолчанию — телефон сотрудника", () => {
+    expect(defaultRecipientField(PAYROLL_EVENT)).toBe("employee_phone");
+    expect(defaultRecipientField(APPOINTMENT_EVENT)).toBe("client_phone");
+  });
+
+  it("подставляет образец текста и пуш, если он доступен", () => {
+    const withPush = defaultMessage(PAYROLL_DAILY_EVENT_CODE, ["sms", PROFICHAT_PUSH_CHANNEL]);
+    expect(withPush?.channel).toBe(PROFICHAT_PUSH_CHANNEL);
+    expect(withPush?.title).toBe("Начисления за {{work_date}}");
+    expect(withPush?.body).toContain("{{earned_total}}");
+
+    expect(defaultMessage(PAYROLL_DAILY_EVENT_CODE, ["sms"])?.channel).toBeUndefined();
+    expect(defaultMessage("appointment.created", ["sms"])).toBeNull();
+  });
+
+  it("получатель — поле прогона, как у события", () => {
+    expect(relevantPayloadFields(payroll()).get("employee_phone")).toContain("recipient");
   });
 });
