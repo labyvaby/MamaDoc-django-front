@@ -95,7 +95,8 @@ function bodyPath(spine: ReadonlyArray<Point>, t: PostureShape): string {
     const nx = -Math.sin(s.a);
     const ny = Math.cos(s.a);
     const b = lerp(BACK, u);
-    const f = lerp(FRONT, u) + (u > 0.68 && u < 0.95 ? belly * Math.sin(((u - 0.68) / 0.27) * Math.PI) : 0);
+    // живот — плавный бугор до самого паха, без ступеньки внизу
+    const f = lerp(FRONT, u) + belly * Math.sin(Math.min(1, Math.max(0, (u - 0.62) / 0.46)) * Math.PI);
     back.push([s.p[0] + nx * b, s.p[1] + ny * b]);
     front.push([s.p[0] - nx * f, s.p[1] - ny * f]);
   });
@@ -105,7 +106,7 @@ function bodyPath(spine: ReadonlyArray<Point>, t: PostureShape): string {
   const s1 = spine[spine.length - 1];
   // ягодица и задняя поверхность бедра; спереди — пах и бедро
   back.push([s1[0] - 13, 206], [s1[0] - 13.5, 216], [s1[0] - 10, 228], [s1[0] - 8.5, BOTTOM]);
-  front.push([s1[0] + 23, 206], [s1[0] + 21, 224], [s1[0] + 19.5, BOTTOM]);
+  front.push([s1[0] + 22 + belly * 0.15, 206], [s1[0] + 21, 224], [s1[0] + 19.5, BOTTOM]);
   return `${curve(front)} L${pt(back[back.length - 1])} ${tail([...back].reverse())} Z`;
 }
 
