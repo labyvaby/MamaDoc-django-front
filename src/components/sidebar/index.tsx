@@ -1067,7 +1067,7 @@ const SidebarSecondary: React.FC = () => {
 
         {/* Отчеты */}
         {show("management") && can_.reports && (
-          <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчеты" collapsed={siderCollapsed} />
+          <SidebarMenuItem to="/reports" icon={<AssessmentOutlined />} label="Отчет о доходах" collapsed={siderCollapsed} />
         )}
 
         {/* Отзывы (Django-mode only) */}

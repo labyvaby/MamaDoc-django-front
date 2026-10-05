@@ -48,7 +48,7 @@ export const ServicesWidget: React.FC<WidgetProps> = ({ range }) => {
       title="Что продаётся"
       subheader={`${range.label} · по выручке`}
       href="/reports"
-      linkLabel="Отчёты"
+      linkLabel="Отчет о доходах"
     >
       {error ? (
         <WidgetError error={error} />

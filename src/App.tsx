@@ -408,7 +408,7 @@ function App() {
                       {
                         name: "reports",
                         list: "/reports",
-                        meta: { label: "Отчеты" }
+                        meta: { label: "Отчет о доходах" }
                       },
                       {
                         name: "load",

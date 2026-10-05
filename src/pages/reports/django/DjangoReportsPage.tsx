@@ -55,7 +55,7 @@ const num = (value: string | undefined): number => Number(value ?? 0);
 
 const DjangoReportsPage: React.FC = () => {
   const { t } = useT("reports");
-  usePageTitle("Отчеты");
+  usePageTitle("Отчет о доходах");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("lg"));
 
@@ -276,7 +276,7 @@ const DjangoReportsPage: React.FC = () => {
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <PageHeader
-        title="Отчеты"
+        title="Отчет о доходах"
         showTitle={false}
         showSearch={false}
         dateNavigation={
