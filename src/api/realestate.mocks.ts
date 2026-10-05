@@ -607,6 +607,26 @@ export function confirmPrepayment(unitId: string): UnitDetails {
   return unitDetails(unit);
 }
 
+export function extendReservation(unitId: string, hours: number): UnitDetails {
+  const unit = findUnitOrThrow(unitId);
+  const reservation = stateOf(unit).reservation;
+  if (unit.status !== "reserved" || !reservation) throw conflict("Бронь уже снята");
+  const base = unit.hold?.endsAt ? new Date(unit.hold.endsAt).getTime() : Date.now();
+  const endsAt = new Date(Math.max(base, Date.now()) + hours * 3_600_000);
+  unit.hold = { endsAt: endsAt.toISOString(), awaitingPayment: unit.hold?.awaitingPayment ?? false };
+  reservation.termHours += hours;
+  reservation.expiresAt = endsAt.toLocaleString("ru-RU");
+  addEvent(unit, {
+    type: "reserve",
+    title: "Бронь продлена",
+    actor: projectOf(unit).manager,
+    buyer: reservation.buyer,
+    stage: `+${hours} ч`,
+    details: `Бронь продлена до ${reservation.expiresAt}.`,
+  });
+  return unitDetails(unit);
+}
+
 function addMeeting(unit: Unit, input: { buyer: string; meetingAt: string; note?: string }) {
   const date = new Date(input.meetingAt);
   const when = Number.isNaN(date.getTime()) ? input.meetingAt : date.toLocaleString("ru-RU");

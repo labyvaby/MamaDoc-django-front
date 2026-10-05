@@ -3,6 +3,7 @@ import { Box, Button, Dialog, DialogContent, IconButton, Skeleton, Typography, u
 import { useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
+import MoreTimeOutlined from "@mui/icons-material/MoreTimeOutlined";
 import SendOutlined from "@mui/icons-material/SendOutlined";
 import { useQuery } from "@tanstack/react-query";
 
@@ -16,6 +17,7 @@ import { formatMoney } from "../../model/units";
 import { useRealEstateToast } from "../toast";
 import {
   ContractScreen,
+  ExtendScreen,
   MeetingScreen,
   OfferScreen,
   OperationScreen,
@@ -135,6 +137,7 @@ function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare, startScreen
   const flows: Record<Exclude<Screen, "unit">, () => React.ReactElement> = {
     reserve: () => <ReserveScreen {...flow} />,
     payment: () => <PaymentScreen {...flow} />,
+    extend: () => <ExtendScreen {...flow} />,
     success: () => <SuccessScreen {...flow} />,
     proposal: () => <ProposalScreen {...flow} />,
     meeting: () => <MeetingScreen {...flow} />,
@@ -258,6 +261,11 @@ function ApartmentDetail({
               <Button variant="outlined" startIcon={<EventOutlined />} onClick={() => go("meeting")}>
                 {t("actions.meeting")}
               </Button>
+              {unit.status === "reserved" && reservation && (
+                <Button variant="outlined" startIcon={<MoreTimeOutlined />} onClick={() => go("extend")}>
+                  {t("actions.extend")}
+                </Button>
+              )}
             </>
           )}
           {unit.status === "free" ? (

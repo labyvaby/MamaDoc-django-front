@@ -311,6 +311,11 @@ export interface ContractInput {
   payment: ContractPayment;
   /** SMS-подписание на бэке не включено — код проверяют только моки. */
   signCode: string;
+  /**
+   * Квартира забронирована на другого покупателя: бэк отвечает 409
+   * `INVALID_STATE`, после подтверждения повторяем с этим флагом.
+   */
+  allowOtherBuyer?: boolean;
 }
 
 // ─── Ответ бэка (/api/v2/realty) ───────────────────────────────────────────
@@ -729,6 +734,17 @@ export async function confirmUnitPrepayment(unit: UnitDetails, scope?: RealtySco
   if (!unit.reservation) throw new Error(tt("realestate:errors.noReservation"));
   await realty<unknown>(scope, `${REALTY_API}/reservations/${unit.reservation.id}/confirm-payment/`, {
     method: "POST",
+  });
+  return getUnit(unit.id, scope);
+}
+
+/** Продление брони на `hours` часов (бэк принимает 1–720). Продлевается бронь, а не квартира. */
+export async function extendUnitReservation(unit: UnitDetails, hours: ReservationTerm, scope?: RealtyScope): Promise<UnitDetails> {
+  if (REALESTATE_USE_MOCKS) return mockDelay(mock.extendReservation(unit.id, hours));
+  if (!unit.reservation) throw new Error(tt("realestate:errors.noReservation"));
+  await realty<unknown>(scope, `${REALTY_API}/reservations/${unit.reservation.id}/extend/`, {
+    method: "POST",
+    body: { hours },
   });
   return getUnit(unit.id, scope);
 }

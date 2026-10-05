@@ -286,7 +286,8 @@
     "reserve": "Забронировать квартиру",
     "markPaid": "Отметить оплату",
     "contract": "Оформить договор",
-    "openContract": "Открыть договор"
+    "openContract": "Открыть договор",
+    "extend": "Продлить бронь"
   },
   "card": {
     "loadError": "Не удалось загрузить квартиру",
@@ -399,6 +400,7 @@
   },
   "flow": {
     "opFailed": "Не удалось выполнить операцию",
+    "unitTakenHint": "Шахматка обновлена — выберите другую квартиру",
     "cancel": "Отмена",
     "back": "Назад",
     "backToUnit": "Назад к квартире",
@@ -554,7 +556,19 @@
       "signedIntro": "ЖК «{{name}}» · квартира №{{number}}",
       "signedAt": "Дата оформления",
       "wrongCode": "Неверный код",
-      "wrongCodeHint": "в моках код подписи — 4826"
+      "wrongCodeHint": "в моках код подписи — 4826",
+      "otherBuyerTitle": "Бронь на другого {{patient.acc}}",
+      "otherBuyerText": "{{message}} Оформить договор на {{buyer}} всё равно?",
+      "otherBuyerConfirm": "Оформить всё равно"
+    },
+    "extend": {
+      "eyebrow": "Продление брони",
+      "intro": "{{patient.nom, capitalize}}: {{buyer}}. Выберите, на сколько продлить бронь.",
+      "currentUntil": "Сейчас действует до",
+      "hours": "Продлить на",
+      "submit": "Продлить",
+      "done": "Бронь продлена",
+      "doneUntil": "до {{date}}"
     }
   },
   "priceList": {

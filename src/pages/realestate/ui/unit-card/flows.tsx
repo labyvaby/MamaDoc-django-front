@@ -24,6 +24,7 @@ import {
   CONTRACT_PAYMENT_LABELS,
   REALESTATE_USE_MOCKS,
   confirmUnitPrepayment,
+  extendUnitReservation,
   getProjectUnits,
   getSalesManagers,
   realEstateKeys,
@@ -32,6 +33,7 @@ import {
   scheduleUnitMeeting,
   sendUnitProposal,
   signUnitContract,
+  type ContractInput,
   type ContractPayment,
   type Project,
   type RealtyScope,
@@ -41,7 +43,8 @@ import {
   type UnitOffer,
   type UnitOperation,
 } from "../../../../api/realestate";
-import { AppButton, CustomDateTimePicker } from "../../../../components/ui";
+import { getErrorCode } from "../../../../api/client";
+import { AppButton, ConfirmDialog, CustomDateTimePicker } from "../../../../components/ui";
 import { useCanChecker } from "../../../../hooks/useCan";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { tt } from "../../../../i18n/t";
@@ -64,6 +67,7 @@ export type Screen =
   | "unit"
   | "reserve"
   | "payment"
+  | "extend"
   | "success"
   | "proposal"
   | "meeting"
@@ -100,15 +104,37 @@ const tomorrowAt11 = () => dayjs().add(1, "day").hour(11).minute(0).second(0).mi
  */
 function useUnitCommand<Input>(scope: RealtyScope, run: (input: Input) => Promise<UnitDetails>) {
   const queryClient = useQueryClient();
-  const toast = useRealEstateToast();
+  const onError = useCommandError();
   return useMutation({
     mutationFn: run,
     onSuccess: (next) => {
       queryClient.setQueryData(realEstateKeys.unit(scope, next.id), next);
       void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
     },
-    onError: (error) => toast(errorMessage(error)),
+    onError,
   });
+}
+
+/**
+ * Ошибка команды: текст бэка (`error.message` уже по-русски). 409
+ * `UNIT_NOT_FREE` — квартиру заняли из другого окна: перечитываем шахматку и
+ * карточку, иначе менеджер продолжит работать со старым статусом.
+ */
+function useCommandError() {
+  const queryClient = useQueryClient();
+  const toast = useRealEstateToast();
+  const { t } = useT("realestate");
+  return React.useCallback(
+    (error: unknown) => {
+      if (getErrorCode(error) === "UNIT_NOT_FREE") {
+        void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
+        toast(errorMessage(error), t("flow.unitTakenHint"));
+        return;
+      }
+      toast(errorMessage(error));
+    },
+    [queryClient, toast, t],
+  );
 }
 
 // ─── Общая разметка ────────────────────────────────────────────────────────
@@ -436,6 +462,61 @@ export function PaymentScreen({ project, unit, scope, onBack, go }: FlowProps) {
   );
 }
 
+/** Продление брони: срок выбирается теми же шагами, что при создании (24/48/72 ч). */
+export function ExtendScreen({ project, unit, scope, onBack }: FlowProps) {
+  const toast = useRealEstateToast();
+  const { t } = useT("realestate");
+  const extend = useUnitCommand(scope, (hours: ReservationTerm) => extendUnitReservation(unit, hours, scope));
+  const [hours, setHours] = React.useState<ReservationTerm>(24);
+  return (
+    <Box>
+      <FlowHead
+        eyebrow={t("flow.extend.eyebrow")}
+        title={t("card.title", { number: unit.number })}
+        intro={t("flow.extend.intro", { buyer: unit.reservation?.buyer || "—" })}
+      />
+      <Summary
+        items={[
+          [t("flow.payment.purpose"), t("flow.payment.purposeValue", { number: unit.number, name: project.name })],
+          [t("flow.extend.currentUntil"), unit.reservation?.expiresAt || "—"],
+        ]}
+      />
+      <TextField
+        select
+        fullWidth
+        label={t("flow.extend.hours")}
+        value={String(hours)}
+        onChange={(event) => setHours(Number(event.target.value) as ReservationTerm)}
+      >
+        {[24, 48, 72].map((value) => (
+          <MenuItem key={value} value={String(value)}>
+            {t("flow.hours", { count: value })}
+          </MenuItem>
+        ))}
+      </TextField>
+      <Actions>
+        <Button variant="outlined" onClick={onBack}>
+          {t("flow.backToUnit")}
+        </Button>
+        <AppButton
+          variant="contained"
+          loading={extend.isPending}
+          onClick={() =>
+            extend.mutate(hours, {
+              onSuccess: (next) => {
+                onBack();
+                toast(t("flow.extend.done"), next.reservation?.expiresAt ? t("flow.extend.doneUntil", { date: next.reservation.expiresAt }) : undefined);
+              },
+            })
+          }
+        >
+          {t("flow.extend.submit")}
+        </AppButton>
+      </Actions>
+    </Box>
+  );
+}
+
 export function SuccessScreen({ unit, onBack, go }: FlowProps) {
   const { t } = useT("realestate");
   const r = unit.reservation;
@@ -481,7 +562,7 @@ export function ProposalScreen({ project, unit, offer, scope, onBack, onClose }:
       queryClient.setQueryData(realEstateKeys.unit(scope, next.id), next);
       void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
     },
-    onError: (error) => toast(errorMessage(error)),
+    onError: useCommandError(),
   });
   const finalPrice = priceWithOffer(unit, offer);
   const perMeter = money(Math.round(finalPrice / unit.totalArea));
@@ -884,20 +965,35 @@ export function ContractScreen({ project, unit, scope, onBack, go }: FlowProps) 
     },
   });
 
-  const submit = handleSubmit((form) => {
-    const { buyer, passport, phone, email, payment, signCode } = form;
-    sign.mutate({ buyer, passport, phone, email, payment, signCode }, {
+  const commandError = useCommandError();
+  // 409 INVALID_STATE на брони — квартира забронирована на другого покупателя:
+  // бэк продаёт только после явного подтверждения (`allowOtherBuyer: true`).
+  const [otherBuyer, setOtherBuyer] = React.useState<{ input: ContractInput; message: string } | null>(null);
+
+  const runSign = (input: ContractInput) =>
+    sign.mutate(input, {
       onSuccess: (next) => {
+        setOtherBuyer(null);
         queryClient.setQueryData(realEstateKeys.unit(scope, next.id), next);
         void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
         go("signed");
         toast(t("flow.contract.signedToast"), next.contract?.number);
       },
-      onError: (error) =>
-        REALESTATE_USE_MOCKS && error instanceof Error && /код/i.test(error.message)
-          ? toast(t("flow.contract.wrongCode"), t("flow.contract.wrongCodeHint"))
-          : toast(errorMessage(error)),
+      onError: (error) => {
+        setOtherBuyer(null);
+        if (REALESTATE_USE_MOCKS && error instanceof Error && /код/i.test(error.message)) {
+          toast(t("flow.contract.wrongCode"), t("flow.contract.wrongCodeHint"));
+        } else if (getErrorCode(error) === "INVALID_STATE" && unit.status === "reserved" && !input.allowOtherBuyer) {
+          setOtherBuyer({ input, message: errorMessage(error) });
+        } else {
+          commandError(error);
+        }
+      },
     });
+
+  const submit = handleSubmit((form) => {
+    const { buyer, passport, phone, email, payment, signCode } = form;
+    runSign({ buyer, passport, phone, email, payment, signCode });
   });
 
   const required = (message: string) => ({ required: message });
@@ -990,6 +1086,17 @@ export function ContractScreen({ project, unit, scope, onBack, go }: FlowProps) 
           </AppButton>
         </Actions>
       </form>
+      <ConfirmDialog
+        open={otherBuyer !== null}
+        variant="warning"
+        title={t("flow.contract.otherBuyerTitle")}
+        message={otherBuyer ? t("flow.contract.otherBuyerText", { message: otherBuyer.message, buyer: otherBuyer.input.buyer }) : ""}
+        confirmText={t("flow.contract.otherBuyerConfirm")}
+        cancelText={t("flow.cancel")}
+        loading={sign.isPending}
+        onClose={() => setOtherBuyer(null)}
+        onConfirm={() => otherBuyer && runSign({ ...otherBuyer.input, allowOtherBuyer: true })}
+      />
     </Box>
   );
 }
