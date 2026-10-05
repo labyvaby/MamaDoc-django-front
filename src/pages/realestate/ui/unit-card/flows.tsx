@@ -61,6 +61,7 @@ import { formatMoney as money, num } from "../../model/units";
 import { completionOf, sectionLabel } from "../../model/board";
 import { eyebrowSx } from "../tones";
 import { PhoneController } from "./PhoneController";
+import { leadIdFor, useChessboardLead } from "../../model/leadContext";
 import { useRealEstateToast } from "../toast";
 
 export type Screen =
@@ -224,8 +225,10 @@ export function ReserveScreen({ project, unit, offer, scope, onBack, go }: FlowP
   const { t } = useT("realestate");
   const reserve = useUnitCommand(scope, (input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input, scope));
   const finalPrice = priceWithOffer(unit, offer);
+  // Подбор для заявки CRM (`?lead=`): клиент заявки — сразу в форме.
+  const lead = useChessboardLead();
   const { register, control, handleSubmit, watch, formState } = useForm<ReserveForm>({
-    defaultValues: { buyer: "", phone: "", term: "48", type: "free", withMeeting: true, meetingAt: tomorrowAt11() },
+    defaultValues: { buyer: lead?.client ?? "", phone: lead?.phone ?? "", term: "48", type: "free", withMeeting: true, meetingAt: tomorrowAt11() },
   });
   const type = watch("type");
   const withMeeting = watch("withMeeting");
@@ -239,6 +242,7 @@ export function ReserveScreen({ project, unit, offer, scope, onBack, go }: FlowP
         type: form.type,
         offerId: offer.id,
         meetingAt: form.withMeeting && form.meetingAt ? form.meetingAt.format("YYYY-MM-DDTHH:mm") : null,
+        leadId: leadIdFor(lead, form.buyer, form.phone),
       },
       {
         onSuccess: (next) => {
@@ -953,11 +957,13 @@ export function ContractScreen({ project, unit, scope, onBack, go }: FlowProps) 
   // Договор заключается по цене брони (с акцией), без брони — по цене квартиры, как на бэке.
   const price = unit.reservation?.finalPrice || unit.price;
   const { down } = paymentPlan(price);
+  const lead = useChessboardLead();
   const { register, control, handleSubmit, formState } = useForm<ContractForm>({
     defaultValues: {
-      buyer: unit.reservation?.buyer ?? "",
+      // Бронь важнее подбора: договор по брони — на её покупателя.
+      buyer: unit.reservation?.buyer ?? lead?.client ?? "",
       passport: "",
-      phone: unit.reservation?.phone ?? "",
+      phone: unit.reservation?.phone ?? lead?.phone ?? "",
       email: "",
       payment: "installment",
       signCode: "",
@@ -993,7 +999,8 @@ export function ContractScreen({ project, unit, scope, onBack, go }: FlowProps) 
 
   const submit = handleSubmit((form) => {
     const { buyer, passport, phone, email, payment, signCode } = form;
-    runSign({ buyer, passport, phone, email, payment, signCode });
+    const leadId = leadIdFor(lead, buyer, phone);
+    runSign({ buyer, passport, phone, email, payment, signCode, ...(leadId != null ? { leadId } : {}) });
   });
 
   const required = (message: string) => ({ required: message });

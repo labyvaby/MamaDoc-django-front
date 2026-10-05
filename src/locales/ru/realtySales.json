@@ -92,7 +92,8 @@
     "saved": "Сохранено",
     "call": "Позвонить",
     "calls": "Звонки по заявке",
-    "noCalls": "Звонков не было"
+    "noCalls": "Звонков не было",
+    "reserve": "Бронь"
   },
   "form": {
     "title": "Новая заявка",
@@ -285,5 +286,70 @@
     "deleteText": "Показ «{{text}}» будет удалён из расписания.",
     "deleteConfirm": "Отменить показ",
     "keep": "Не отменять"
+  },
+  "deals": {
+    "title": "Брони и оплаты",
+    "subtitle": "Брони, договоры, рассрочка и платежи покупателей",
+    "loadError": "Не удалось загрузить брони",
+    "kpi": {
+      "active": "Активных броней",
+      "expiring": "Истекают сегодня",
+      "expected": "Ожидается платежей",
+      "received": "Оплачено за месяц",
+      "monthHint": "по графику месяца",
+      "collectedHint": "собрано {{pct}}%"
+    },
+    "tabs": {
+      "reservations": "Бронирования",
+      "contracts": "Договоры",
+      "installments": "Рассрочка",
+      "payments": "Платежи"
+    },
+    "reservationStatus": {
+      "all": "Все",
+      "active": "Активные",
+      "sold": "Проданы",
+      "cancelled": "Сняты",
+      "expired": "Истекли"
+    },
+    "contractStatus": {
+      "all": "Все",
+      "signed": "Подписаны",
+      "refunded": "Возвраты"
+    },
+    "search": "Номер, клиент, телефон, квартира",
+    "newReservation": "Новая бронь",
+    "open": "Открыть",
+    "openHint": "Карточка квартиры на шахматке: предоплата, продление, снятие, договор",
+    "table": {
+      "number": "№",
+      "client": "Клиент",
+      "unit": "Квартира",
+      "terms": "Условие",
+      "expires": "Срок брони",
+      "price": "Стоимость",
+      "status": "Статус",
+      "payment": "Оплата",
+      "signed": "Подписан",
+      "manager": "Менеджер",
+      "discount": "скидка {{amount}}",
+      "emptyReservations": "Броней нет",
+      "emptyContracts": "Договоров нет",
+      "emptyFiltered": "Под фильтр ничего не попало",
+      "left": "осталось {{time}}",
+      "expired": "срок вышел",
+      "term_one": "{{count}} час",
+      "term_few": "{{count}} часа",
+      "term_many": "{{count}} часов",
+      "hours_one": "{{count}} час",
+      "hours_few": "{{count}} часа",
+      "hours_many": "{{count}} часов",
+      "minutes_one": "{{count}} минута",
+      "minutes_few": "{{count}} минуты",
+      "minutes_many": "{{count}} минут",
+      "days_one": "{{count}} день",
+      "days_few": "{{count}} дня",
+      "days_many": "{{count}} дней"
+    }
   }
 }

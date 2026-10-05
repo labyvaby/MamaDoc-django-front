@@ -23,6 +23,7 @@ import dayjs from "dayjs";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import AddIcCallOutlined from "@mui/icons-material/AddIcCallOutlined";
+import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 
@@ -54,7 +55,8 @@ import { NewCallDrawer, type CallPreset } from "./NewCallDrawer";
  * Карточка заявки — шторка справа на воронке и в «Лидах» (`?lead=<id>`).
  * Этап, температура и ответственный меняются прямо здесь; комментарии,
  * задачи по заявке и история этапов — снизу. Менять — `realty.manage`.
- * «☎ Позвонить» записывает звонок по заявке, «⌖ Показ» ставит задачу-показ.
+ * «☎ Позвонить» записывает звонок по заявке, «⌖ Показ» ставит задачу-показ,
+ * «▣ Бронь» открывает шахматку в режиме подбора для заявки.
  */
 export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose: () => void }) {
   const { t } = useT("realtySales");
@@ -258,6 +260,9 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
                   >
                     {t("card.show")}
                   </Button>
+                  <Button variant="outlined" size="small" startIcon={<ApartmentOutlined />} onClick={() => navigate(reserveHref(data))}>
+                    {t("card.reserve")}
+                  </Button>
                 </Box>
               )}
 
@@ -381,6 +386,16 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
       )}
     </>
   );
+}
+
+/** «▣ Бронь»: шахматка ЖК заявки в режиме подбора (`?lead=`); выбранная квартира — сразу её карточка. */
+function reserveHref(lead: LeadDetail): string {
+  const params = new URLSearchParams();
+  if (lead.projectId != null) params.set("project", String(lead.projectId));
+  if (lead.unitId != null) params.set("unit", String(lead.unitId));
+  else params.set("status", "free");
+  params.set("lead", String(lead.id));
+  return `/realestate/chessboard?${params}`;
 }
 
 function Facts({ lead, hideManager }: { lead: LeadDetail; hideManager: boolean }) {

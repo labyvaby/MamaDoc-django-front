@@ -1,16 +1,21 @@
 import React from "react";
-import { Box, Button, Skeleton, Typography, useMediaQuery, type Theme } from "@mui/material";
+import { Box, Button, IconButton, Skeleton, Tooltip, Typography, useMediaQuery, type Theme } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useSearchParams } from "react-router";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import PersonSearchOutlined from "@mui/icons-material/PersonSearchOutlined";
 
 import { REALESTATE_USE_MOCKS, getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
 import { ApiError, isModuleDisabled } from "../../api/client";
+import { getLead, realtyLeadKeys } from "../../api/realtyLeads";
 import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { useT } from "../../i18n/VerticalProvider";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { autoBoardView, boundsOf, buildBoard, priceScale, projectFacts, withProjectSections, withUnitLayout } from "./model/board";
+import { ChessboardLeadContext, type ChessboardLead } from "./model/leadContext";
 import { downloadPriceList } from "./model/priceList";
 import { useChessboardParams } from "./model/useChessboardParams";
 import { countByStatus, countHolds, hasActiveFilters, matchesUnitFilters } from "./model/units";
@@ -96,7 +101,7 @@ function ChessboardPage() {
   }
 
   return (
-    <>
+    <LeadPick>
       <ProjectChessboard
         key={project.id}
         project={project}
@@ -105,7 +110,75 @@ function ChessboardPage() {
         onCreateProject={onCreate}
       />
       {wizard}
-    </>
+    </LeadPick>
+  );
+}
+
+/**
+ * Подбор для заявки CRM (`?lead=<id>` — «▣ Бронь» в карточке лида): плашка
+ * над шахматкой и клиент заявки в формах брони и договора (см. leadContext).
+ * Заявка не загрузилась (удалена, чужой филиал) — шахматка работает как обычно.
+ */
+function LeadPick({ children }: { children: React.ReactNode }) {
+  const { t } = useT("realestate");
+  const navigate = useNavigate();
+  const scope = useRealtyScope();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const leadId = Number(searchParams.get("lead")) || null;
+  const data = useQuery({
+    queryKey: realtyLeadKeys.detail(scope, leadId ?? 0),
+    queryFn: ({ signal }) => getLead(leadId as number, scope, signal),
+    enabled: leadId != null && scope.orgReady !== false,
+    staleTime: 60_000,
+    retry: false,
+  }).data;
+  const lead = React.useMemo<ChessboardLead | null>(() => (data ? { id: data.id, client: data.client, phone: data.phone } : null), [data]);
+  const close = () =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("lead");
+        return next;
+      },
+      { replace: true },
+    );
+  return (
+    <ChessboardLeadContext.Provider value={lead}>
+      {lead && (
+        <Box
+          role="status"
+          sx={(th) => ({
+            mb: 1.5,
+            px: 1.75,
+            py: 1,
+            display: "flex",
+            alignItems: "center",
+            gap: 1.25,
+            border: 1,
+            borderColor: "primary.main",
+            borderRadius: "12px",
+            bgcolor: th.palette.background.paper,
+          })}
+        >
+          <PersonSearchOutlined sx={{ color: "primary.main" }} />
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography noWrap sx={{ fontWeight: 600, fontSize: "0.875rem" }}>
+              {t("page.leadPick", { client: lead.client })}
+            </Typography>
+            <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{t("page.leadPickHint")}</Typography>
+          </Box>
+          <Button size="small" onClick={() => navigate(`/realestate/leads?lead=${lead.id}`)} sx={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+            {t("page.leadPickOpen")}
+          </Button>
+          <Tooltip title={t("page.leadPickClose")}>
+            <IconButton size="small" aria-label={t("page.leadPickClose")} onClick={close}>
+              <CloseOutlined fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      )}
+      {children}
+    </ChessboardLeadContext.Provider>
   );
 }
 
