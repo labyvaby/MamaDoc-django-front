@@ -107,6 +107,10 @@ export const djangoQueryKeys = {
       ["django", "reports", "active-months", organizationId ?? null] as const,
     load: (filters: Record<string, unknown>) =>
       ["django", "reports", "load", filters] as const,
+    doctorProfit: (filters: Record<string, unknown>) =>
+      ["django", "reports", "doctor-profit", filters] as const,
+    fixedCosts: (filters: Record<string, unknown>) =>
+      ["django", "reports", "fixed-costs", filters] as const,
   },
   pnl: {
     report: (filters: Record<string, unknown>) =>

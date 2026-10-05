@@ -154,6 +154,7 @@ const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPag
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
+const DoctorProfitPage = lazy(() => import("./pages/doctor-profit"));
 const PnlPage = lazy(() => import("./pages/pnl").then(module => ({ default: module.PnlPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
 const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
@@ -417,6 +418,11 @@ function App() {
                         name: "load",
                         list: "/load",
                         meta: { label: "Нагрузка" }
+                      },
+                      {
+                        name: "doctor-profit",
+                        list: "/doctor-profit",
+                        meta: { label: "Прибыль по врачам" }
                       },
                       {
                         name: "pnl",
@@ -946,6 +952,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.load}>
                               <Suspense fallback={<LinearProgress />}>
                                 <LoadAnalyticsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="doctor-profit"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.doctorProfit}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DoctorProfitPage />
                               </Suspense>
                             </RequirePermission>
                           }

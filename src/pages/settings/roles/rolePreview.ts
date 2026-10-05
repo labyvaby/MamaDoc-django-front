@@ -54,6 +54,7 @@ export const PREVIEW_SECTIONS: PreviewSection[] = [
   { key: "pnl", permissions: asList(PAGE_PERMISSIONS.pnl) },
   { key: "payroll", permissions: asList(PAGE_PERMISSIONS.payroll) },
   { key: "reports", permissions: asList(PAGE_PERMISSIONS.reports) },
+  { key: "doctorProfit", permissions: asList(PAGE_PERMISSIONS.doctorProfit) },
   { key: "reviews", permissions: asList(PAGE_PERMISSIONS.reviews) },
   { key: "notifications", permissions: asList(PAGE_PERMISSIONS.notifications) },
   // «Настройки» открываются, если доступна хотя бы одна вкладка раздела.
