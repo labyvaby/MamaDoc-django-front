@@ -371,6 +371,8 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
                   <ButtonBase
                     key={slot.time}
                     disabled={slot.busy}
+                    title={slot.busy ? t("slotBusy") : undefined}
+                    aria-label={slot.busy ? `${slot.time} — ${t("slotBusy")}` : slot.time}
                     onClick={() => onTimeChange(slot.time)}
                     sx={{
                       height: 40,
@@ -383,7 +385,7 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
                       fontWeight: 600,
                       fontVariantNumeric: "tabular-nums",
                       transition: "all .2s",
-                      ...(slot.busy ? { textDecoration: "line-through" } : null),
+                      ...(slot.busy ? { flexDirection: "column", lineHeight: 1.1 } : null),
                       ...(picked ? { boxShadow: slotTone.picked.bg && "0 4px 12px rgba(0,123,255,0.3)" } : null),
                       "&:hover:not(.Mui-disabled)": picked
                         ? {}
@@ -392,6 +394,25 @@ export const ScheduleCard: React.FC<ScheduleCardProps> = ({
                     }}
                   >
                     {slot.time}
+                    {/* Статус прямо на плитке: серый слот без подписи читался
+                        как «не работает», а не «уже забронировано». */}
+                    {slot.busy ? (
+                      <Box
+                        component="span"
+                        sx={{
+                          mt: 0.25,
+                          maxWidth: "100%",
+                          px: 0.5,
+                          fontSize: 9,
+                          fontWeight: 500,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {t("slotBusy")}
+                      </Box>
+                    ) : null}
                   </ButtonBase>
                 );
               })}

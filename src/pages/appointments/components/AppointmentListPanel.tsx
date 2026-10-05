@@ -28,6 +28,7 @@ import AlarmOutlined from "@mui/icons-material/AlarmOutlined";
 import EventRepeatOutlined from "@mui/icons-material/EventRepeat";
 import EditCalendarOutlined from "@mui/icons-material/EditCalendar";
 import EventBusyOutlined from "@mui/icons-material/EventBusy";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import dayjs from "dayjs";
 
@@ -60,7 +61,8 @@ import {
   matchesMoneyFlags,
   type AppointmentMoneyFlag,
 } from "./listFilters";
-import { buildListRows, dedupeGapsByTime, isGap, type RenderItem } from "./listRows";
+import { buildListRows, dedupeGapsByTime, interleaveHolds, isGap, type RenderItem } from "./listRows";
+import { withHoldIntervals, type PrepaidHold } from "./prepaidHolds";
 import { isAppointmentCancelReason, type AppointmentCancelReason } from "../../../api/appointments";
 import { AppBottomSheet } from "../../../components/ui";
 
@@ -163,6 +165,13 @@ interface AppointmentListPanelProps {
    * расписания; для остальных (расписание не ведётся) ограничение не действует.
    * null/undefined — расписание недоступно, поведение как раньше.
    */
+  /**
+   * Онлайн-брони с предоплатой без приёма (см. prepaidHolds.ts): время в
+   * ленте помечается «Забронировано онлайн», окно на него не предлагается.
+   */
+  prepaidHolds?: PrepaidHold[];
+  /** Клик по строке брони — открыть её в модуле «Онлайн-запись». */
+  onOpenPrepaidHold?: (bookingId: number) => void;
   dayShifts?: {
     scheduledIds: Set<number>;
     segments: Map<number, { start: string; end: string }[]>;
@@ -408,6 +417,80 @@ const GapRun: React.FC<{
   </Stack>
 );
 
+// ─── PrepaidHoldRow — время занято онлайн-бронью с внесённой предоплатой ─────
+//
+// Приёма ещё нет (он появится после подтверждения брони), но пациент уже
+// заплатил: без этой строки здесь стояло бы «Есть окно на HH:mm». Строка
+// намеренно ярче обычного приёма — по ней регистратуре надо действовать.
+
+const PrepaidHoldRow: React.FC<{ hold: PrepaidHold; onOpen?: (bookingId: number) => void }> = ({
+  hold,
+  onOpen,
+}) => {
+  const { t } = useT("appointments");
+  const amount = Number(hold.prepaymentAmount ?? 0);
+  const statusLabel =
+    amount > 0
+      ? t("list.prepaidHoldPaid", { amount: formatKGS(amount) })
+      : t("list.prepaidHoldPaidNoAmount");
+  return (
+    <Tooltip title={t("list.prepaidHoldHint")} placement="top-start">
+      <Box
+        onClick={onOpen ? () => onOpen(hold.bookingId) : undefined}
+        sx={(th) => ({
+          mx: 2,
+          my: 1,
+          pl: 1.5,
+          pr: 1.25,
+          py: 1.25,
+          border: "1px solid",
+          borderColor: "success.main",
+          borderLeftWidth: 4,
+          borderRadius: "10px",
+          bgcolor: alpha(th.palette.success.main, th.palette.mode === "dark" ? 0.16 : 0.08),
+          display: "flex",
+          alignItems: "center",
+          gap: 1.5,
+          cursor: onOpen ? "pointer" : "default",
+          transition: "background-color .15s ease",
+          "&:hover": onOpen
+            ? { bgcolor: alpha(th.palette.success.main, th.palette.mode === "dark" ? 0.24 : 0.14) }
+            : undefined,
+        })}
+      >
+        <EventAvailableOutlined sx={{ fontSize: 26, color: "success.main", flexShrink: 0 }} />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Stack direction="row" alignItems="baseline" gap={1} sx={{ flexWrap: "wrap", rowGap: 0 }}>
+            <Typography
+              variant="subtitle1"
+              sx={{ fontWeight: 700, lineHeight: 1.3, fontVariantNumeric: "tabular-nums" }}
+            >
+              {hold.timeStr}
+            </Typography>
+            <Typography
+              variant="subtitle1"
+              // Синим, а не зелёным: зелёный здесь — «деньги внесены» (чип и
+              // рамка), а надпись говорит о другом — время занято бронью.
+              sx={{ fontWeight: 700, lineHeight: 1.3, color: "info.main" }}
+            >
+              {t("list.prepaidHoldTitle")}
+            </Typography>
+          </Stack>
+          <Typography variant="body2" color="text.secondary" noWrap>
+            {hold.patientName}
+          </Typography>
+        </Box>
+        <Chip
+          size="small"
+          color="success"
+          label={statusLabel}
+          sx={{ fontWeight: 700, flexShrink: 0 }}
+        />
+      </Box>
+    </Tooltip>
+  );
+};
+
 // ─── AppointmentListPanel ─────────────────────────────────────────────────────
 
 const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
@@ -440,6 +523,8 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   showFilteredCount = true,
   groupEmployeeIds = null,
   dayShifts = null,
+  prepaidHolds,
+  onOpenPrepaidHold,
   onScrollDirection,
 }) => {
   const { t, term } = useT("appointments");
@@ -820,7 +905,12 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   // от отфильтрованного среза: фильтр меняет то, что показываем, а не то, что
   // занято. Иначе приём, не попавший в группу или скрытый фильтром, не закрывал
   // слот и над ним появлялась плашка «Есть окно на HH:mm».
-  const occupancyByEmployee = React.useMemo(() => busyIntervalsByEmployee(items), [items]);
+  const apptOccupancyByEmployee = React.useMemo(() => busyIntervalsByEmployee(items), [items]);
+  // Онлайн-брони с предоплатой тоже держат время: окно поверх них не предлагаем.
+  const occupancyByEmployee = React.useMemo(
+    () => withHoldIntervals(apptOccupancyByEmployee, prepaidHolds ?? []),
+    [apptOccupancyByEmployee, prepaidHolds],
+  );
 
   // ── Build render list per group: sort by time + insert gap slots ──────────
   const groupedItemsWithGaps = React.useMemo(() => {
@@ -829,6 +919,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
       name: string;
       appts: DjangoAppointment[];
       renderItems: RenderItem[];
+      holds: PrepaidHold[];
     }[] = [];
 
     // Отменённые и неявки уводим в конец группы: активные записи и свободные
@@ -857,6 +948,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           name: docName,
           appts: sorted,
           renderItems: cancelledToBottom(sorted),
+          holds: [],
         });
         return;
       }
@@ -1031,6 +1123,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           name: docName,
           appts: sorted,
           renderItems: cancelledToBottom(dedupeGapsByTime(renderItems)),
+          holds: [],
         });
       }
     });
@@ -1052,7 +1145,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         // приёмы не собрались в группу (исполнитель только в другой строке
         // услуги, приём другого филиала в выдаче). Раньше такой врач приезжал
         // второй группой с окном на начало смены поверх занятого времени.
-        if (occupancyByEmployee.has(employeeId)) continue;
+        if (apptOccupancyByEmployee.has(employeeId)) continue;
 
         const slots: RenderItem[] = [];
         // Дедуп по времени окна, а не по сегменту: правило 10:00–15:30 и разовая
@@ -1078,8 +1171,24 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           });
         }
         if (slots.length > 0) {
-          result.push({ employeeId, name, appts: [], renderItems: slots });
+          result.push({ employeeId, name, appts: [], renderItems: slots, holds: [] });
         }
+      }
+    }
+
+    // ── Онлайн-брони с предоплатой: в группу своего специалиста ──────────────
+    // Под фильтрами и поиском не показываем — как и свободные смены, это не
+    // записи, отбор идёт по существующим приёмам.
+    if (prepaidHolds && prepaidHolds.length > 0 && !hasNarrowingFilters) {
+      for (const hold of prepaidHolds) {
+        if (groupEmployeeIds && !groupEmployeeIds.has(hold.employeeId)) continue;
+        if (selectedDoctorId != null && selectedDoctorId !== hold.employeeId) continue;
+        let group = result.find((g) => g.employeeId === hold.employeeId);
+        if (!group) {
+          group = { employeeId: hold.employeeId, name: hold.doctorName, appts: [], renderItems: [], holds: [] };
+          result.push(group);
+        }
+        group.holds.push(hold);
       }
     }
 
@@ -1093,6 +1202,8 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
     groupEmployeeIds,
     selectedDoctorId,
     occupancyByEmployee,
+    apptOccupancyByEmployee,
+    prepaidHolds,
   ]);
 
   // ── Drag-scroll for doctor strip ──────────────────────────────────────────
@@ -1139,7 +1250,10 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   const collapseFreeGroups =
     isMobile && selectedDoctorId == null && allGroupEntries.some((g) => g.appts.length > 0);
   const freeGroupEntries = React.useMemo(
-    () => (collapseFreeGroups ? allGroupEntries.filter((g) => g.appts.length === 0) : []),
+    () =>
+      collapseFreeGroups
+        ? allGroupEntries.filter((g) => g.appts.length === 0 && g.holds.length === 0)
+        : [],
     [allGroupEntries, collapseFreeGroups],
   );
   // Раскрытые свободные смены идут в конец, а не на свои места в общем
@@ -1147,7 +1261,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
   // выглядела бы как «нажал, и ничего не произошло».
   const groupEntries = React.useMemo(() => {
     if (!collapseFreeGroups) return allGroupEntries;
-    const withAppts = allGroupEntries.filter((g) => g.appts.length > 0);
+    const withAppts = allGroupEntries.filter((g) => g.appts.length > 0 || g.holds.length > 0);
     return freeGroupsOpen ? [...withAppts, ...freeGroupEntries] : withAppts;
   }, [allGroupEntries, collapseFreeGroups, freeGroupEntries, freeGroupsOpen]);
 
@@ -1612,18 +1726,23 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           </Typography>
         ) : (
           <Stack spacing={0}>
-            {groupEntries.map(({ employeeId: groupEmployeeId, name: docName, appts, renderItems: groupItems }) => {
+            {groupEntries.map(({ employeeId: groupEmployeeId, name: docName, appts, renderItems: groupItems, holds }) => {
               const apptCount = groupItems.filter((i) => !isGap(i)).length;
               // Ряды группы и место линии «сейчас» — перед первым элементом
               // (приёмом или окном), который ещё не начался; на телефоне
               // подряд идущие окна слиты в один ряд (GapRun).
-              const rows = buildListRows(
-                groupItems,
+              const rows = interleaveHolds(
+                buildListRows(
+                  groupItems,
+                  isToday ? nowTs : null,
+                  isMobile,
+                  // Линию «сейчас» не вешаем на отменённые: они уведены в конец
+                  // группы, и над ними внизу ленты она вводила бы в заблуждение.
+                  (i) => isGap(i) || !isCancelledStatus(i.status),
+                ),
+                holds,
                 isToday ? nowTs : null,
-                isMobile,
-                // Линию «сейчас» не вешаем на отменённые: они уведены в конец
-                // группы, и над ними внизу ленты она вводила бы в заблуждение.
-                (i) => isGap(i) || !isCancelledStatus(i.status),
+                (row) => row.kind === "appt" && isCancelledStatus(row.appt.status),
               );
               // Линия группы с ближайшим приёмом — якорь подскролла при
               // открытии дня.
@@ -1672,7 +1791,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                       <Tooltip
                         title={
                           apptCount === 0
-                            ? t("list.onShiftNoBookings")
+                            ? holds.length > 0
+                              ? t("list.prepaidHoldCount", { count: holds.length })
+                              : t("list.onShiftNoBookings")
                             : t("list.count", { count: apptCount })
                         }
                       >
@@ -1681,7 +1802,9 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                           // дня, а смысл обратный — время свободно.
                           label={
                             apptCount === 0
-                              ? t("list.onShiftNoBookings")
+                              ? holds.length > 0
+                                ? t("list.prepaidHoldCount", { count: holds.length })
+                                : t("list.onShiftNoBookings")
                               : money != null
                                 ? formatKGS(Math.round(money.paid))
                                 : t("list.count", { count: apptCount })
@@ -1697,6 +1820,14 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
                   {/* ── Строки приёмов / gap-слоты ── */}
                   <Box>
                     {rows.map((row) => {
+                      if (row.kind === "hold") {
+                        return (
+                          <React.Fragment key={`hold-${row.hold.bookingId}`}>
+                            {row.nowLine && nowLine}
+                            <PrepaidHoldRow hold={row.hold} onOpen={onOpenPrepaidHold} />
+                          </React.Fragment>
+                        );
+                      }
                       if (row.kind === "gaps") {
                         return (
                           <React.Fragment key={row.gaps[0].id}>

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import dayjs from "dayjs";
 
-import { buildListRows, dedupeGapsByTime, isGap, type GapSlot } from "./listRows";
+import { buildListRows, dedupeGapsByTime, interleaveHolds, isGap, type GapSlot } from "./listRows";
+import type { PrepaidHold } from "./prepaidHolds";
 import type { DjangoAppointment } from "../../../api/appointments";
 
 const DAY = "2026-09-19";
@@ -89,7 +90,7 @@ describe("buildListRows: ряды окон", () => {
 
   it("на телефоне подряд идущие окна сливаются в один ряд", () => {
     const rows = buildListRows([gap("09:00"), gap("09:30"), appt(1, "10:00"), gap("10:30")], null, true);
-    expect(rows.map((r) => (r.kind === "gaps" ? r.gaps.map((g) => g.timeStr) : r.appt.id))).toEqual([
+    expect(rows.map((r) => (r.kind === "gaps" ? r.gaps.map((g) => g.timeStr) : r.kind === "appt" ? r.appt.id : null))).toEqual([
       ["09:00", "09:30"],
       1,
       ["10:30"],
@@ -108,7 +109,7 @@ describe("buildListRows: ряды окон", () => {
     // Иначе линия встала бы над всем рядом — и над уже прошедшим окном 09:00.
     const rows = buildListRows([gap("09:00"), gap("09:30"), appt(1, "10:00")], at("09:10"), true);
     expect(
-      rows.map((r) => [r.kind === "gaps" ? r.gaps.map((g) => g.timeStr) : r.appt.id, r.nowLine]),
+      rows.map((r) => [r.kind === "gaps" ? r.gaps.map((g) => g.timeStr) : r.kind === "appt" ? r.appt.id : null, r.nowLine]),
     ).toEqual([
       [["09:00"], false],
       [["09:30"], true],
@@ -130,5 +131,54 @@ describe("dedupeGapsByTime", () => {
   it("разные времена не схлопывает", () => {
     const result = dedupeGapsByTime([gap("09:00"), gap("09:30")]);
     expect(result.filter(isGap).map((g) => g.timeStr)).toEqual(["09:00", "09:30"]);
+  });
+});
+
+const hold = (bookingId: number, hm: string): PrepaidHold => ({
+  bookingId,
+  employeeId: 7,
+  doctorName: "Врач",
+  patientName: "Пациент",
+  start: at(hm),
+  end: at(hm) + 30 * 60 * 1000,
+  timeStr: hm,
+  prepaymentAmount: "500.00",
+});
+
+const label = (r: ReturnType<typeof interleaveHolds>[number]) =>
+  r.kind === "gaps" ? r.gaps[0].timeStr : r.kind === "appt" ? `appt-${r.appt.id}` : `hold-${r.hold.bookingId}`;
+
+describe("interleaveHolds", () => {
+  it("ставит бронь между приёмами по времени", () => {
+    const rows = interleaveHolds(buildListRows([appt(1, "09:00"), appt(2, "11:00")], null, false), [hold(5, "10:00")], null);
+    expect(rows.map(label)).toEqual(["appt-1", "hold-5", "appt-2"]);
+  });
+
+  it("не уходит ниже отменённых в хвосте группы", () => {
+    const cancelled = { ...appt(3, "08:00"), status: "canceled" } as DjangoAppointment;
+    const rows = interleaveHolds(
+      buildListRows([appt(1, "09:00"), cancelled], null, false),
+      [hold(5, "12:00")],
+      null,
+      (r) => r.kind === "appt" && r.appt.status === "canceled",
+    );
+    expect(rows.map(label)).toEqual(["appt-1", "hold-5", "appt-3"]);
+  });
+
+  it("забирает линию «сейчас», если бронь — первое не начавшееся", () => {
+    const rows = interleaveHolds(
+      buildListRows([appt(1, "09:00"), appt(2, "11:00")], at("09:40"), false),
+      [hold(5, "10:00")],
+      at("09:40"),
+    );
+    expect(rows.map((r) => [label(r), r.nowLine])).toEqual([
+      ["appt-1", false],
+      ["hold-5", true],
+      ["appt-2", false],
+    ]);
+  });
+
+  it("группа только из брони", () => {
+    expect(interleaveHolds([], [hold(5, "10:00")], null).map(label)).toEqual(["hold-5"]);
   });
 });

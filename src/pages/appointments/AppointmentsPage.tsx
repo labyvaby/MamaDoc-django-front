@@ -29,7 +29,7 @@ import "dayjs/locale/ru";
 
 dayjs.locale("ru");
 
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { useCanChecker } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -53,7 +53,8 @@ import {
   type HomeDashboard,
 } from "../../api/appointments";
 import { formatConsumptionWarnings } from "../../components/appointments/consumptionWarnings";
-import { updateBookingStatus } from "../../api/bookings";
+import { getBookings, updateBookingStatus } from "../../api/bookings";
+import { prepaidHoldsFromBookings } from "./components/prepaidHolds";
 import {
   getWaitlist,
   getWaitlistEntry,
@@ -675,6 +676,42 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     retry: false,
   });
+  // ── Онлайн-брони с предоплатой: время занято, а приёма ещё нет ──────────
+  // Приём появится, когда администратор подтвердит бронь; до этого регистратура
+  // видела на этом времени «Есть окно». Показываем только внесённую
+  // предоплату. Без права bookings.view запроса нет — лента как раньше.
+  const navigate = useNavigate();
+  const canViewBookings = can("bookings.view");
+  const holdsQuery = useQuery({
+    queryKey: djangoQueryKeys.bookings.list({
+      view: "reception-holds",
+      date: dateStr,
+      orgId: activeScope.organizationId ?? null,
+      branch: branchId ?? null,
+    }),
+    queryFn: ({ signal }) =>
+      getBookings(
+        {
+          dateFrom: dateStr,
+          dateTo: dateStr,
+          organizationId: activeScope.organizationId,
+          branchId,
+          pageSize: 100,
+        },
+        signal,
+      ),
+    enabled: canViewBookings && activeScope.orgReady,
+    refetchInterval: 30_000,
+    retry: false,
+  });
+  const prepaidHolds = React.useMemo(() => {
+    const holds = prepaidHoldsFromBookings(holdsQuery.data?.results ?? [], dateStr);
+    // Клиницист без view_all видит только свои приёмы — и брони только свои.
+    if (!seesOwnOnly) return holds;
+    const ownId = Number(activeEmployee?.id);
+    return holds.filter((h) => h.employeeId === ownId);
+  }, [holdsQuery.data, dateStr, seesOwnOnly, activeEmployee]);
+
   const dayShifts = React.useMemo(() => {
     const allRules = scheduleRulesQuery.data;
     // Разовая смена (`extra`) может быть единственным расписанием сотрудника:
@@ -1336,6 +1373,10 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
               showGroupTotals
               groupEmployeeIds={groupEmployeeIds}
               dayShifts={dayShifts}
+              prepaidHolds={prepaidHolds}
+              onOpenPrepaidHold={
+                canViewBookings ? (bookingId) => navigate(`/bookings?open=${bookingId}`) : undefined
+              }
               onScrollDirection={setHeaderHidden}
             />
           </Box>
