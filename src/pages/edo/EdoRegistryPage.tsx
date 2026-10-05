@@ -56,8 +56,8 @@ const formatBytes = (bytes: number) => {
 
 /**
  * Реестр документов AIVIO: один экран на три среза — ЭДО целиком
- * (`/docs/edo`), реестр договоров (`/docs/contracts`, `scope=contracts`) и
- * архив (`/docs/archive`, `scope=archive`). Карточка — `?doc=<id>`.
+ * (`/edo`), реестр договоров (`/edo/contracts`, `scope=contracts`) и
+ * архив (`/edo/archive`, `scope=archive`). Карточка — `?doc=<id>`.
  */
 export default function EdoRegistryPage({ scope: view }: { scope: EdoScope }) {
   const { t } = useT("edo");

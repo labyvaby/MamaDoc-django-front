@@ -208,7 +208,7 @@ export default function SalesDocumentsPage() {
             )}
             {canEdo && row.edoDocumentId && (
               <Tooltip title={t("sales.openEdo")}>
-                <IconButton size="small" aria-label={t("sales.openEdo")} onClick={() => navigate(`/docs/edo?doc=${row.edoDocumentId}`)}>
+                <IconButton size="small" aria-label={t("sales.openEdo")} onClick={() => navigate(`/edo?doc=${row.edoDocumentId}`)}>
                   <OpenInNewOutlined fontSize="small" />
                 </IconButton>
               </Tooltip>

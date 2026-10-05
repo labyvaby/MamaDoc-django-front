@@ -1286,11 +1286,12 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            {/* Документы застройщика (AIVIO): ЭДО, реестр договоров, архив — один экран-реестр со срезом. */}
+                            {/* Документы застройщика (AIVIO): ЭДО, реестр договоров, архив — один экран-реестр со срезом.
+                                Префикс /edo, не /docs: /docs/ на сервере уходит в Django (swagger), F5 давал 404. */}
                             {(["edo", "contracts", "archive"] as const).map((view) => (
                               <Route
                                 key={view}
-                                path={`docs/${view}`}
+                                path={view === "edo" ? "edo" : `edo/${view}`}
                                 element={
                                   <RequirePermission permission={PAGE_PERMISSIONS.edo}>
                                     <Suspense fallback={<LinearProgress />}>
@@ -1301,7 +1302,7 @@ function App() {
                               />
                             ))}
                             <Route
-                              path="docs/templates"
+                              path="edo/templates"
                               element={
                                 <RequirePermission permission={PAGE_PERMISSIONS.edo}>
                                   <Suspense fallback={<LinearProgress />}>

@@ -424,10 +424,10 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
     ? ([
-        ["edo", "/docs/edo", "ЭДО", <DrawOutlined key="i" />],
-        ["contracts", "/docs/contracts", "Договоры", <HandshakeOutlined key="i" />],
-        ["templates", "/docs/templates", "Шаблоны", <ContentCopyOutlined key="i" />],
-        ["archive", "/docs/archive", "Архив", <Inventory2Outlined key="i" />],
+        ["edo", "/edo", "ЭДО", <DrawOutlined key="i" />],
+        ["contracts", "/edo/contracts", "Договоры", <HandshakeOutlined key="i" />],
+        ["templates", "/edo/templates", "Шаблоны", <ContentCopyOutlined key="i" />],
+        ["archive", "/edo/archive", "Архив", <Inventory2Outlined key="i" />],
       ] as const).filter(([screen]) => seen(screen))
     : [];
 

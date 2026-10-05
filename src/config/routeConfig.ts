@@ -142,9 +142,10 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.TREASURY_VIEW, PERMISSIONS.REALESTATE_VIEW],
   },
 
-  // Документы застройщика: ЭДО, договоры, шаблоны, архив
+  // Документы застройщика: ЭДО, договоры, шаблоны, архив.
+  // Не /docs/ — этот префикс на сервере занят Django (swagger/openapi): F5 давал 404.
   {
-    path: '/docs/',
+    path: '/edo',
     requiredPermissions: [PERMISSIONS.EDO_VIEW],
   },
   // «Документы (CRM)» — файлы сделок
