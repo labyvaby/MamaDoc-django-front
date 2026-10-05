@@ -30,6 +30,8 @@ interface Props {
   onOpenCard: (appt: DjangoAppointment) => void;
   performerHeader: string;
   servicesHeader: string;
+  /** Прибавлять ли товары приёма к сумме (галочка «С товарами»). */
+  withProducts?: boolean;
 }
 
 interface Row {
@@ -54,6 +56,7 @@ export const RegistryTable: React.FC<Props> = ({
   onOpenCard,
   performerHeader,
   servicesHeader,
+  withProducts = false,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -63,7 +66,7 @@ export const RegistryTable: React.FC<Props> = ({
     () =>
       items.map((appt) => {
         const lines = linesOf(appt);
-        const money = moneyOf(appt, lines);
+        const money = moneyOf(appt, lines, withProducts);
         const at = dayjs(appt.scheduledAt);
         return {
           id: appt.id,
@@ -80,7 +83,7 @@ export const RegistryTable: React.FC<Props> = ({
           debt: money.debt,
         };
       }),
-    [items, linesOf],
+    [items, linesOf, withProducts],
   );
 
   const columns = React.useMemo<GridColDef<Row>[]>(() => {

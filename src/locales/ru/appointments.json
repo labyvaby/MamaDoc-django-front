@@ -915,7 +915,8 @@
       "tooltipMoney_many": "{{date}} · {{count}} записей · {{amount}} сом",
       "tooltipVisits_one": "{{date}} · {{count}} запись",
       "tooltipVisits_few": "{{date}} · {{count}} записи",
-      "tooltipVisits_many": "{{date}} · {{count}} записей"
+      "tooltipVisits_many": "{{date}} · {{count}} записей",
+      "period": "Пульс периода"
     },
     "payFilter": {
       "all": "Все",
@@ -933,7 +934,15 @@
     "period": {
       "prev": "Предыдущий период",
       "next": "Следующий период",
-      "wholeYear": "Весь год"
+      "wholeYear": "Весь год",
+      "presets": {
+        "month": "Этот месяц",
+        "prevMonth": "Прошлый месяц",
+        "last7": "Последние 7 дней",
+        "last30": "Последние 30 дней",
+        "last3Months": "Последние 3 месяца",
+        "yearToDate": "С начала года"
+      }
     },
     "views": {
       "feed": "Лента",
@@ -953,7 +962,9 @@
       "materials": "поз.",
       "showMore_one": "Показать ещё {{count}} запись",
       "showMore_few": "Показать ещё {{count}} записи",
-      "showMore_many": "Показать ещё {{count}} записей"
+      "showMore_many": "Показать ещё {{count}} записей",
+      "priceUpBy": "Цена повышена на {{amount}} сом",
+      "priceDownBy": "Цена снижена на {{amount}} сом"
     },
     "details": {
       "composition": "Состав {{visit.gen}}",
@@ -968,7 +979,10 @@
       "rest": "Остаток",
       "total": "Итого",
       "sliceShare": "В этот журнал попадает {{amount}} из {{visit.gen}}",
-      "actions": "Действия"
+      "actions": "Действия",
+      "priceRaised": "↑ было {{before}}, стало {{after}}",
+      "priceLowered": "↓ было {{before}}, стало {{after}}",
+      "goodsExcluded": "Товары на {{amount}} в сумму журнала не входят"
     },
     "actions": {
       "pay": "Принять оплату",
@@ -1014,7 +1028,9 @@
     "empty": {
       "title": "За этот срез записей нет",
       "description": "Снимите условие поиска, фильтр оплаты или выберите другой период"
-    }
+    },
+    "cancelledFilter": "Отменённые",
+    "withProducts": "С товарами"
   },
   "registry": {
     "noSelection": "Выберите {{record.acc}} для просмотра деталей",

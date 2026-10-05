@@ -26,6 +26,8 @@ export interface RegistryExportInput {
   statusLabel: (appt: DjangoAppointment) => string;
   /** Деньги выгружаем только при праве finance.view. */
   withMoney: boolean;
+  /** Прибавлять ли товары приёма к сумме — как в журнале на экране. */
+  withProducts?: boolean;
 }
 
 const MONEY_FORMAT = "#,##0";
@@ -77,7 +79,7 @@ export async function buildRegistryXlsx(input: RegistryExportInput): Promise<Blo
 
   for (const appt of input.items) {
     const lines = input.linesOf(appt);
-    const money = moneyOf(appt, lines);
+    const money = moneyOf(appt, lines, input.withProducts);
     accrued += money.accrued;
     paid += money.paid;
     debt += money.debt;

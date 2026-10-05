@@ -60,11 +60,38 @@ export function isDebtBearing(appt: DjangoAppointment, now: dayjs.Dayjs = dayjs(
   return finishedAt.isValid() && finishedAt.isBefore(now);
 }
 
-/** Деньги по строкам среза одного приёма. */
-export function moneyOf(appt: DjangoAppointment, lines: AppointmentServiceLine[]): RegistryMoney {
+/**
+ * Сумма товаров, проданных в приёме. Отменённые строки товара в деньги не идут.
+ * ⚠ Товары привязаны к приёму, а не к строке услуги, поэтому в срез процедур
+ * их не добавляем — иначе медсестре засчитывались бы товары врача.
+ */
+export function productsTotal(appt: DjangoAppointment): number {
+  let total = 0;
+  for (const line of appt.productLines ?? []) {
+    if (line.status === "canceled") continue;
+    const amount = parseFloat(String(line.lineTotal ?? ""));
+    if (Number.isFinite(amount) && amount > 0) total += amount;
+  }
+  return total;
+}
+
+/**
+ * Деньги по строкам среза одного приёма.
+ *
+ * По умолчанию — только услуги: журнал отвечает «сколько принесли приёмы», а
+ * товар, проданный в приёме, — продажа склада (решение заказчика 05.10.2026).
+ * `withProducts` прибавляет товары по галочке «С товарами».
+ */
+export function moneyOf(
+  appt: DjangoAppointment,
+  lines: AppointmentServiceLine[],
+  withProducts = false,
+): RegistryMoney {
   if (isCancelledStatus(appt.status)) return ZERO_MONEY;
 
-  const lineSum = lines.reduce((sum, line) => sum + serviceLineTotal(line), 0);
+  const lineSum =
+    lines.reduce((sum, line) => sum + serviceLineTotal(line), 0) +
+    (withProducts ? productsTotal(appt) : 0);
   if (lineSum <= 0) return ZERO_MONEY;
 
   const accrued = lineSum * discountFactor(appt);
@@ -95,7 +122,11 @@ export interface RegistrySummary extends RegistryMoney {
   closed: number;
 }
 
-export function summarize(items: DjangoAppointment[], linesOf: LinesOf): RegistrySummary {
+export function summarize(
+  items: DjangoAppointment[],
+  linesOf: LinesOf,
+  withProducts = false,
+): RegistrySummary {
   const total: RegistrySummary = {
     accrued: 0,
     paid: 0,
@@ -109,7 +140,7 @@ export function summarize(items: DjangoAppointment[], linesOf: LinesOf): Registr
 
   let paidVisits = 0;
   for (const appt of items) {
-    const money = moneyOf(appt, linesOf(appt));
+    const money = moneyOf(appt, linesOf(appt), withProducts);
     addMoney(total, money);
     if (money.debt > 0) total.debtors += 1;
     if (money.paid > 0) paidVisits += 1;
@@ -151,48 +182,66 @@ const emptyBucket = (key: string, label: string, fullLabel: string, muted = fals
   muted,
 });
 
-function fill(buckets: Map<string, PulseBucket>, items: DjangoAppointment[], linesOf: LinesOf, keyOf: (at: dayjs.Dayjs) => string): void {
+function fill(
+  buckets: Map<string, PulseBucket>,
+  items: DjangoAppointment[],
+  linesOf: LinesOf,
+  keyOf: (at: dayjs.Dayjs) => string,
+  withProducts: boolean,
+): void {
   for (const appt of items) {
     const at = dayjs(appt.scheduledAt);
     if (!at.isValid()) continue;
     const bucket = buckets.get(keyOf(at));
     if (!bucket) continue;
-    const money = moneyOf(appt, linesOf(appt));
+    const money = moneyOf(appt, linesOf(appt), withProducts);
     bucket.visits += 1;
     bucket.paid += money.paid;
     bucket.debt += money.debt;
   }
 }
 
-/** Столбики по дням выбранного месяца — включая дни без записей. */
+/**
+ * Столбики по дням периода [from, to] — включая дни без записей. Месяц —
+ * частный случай; свой период длиннее двух месяцев рисуется по месяцам
+ * (pulseByMonth), иначе 300 столбиков не читаются.
+ */
 export function pulseByDay(
   items: DjangoAppointment[],
   linesOf: LinesOf,
-  monthStart: dayjs.Dayjs,
+  from: dayjs.Dayjs,
+  to: dayjs.Dayjs = from.endOf("month"),
+  withProducts = false,
 ): PulseBucket[] {
   const buckets = new Map<string, PulseBucket>();
-  for (let d = 1; d <= monthStart.daysInMonth(); d += 1) {
-    const date = monthStart.date(d);
+  const sameMonth = from.isSame(to, "month");
+  for (let date = from.startOf("day"); !date.isAfter(to, "day"); date = date.add(1, "day")) {
     const key = date.format("YYYY-MM-DD");
-    buckets.set(key, emptyBucket(key, String(d), date.format("D MMMM"), date.day() === 0));
+    // В пределах месяца подписываем числом, через границу месяца первый день
+    // каждого месяца — «1 сен», чтобы было видно, где он начался.
+    const label = sameMonth || date.date() !== 1 ? String(date.date()) : date.format("D MMM");
+    buckets.set(key, emptyBucket(key, label, date.format("D MMMM"), date.day() === 0));
   }
-  fill(buckets, items, linesOf, (at) => at.format("YYYY-MM-DD"));
+  fill(buckets, items, linesOf, (at) => at.format("YYYY-MM-DD"), withProducts);
   return Array.from(buckets.values());
 }
 
-/** Столбики по месяцам года — режим «весь год». */
+/** Столбики по месяцам [from, to] — режим «весь год» и длинный свой период. */
 export function pulseByMonth(
   items: DjangoAppointment[],
   linesOf: LinesOf,
-  year: number,
+  from: dayjs.Dayjs,
+  to: dayjs.Dayjs = from.endOf("year"),
+  withProducts = false,
 ): PulseBucket[] {
   const buckets = new Map<string, PulseBucket>();
-  for (let m = 0; m < 12; m += 1) {
-    const date = dayjs().year(year).month(m).date(1);
+  const sameYear = from.isSame(to, "year");
+  for (let date = from.startOf("month"); !date.isAfter(to, "month"); date = date.add(1, "month")) {
     const key = date.format("YYYY-MM");
-    buckets.set(key, emptyBucket(key, date.format("MMM"), date.format("MMMM YYYY")));
+    const label = sameYear ? date.format("MMM") : date.format("MMM YY");
+    buckets.set(key, emptyBucket(key, label, date.format("MMMM YYYY")));
   }
-  fill(buckets, items, linesOf, (at) => at.format("YYYY-MM"));
+  fill(buckets, items, linesOf, (at) => at.format("YYYY-MM"), withProducts);
   return Array.from(buckets.values());
 }
 
@@ -205,7 +254,11 @@ export interface DayGroup {
 }
 
 /** Записи по дням, новые сверху; внутри дня — по времени приёма. */
-export function groupByDay(items: DjangoAppointment[], linesOf: LinesOf): DayGroup[] {
+export function groupByDay(
+  items: DjangoAppointment[],
+  linesOf: LinesOf,
+  withProducts = false,
+): DayGroup[] {
   const map = new Map<string, DjangoAppointment[]>();
   for (const appt of items) {
     const iso = dayjs(appt.scheduledAt).format("YYYY-MM-DD");
@@ -219,7 +272,7 @@ export function groupByDay(items: DjangoAppointment[], linesOf: LinesOf): DayGro
     .map(([iso, dayItems]) => {
       const sorted = [...dayItems].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
       const money: RegistryMoney = { accrued: 0, paid: 0, debt: 0 };
-      for (const appt of sorted) addMoney(money, moneyOf(appt, linesOf(appt)));
+      for (const appt of sorted) addMoney(money, moneyOf(appt, linesOf(appt), withProducts));
       return { iso, items: sorted, money };
     });
 }

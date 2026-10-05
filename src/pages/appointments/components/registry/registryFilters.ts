@@ -7,7 +7,7 @@
  * сливаются в одно условие (та же причина, по которой лента аватарок в
  * регистратуре работает по employee id).
  */
-import type { DjangoAppointment } from "../../../../api/appointments";
+import type { AppointmentServiceLine, DjangoAppointment } from "../../../../api/appointments";
 import { matchesAppointmentSearch } from "../listFilters";
 import type { LinesOf } from "./registryStats";
 
@@ -23,26 +23,77 @@ export interface RegistryToken {
 
 export const tokenKey = (token: RegistryToken) => `${token.kind}:${token.id}`;
 
-function matchesToken(appt: DjangoAppointment, token: RegistryToken, linesOf: LinesOf): boolean {
-  switch (token.kind) {
-    case "patient":
-      return appt.patient?.id === token.id;
-    case "employee":
-      return linesOf(appt).some((line) => line.employee?.id === token.id);
-    case "service":
-      return linesOf(appt).some((line) => line.service?.id === token.id);
-    default:
-      return true;
-  }
+/** Условия, разложенные по видам: внутри вида — ИЛИ, между видами — И. */
+interface TokenSets {
+  patients: Set<number>;
+  employees: Set<number>;
+  services: Set<number>;
 }
 
-/** Все условия должны выполняться одновременно (И, а не ИЛИ). */
+function tokenSets(tokens: RegistryToken[]): TokenSets {
+  const sets: TokenSets = { patients: new Set(), employees: new Set(), services: new Set() };
+  for (const token of tokens) {
+    if (token.kind === "patient") sets.patients.add(token.id);
+    else if (token.kind === "employee") sets.employees.add(token.id);
+    else if (token.kind === "service") sets.services.add(token.id);
+  }
+  return sets;
+}
+
+/**
+ * Подходит ли строка услуги под условия исполнителя и услуги.
+ *
+ * Исполнитель и услуга проверяются на ОДНОЙ строке: «Врач: Исаева» + «Услуга:
+ * УЗИ» — это УЗИ, которое делала Исаева, а не любой приём, где Исаева что-то
+ * делала, а УЗИ провёл кто-то другой.
+ */
+function lineMatches(line: AppointmentServiceLine, sets: TokenSets): boolean {
+  if (sets.employees.size > 0 && (line.employee?.id == null || !sets.employees.has(line.employee.id))) {
+    return false;
+  }
+  if (sets.services.size > 0 && (line.service?.id == null || !sets.services.has(line.service.id))) {
+    return false;
+  }
+  return true;
+}
+
+const hasLineTokens = (sets: TokenSets) => sets.employees.size > 0 || sets.services.size > 0;
+
+/**
+ * Подходит ли приём под условия.
+ *
+ * Условия одного вида складываются через ИЛИ: «Услуга: УЗИ» + «Услуга:
+ * Анализы» — это приёмы с УЗИ или с анализами. Раньше все условия шли через И,
+ * и вторая услуга оставляла только приёмы, где были обе сразу, — лента
+ * пустела. Разные виды (пациент, исполнитель, услуга) по-прежнему сужают
+ * срез вместе.
+ */
 export function matchesTokens(
   appt: DjangoAppointment,
   tokens: RegistryToken[],
   linesOf: LinesOf,
 ): boolean {
-  return tokens.every((token) => matchesToken(appt, token, linesOf));
+  if (tokens.length === 0) return true;
+  const sets = tokenSets(tokens);
+  if (sets.patients.size > 0 && (appt.patient?.id == null || !sets.patients.has(appt.patient.id))) {
+    return false;
+  }
+  if (!hasLineTokens(sets)) return true;
+  return linesOf(appt).some((line) => lineMatches(line, sets));
+}
+
+/**
+ * Строки среза с учётом условий исполнителя и услуги.
+ *
+ * Отфильтровали «Услуга: УЗИ» — и сумма строки, итоги дня, выручка в сводке
+ * считают только УЗИ, а не весь чек приёма, в котором оно было. Без условий
+ * исполнителя/услуги возвращается исходная функция (её стабильность важна для
+ * мемоизации строк ленты).
+ */
+export function narrowLinesOf(linesOf: LinesOf, tokens: RegistryToken[]): LinesOf {
+  const sets = tokenSets(tokens);
+  if (!hasLineTokens(sets)) return linesOf;
+  return (appt) => linesOf(appt).filter((line) => lineMatches(line, sets));
 }
 
 /** Условия + свободный текст (поиск тот же, что в регистратуре: ФИО, телефон, услуга, исполнитель). */
