@@ -17,7 +17,7 @@ import {
   slotsChipTone,
 } from "../theme";
 import { formatDayLong, formatSlotsCount } from "../format";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 
 // ── Плитка дня ───────────────────────────────────────────────────────────────
 

@@ -1,21 +1,11 @@
-import React, { createContext, useContext, useEffect, useMemo } from "react";
-import { useTranslation } from "react-i18next";
+import React, { useEffect, useMemo } from "react";
 
 import { usePermissions } from "../hooks/usePermissions";
-import { getGlossary, isVertical, resolveGlossary, setCurrentGlossary } from "./glossary";
+import { isVertical, resolveGlossary, setCurrentGlossary } from "./glossary";
 import { GLOSSARY_CONFIG_KEY, readGlossaryOverrides } from "./glossaryOverrides";
-import { DEFAULT_VERTICAL, type Glossary, type Vertical } from "./types";
-import type { Namespace } from "./index";
-
-type VerticalContextValue = {
-  vertical: Vertical;
-  glossary: Glossary;
-};
-
-const VerticalContext = createContext<VerticalContextValue>({
-  vertical: DEFAULT_VERTICAL,
-  glossary: getGlossary(DEFAULT_VERTICAL),
-});
+import { DEFAULT_VERTICAL, type Vertical } from "./types";
+import { VerticalContext, type VerticalContextValue } from "./context";
+export { PublicVerticalProvider, useT, useVertical } from "./context";
 
 /** Ключ dev-оверрайда вертикали (см. devVertical ниже). */
 const DEV_VERTICAL_KEY = "mamadoc:vertical";
@@ -36,7 +26,6 @@ const readDevVertical = (): Vertical | null => {
     return null;
   }
 };
-
 /**
  * Определяет вертикаль бизнеса по активной организации и раздаёт
  * соответствующий глоссарий вниз по дереву.
@@ -75,68 +64,6 @@ export const VerticalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const value = useMemo<VerticalContextValue>(
     () => ({ vertical, glossary: resolveGlossary(vertical, overrides) }),
     [vertical, overrides]
-  );
-
-  return <VerticalContext.Provider value={value}>{children}</VerticalContext.Provider>;
-};
-
-/** Текущая вертикаль и её глоссарий. */
-export const useVertical = (): VerticalContextValue => useContext(VerticalContext);
-
-type TFunc = (key: string, options?: Record<string, unknown>) => string;
-
-/**
- * Основной хук для текстов интерфейса.
- *
- *   const { t, term } = useT("patients");
- *   t("list.title")                       // «Пациенты» / «Клиенты»
- *   t("card.balance", { amount: "500" })  // интерполяция обычных значений
- *   term.patient.gen                      // словоформа напрямую, для aria/props
- *
- * Глоссарий подмешивается в каждый вызов, поэтому в JSON можно писать
- * {{patient.gen}} и {{visit.nomPl, capitalize}} без ручного проброса.
- */
-export const useT = (
-  ns: Namespace = "common"
-): { t: TFunc; term: Glossary; vertical: Vertical } => {
-  const { t: rawT } = useTranslation(ns);
-  const { glossary, vertical } = useVertical();
-
-  const t = useMemo<TFunc>(
-    () => (key, options) => rawT(key, { ...glossary, ...options }) as unknown as string,
-    [rawT, glossary]
-  );
-
-  return { t, term: glossary, vertical };
-};
-
-/**
- * Вертикаль для публичных страниц (витрина `/book/*`, лендинг `/site`).
- *
- * `VerticalProvider` берёт вертикаль из активной организации в `/auth/me/`, а у
- * гостя сессии сотрудника нет — там всегда получалась клиника, и салон красоты
- * на своей же витрине читал «Запишитесь к врачу». Публичные страницы знают свою
- * организацию из публичного API, поэтому вертикаль приходит сюда параметром.
- *
- * Синглтон глоссария (`setCurrentGlossary`) здесь трогаем осознанно: на
- * публичных страницах код вне React (`tt()`, api/*) должен говорить теми же
- * терминами. Витрина и CRM в одной вкладке одновременно не живут — витрина
- * рендерится вне staff-layout.
- */
-export const PublicVerticalProvider: React.FC<{
-  /** Код вертикали «с провода»: валидируем здесь, снаружи он просто строка. */
-  vertical: string | null | undefined;
-  children: React.ReactNode;
-}> = ({ vertical, children }) => {
-  const resolved: Vertical = isVertical(vertical) ? vertical : DEFAULT_VERTICAL;
-
-  useEffect(() => {
-    setCurrentGlossary(resolved);
-  }, [resolved]);
-
-  const value = useMemo<VerticalContextValue>(
-    () => ({ vertical: resolved, glossary: getGlossary(resolved) }),
-    [resolved]
   );
 
   return <VerticalContext.Provider value={value}>{children}</VerticalContext.Provider>;

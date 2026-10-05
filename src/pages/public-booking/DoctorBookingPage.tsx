@@ -43,7 +43,7 @@ import {
 } from "./theme";
 import { formatDayLong, formatPhone, formatPrice, formatServicesCount, telHref } from "./format";
 import { primaryPhone, useBookingOrg } from "./useBookingOrg";
-import { useT } from "../../i18n/VerticalProvider";
+import { useT } from "../../i18n/context";
 import { StepIndicator, type BookingStep } from "./booking/StepIndicator";
 import { submitErrorKey } from "./booking/submitError";
 import { ScheduleCard } from "./booking/ScheduleCard";
@@ -178,6 +178,7 @@ const DoctorBookingPage: React.FC = () => {
     undefined,
   );
   const [reviews, setReviews] = React.useState<ProfessionalReview[]>([]);
+  const [doctorLoadedFor, setDoctorLoadedFor] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [notFound, setNotFound] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -271,9 +272,15 @@ const DoctorBookingPage: React.FC = () => {
     setLoading(true);
     setNotFound(false);
     setError(null);
+    setDoctor(null);
+    setDoctorLoadedFor(null);
+    setCalendarByBranch({});
+    setScheduleBranches([]);
     getProfessional(idOrSlug, {}, controller.signal)
       .then((nextDoctor) => {
+        if (controller.signal.aborted) return;
         setDoctor(nextDoctor);
+        setDoctorLoadedFor(idOrSlug);
         setServicesBranchId(null);
       })
       .catch((e) => {
@@ -281,7 +288,7 @@ const DoctorBookingPage: React.FC = () => {
         if (e instanceof ApiError && e.status === 404) setNotFound(true);
         else setError(e instanceof Error ? e.message : "Ошибка загрузки");
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
 
     getProfessionalReviews(idOrSlug, { limit: 20 }, controller.signal)
       .then((r) => setReviews(r.items))
@@ -290,23 +297,24 @@ const DoctorBookingPage: React.FC = () => {
     setScheduleLoading(true);
     setPickedBranchId(null);
     getProfessionalSchedule(idOrSlug, {}, controller.signal)
-      .then((schedule) => setScheduleBranches(schedule.branches))
+      .then((schedule) => { if (!controller.signal.aborted) setScheduleBranches(schedule.branches); })
       .catch((e) => {
         // Расписание — дополнение к карточке: без него запись работает
         // по-старому, в основной филиал врача.
         if (!isAbortError(e)) setScheduleBranches([]);
       })
-      .finally(() => setScheduleLoading(false));
+      .finally(() => { if (!controller.signal.aborted) setScheduleLoading(false); });
     return () => controller.abort();
   }, [idOrSlug]);
 
   // После определения филиала перезагружаем карточку: backend фильтрует
   // doctor.services по этому же филиалу, который уйдёт в бронь.
   React.useEffect(() => {
-    if (!doctor || branchId === null) return;
+    if (!doctor || doctorLoadedFor !== idOrSlug || branchId === null) return;
     const controller = new AbortController();
     getProfessional(idOrSlug, { branchId }, controller.signal)
       .then((nextDoctor) => {
+        if (controller.signal.aborted) return;
         setDoctor(nextDoctor);
         setServicesBranchId(branchId);
       })
@@ -317,7 +325,7 @@ const DoctorBookingPage: React.FC = () => {
         setServicesBranchId(branchId);
       });
     return () => controller.abort();
-  }, [idOrSlug, branchId]);
+  }, [idOrSlug, branchId, doctorLoadedFor]);
 
   /** Ближайший свободный день филиала (или null) — по загруженным календарям. */
   const nearestDayByBranch = React.useMemo(() => {
@@ -384,8 +392,9 @@ const DoctorBookingPage: React.FC = () => {
 
   // Календари врача — по одному на филиал. Грузим без услуги: как только услуги
   // выбраны, времена пересчитываются через available-times.
+  const doctorId = doctor?.id;
   React.useEffect(() => {
-    if (!doctor || scheduleLoading) return;
+    if (!doctorId || doctorLoadedFor !== idOrSlug || scheduleLoading) return;
     const controller = new AbortController();
     const keys: (number | null)[] = scheduleBranches.length
       ? scheduleBranches.map((b) => b.id)
@@ -403,7 +412,9 @@ const DoctorBookingPage: React.FC = () => {
           }),
       ),
     )
-      .then((entries) => setCalendarByBranch(Object.fromEntries(entries)))
+      .then((entries) => {
+        if (!controller.signal.aborted) setCalendarByBranch(Object.fromEntries(entries));
+      })
       .catch((e) => {
         if (!isAbortError(e)) setCalendarByBranch({});
       })
@@ -411,7 +422,7 @@ const DoctorBookingPage: React.FC = () => {
         if (!controller.signal.aborted) setCalendarLoading(false);
       });
     return () => controller.abort();
-  }, [doctor, idOrSlug, scheduleBranches, scheduleLoading, calendarReloadKey]);
+  }, [doctorId, doctorLoadedFor, idOrSlug, scheduleBranches, scheduleLoading, calendarReloadKey]);
 
   // Первое раскрытие блока услуг: он теперь ниже расписания и на телефоне
   // остаётся за краем экрана — иначе гость не заметит, что появился шаг 3.

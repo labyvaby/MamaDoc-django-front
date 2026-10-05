@@ -13,7 +13,7 @@ import {
   phonePlaceholder,
   type PhoneCountryInfo,
 } from "../../../utility/phone";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 import { BOOKING_PRIMARY, BORDER, MUTED } from "../theme";
 import { FIELD_SX, INPUT_SX } from "./fieldStyles";
 

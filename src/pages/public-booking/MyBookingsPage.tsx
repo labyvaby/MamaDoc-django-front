@@ -32,7 +32,7 @@ import {
 } from "../../api/publicPatient";
 import { idOrSlugRef } from "../../api/publicBooking";
 import { isAbortError } from "../../api/client";
-import { useT } from "../../i18n/VerticalProvider";
+import { useT } from "../../i18n/context";
 import { usePatientSession } from "./PatientSession";
 import { PatientAuthDialog } from "./booking/PatientAuthDialog";
 import { PublicBookingShell, PAGE_GUTTER } from "./shell";

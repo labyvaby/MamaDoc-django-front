@@ -8,7 +8,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.tz.setDefault("Asia/Bishkek");
 
-import App from "./App";
+import { ApplicationRouter } from "./ApplicationRouter";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { initInstallPrompt, registerServiceWorker } from "./pwa";
 import { installStaleBuildRecovery } from "./pwa/staleBuildRecovery";
@@ -30,7 +30,7 @@ const root = createRoot(container);
 root.render(
   <ErrorBoundary>
     <BrowserRouter>
-      <App />
+      <ApplicationRouter />
     </BrowserRouter>
   </ErrorBoundary>
 );

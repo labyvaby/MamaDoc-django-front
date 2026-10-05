@@ -3,7 +3,7 @@ import { Box, Paper, Stack, Typography } from "@mui/material";
 import CheckOutlined from "@mui/icons-material/CheckOutlined";
 
 import { BOOKING_SHADOW, TILE_RADIUS, stepTone } from "../theme";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 
 export type BookingStep = 1 | 2 | 3;
 

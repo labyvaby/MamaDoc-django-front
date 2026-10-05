@@ -1,7 +1,7 @@
 import React from "react";
 import { alpha, createTheme, type Theme } from "@mui/material/styles";
 
-import { getAppTheme } from "../../theme";
+import { buildAppTheme } from "../../theme/buildAppTheme";
 
 /**
  * Тема публичных страниц записи (`/book/*`).
@@ -30,21 +30,31 @@ const TEXT = { primary: "#312E2E", secondary: "#7A7878" };
 /** Поверхности: фон страницы и белые карточки. */
 const SURFACE = { default: "#F5F5F5", paper: "#FFFFFF" };
 
+/** The former Refine Blue palette, without importing its staff UI package. */
+const bookingBase = createTheme({
+  palette: {
+    mode: "light",
+    primary: { main: "#1976D2", light: "#4791db", dark: "#115293" },
+  },
+});
+
+export function createBookingTheme(): Theme {
+  const base = buildAppTheme("light", {
+    primaryColor: BOOKING_PRIMARY,
+    surface: SURFACE,
+    cardSkin: "bordered",
+    uiScale: "normal",
+  }, bookingBase);
+  // Цвета текста накладываем поверх: getAppTheme их не принимает, а дефолтный
+  // чёрный MUI заметно холоднее, чем #312E2E эталона.
+  return createTheme(base, {
+    palette: { text: { primary: TEXT.primary, secondary: TEXT.secondary } },
+  });
+}
+
 /** Тема витрины. */
 export function useBookingTheme(): Theme {
-  return React.useMemo(() => {
-    const base = getAppTheme("light", {
-      primaryColor: BOOKING_PRIMARY,
-      surface: SURFACE,
-      cardSkin: "bordered",
-      uiScale: "normal",
-    });
-    // Цвета текста накладываем поверх: getAppTheme их не принимает, а дефолтный
-    // чёрный MUI заметно холоднее, чем #312E2E эталона.
-    return createTheme(base, {
-      palette: { text: { primary: TEXT.primary, secondary: TEXT.secondary } },
-    });
-  }, []);
+  return React.useMemo(createBookingTheme, []);
 }
 
 // ── Геометрия ────────────────────────────────────────────────────────────────

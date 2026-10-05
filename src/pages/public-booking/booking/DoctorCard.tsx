@@ -16,7 +16,7 @@ import {
   accentChip,
 } from "../theme";
 import { formatReviewsCount, formatYears } from "../format";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 
 /** После какой длины биография сворачивается под «Читать далее». */
 const BIO_CLAMP_LENGTH = 140;

@@ -1,0 +1,699 @@
+import { alpha, createTheme, responsiveFontSizes, lighten, darken, getContrastRatio } from "@mui/material/styles";
+import type { PaletteMode, Theme } from "@mui/material/styles";
+import { createFilterOptions } from "@mui/material/Autocomplete";
+import type {} from "@mui/x-data-grid/themeAugmentation";
+import type { AccentTokens } from "./accentPalette";
+
+const fontStack =
+  "'Inter', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji'";
+
+// ---- DESIGN TOKENS: single source of truth ---------------------------------
+// Мы расширяем MUI Theme собственным пространством appLayout — сюда складываем
+// все layout-токены (высоты шапки, оффсеты контента, размеры сайдбара,
+// высоту мобильных bottom-sheet и т.п.), чтобы НИГДЕ в коде не писать "85vh",
+// "120px" и подобные magic numbers напрямую.
+
+export interface AppLayoutConfig {
+  /**
+   * Множитель «Размера интерфейса» из кастомайзера (compact/normal/large).
+   * Кегли масштабируются сами — они в rem, — а вот высоты, заданные в
+   * пикселях, о размере интерфейса не знают. Компоненты, где такие высоты
+   * есть (например, строки недельной сетки расписания), домножают их на этот
+   * множитель, чтобы «Крупный» действительно укрупнял, а не только растил
+   * текст внутри прежней высоты.
+   */
+  uiScaleFactor: number;
+  header: {
+    // Фактическая высота тулбара в AppBar (px)
+    height: {
+      mobile: number; // ~56px
+      desktop: number; // ~64px
+    };
+  };
+  page: {
+    // Базовые отступы страниц в spacing-юнитах MUI (1 = 8px)
+    paddingX: number;
+    paddingY: number;
+  };
+  sidebar: {
+    width: {
+      desktopExpanded: number; // px
+      desktopCollapsed: number; // px
+      mobile: number; // px
+    };
+    // Плотность пунктов меню — задаётся кастомайзером (sidebarDensity)
+    itemPaddingY: number; // spacing-юниты — вертикальный padding пункта
+    itemGap: number; // spacing-юниты — зазор между соседними пунктами
+  };
+  fullPage: {
+    minHeight: string; // базовая высота полноэкранных контейнеров (например, "100vh")
+  };
+  controls: {
+    buttonHeight: number; // px — единственная высота кнопок
+    inputHeight: number; // px — единственная высота однострочных инпутов
+  };
+  card: {
+    paddingX: number; // spacing-юниты для горизонтальных отступов
+    paddingY: number; // spacing-юниты для вертикальных отступов
+  };
+  auth: {
+    // Мин. высота обёртки формы на десктопе (px). Резервирует стабильную
+    // высоту, чтобы блок не «прыгал» при переключении вкладок вход/OTP/email.
+    cardMinHeight: number;
+  };
+  table: {
+    rowHeight: number; // px — базовая высота строки таблиц/гридов
+    headerRowHeight: number; // px — высота строки заголовка
+  };
+  viewportOffset: {
+    // Высота видимой области для основной страницы приёмов
+    home: {
+      mobileOffset: number; // px (100dvh - mobileOffset)
+      desktopOffset: number; // px (100dvh - desktopOffset)
+    };
+    // Колонки и корень страницы сотрудников
+    employees: {
+      desktopOffset: number; // px (100dvh - desktopOffset)
+      minHeightMobile: string; // обычно "100svh"
+    };
+    // Основные высоты для страницы поиска пациентов
+    patientSearch: {
+      mobileOffset: number; // px (100dvh - mobileOffset)
+      // Высота колонки со списком на планшете, как выражение calc(...)
+      listTabletHeight: string;
+      // Высота колонки со списком на десктопе, как выражение calc(...)
+      listDesktopHeight: string;
+    };
+  };
+  drawer: {
+    bottomSheet: {
+      height: string; // vh-выражение (например, "85vh")
+      handleWidth: number; // px
+      handleHeight: number; // px
+      handleRadius: number; // px
+    };
+  };
+}
+
+declare module "@mui/material/styles" {
+  // Расширяем Theme, чтобы внутри sx иметь theme.appLayout.* токены
+  interface Theme {
+    appLayout: AppLayoutConfig;
+  }
+  // И опции темы, чтобы createTheme принимал appLayout
+  interface ThemeOptions {
+    appLayout?: Partial<AppLayoutConfig>;
+  }
+  // Лёгкий тон для фонов активных состояний (например, активная кнопка
+  // фильтра): bgcolor: "primary.lighter".
+  interface PaletteColor {
+    lighter: string;
+    /**
+     * Контраст-безопасный вариант цвета для использования КАК ТЕКСТ/иконка на
+     * поверхности (background.paper): затемнён в светлой теме, осветлён — в
+     * тёмной, чтобы всегда читаться (≈AA). Не путать с contrastText (текст
+     * поверх заливки этого цвета).
+     */
+    onSurface: string;
+  }
+  interface SimplePaletteColorOptions {
+    lighter?: string;
+    onSurface?: string;
+  }
+  // Кастомный акцент «purple/indigo» — единый токен вместо расползшихся по
+  // коду хексов (#7c6af7, #6366f1, #4f46e5 и т.п.). Используется для ночных
+  // смен, процентных надбавок и фиолетового статуса.
+  //
+  // «teal» — шестой акцент, введён под статус приёма «Пациент здесь». Раньше он
+  // делил зелёный с «Оплачено», и в строке регистратуры два разных смысла
+  // (человек в холле / чек закрыт) выглядели одинаково.
+  interface Palette {
+    purple: PaletteColor;
+    teal: PaletteColor;
+  }
+  interface PaletteOptions {
+    purple?: SimplePaletteColorOptions;
+    teal?: SimplePaletteColorOptions;
+  }
+}
+
+const APP_BREAKPOINTS = { xs: 0, sm: 360, md: 768, lg: 1200, xl: 1536 } as const;
+
+// ---- THEME CUSTOMIZATION PRESETS -------------------------------------------
+// Скин карточек, масштаб интерфейса и плотность меню. Фон приложения и цвет
+// карточек сюда не входят: они приходят связкой токенов выбранной темы
+// (theme/accentPalette), поэтому отдельного пресета поверхности больше нет.
+
+export type CardSkin = "bordered" | "shadow";
+export const DEFAULT_CARD_SKIN: CardSkin = "bordered";
+
+/** Размер интерфейса — масштаб типографики. */
+export type UiScale = "compact" | "normal" | "large";
+export const DEFAULT_UI_SCALE: UiScale = "normal";
+/** Множитель базового кегля (MUI typography.fontSize = 14 по умолчанию). */
+export const UI_SCALE_FACTORS: Record<UiScale, number> = {
+  compact: 0.875, // 14px
+  normal: 1, // 16px
+  large: 1.15, // ~18.4px
+};
+
+/** Плотность сайдбара — расстояние между пунктами меню. */
+export type SidebarDensity = "compact" | "normal" | "comfortable" | "spacious";
+export const DEFAULT_SIDEBAR_DENSITY: SidebarDensity = "normal";
+/** Вертикальный padding пункта и зазор между пунктами (spacing-юниты MUI). */
+export const SIDEBAR_DENSITY_TOKENS: Record<
+  SidebarDensity,
+  { itemPaddingY: number; itemGap: number }
+> = {
+  compact: { itemPaddingY: 0.25, itemGap: 0 },
+  normal: { itemPaddingY: 0.5, itemGap: 0 },
+  comfortable: { itemPaddingY: 0.625, itemGap: 0.25 },
+  spacious: { itemPaddingY: 0.75, itemGap: 0.5 },
+};
+export const SIDEBAR_DENSITIES = Object.keys(SIDEBAR_DENSITY_TOKENS) as SidebarDensity[];
+
+export type ThemeCustomization = {
+  /**
+   * Связка токенов выбранной темы (см. theme/accentPalette). Задаёт не только
+   * цвет кнопок, но и фон страницы, цвет карточек и границы — то есть тему
+   * целиком. Если передана, перекрывает primaryColor.
+   */
+  accent?: AccentTokens;
+  /** Одиночный хекс акцента — для мест, где связки токенов нет (публичные страницы). */
+  primaryColor?: string;
+  /**
+   * Фон страницы и карточек в обход темы. В CRM не используется: там поверхности
+   * приходят связкой accent. Остаётся ради витрины записи и лендинга — у них
+   * свой фирменный фон и свой один-единственный акцент.
+   */
+  surface?: { default: string; paper: string };
+  cardSkin?: CardSkin;
+  uiScale?: UiScale;
+  sidebarDensity?: SidebarDensity;
+};
+
+export function buildAppTheme(
+  mode: PaletteMode | string,
+  custom: ThemeCustomization,
+  base: Theme,
+): Theme {
+  const {
+    accent: accentTokens,
+    primaryColor,
+    surface,
+    cardSkin = DEFAULT_CARD_SKIN,
+    uiScale = DEFAULT_UI_SCALE,
+    sidebarDensity = DEFAULT_SIDEBAR_DENSITY,
+  } = custom;
+  const fontScale = UI_SCALE_FACTORS[uiScale] ?? 1;
+  const densityTokens =
+    SIDEBAR_DENSITY_TOKENS[sidebarDensity] ?? SIDEBAR_DENSITY_TOKENS[DEFAULT_SIDEBAR_DENSITY];
+  const m = (mode === "dark" ? "dark" : "light") as PaletteMode;
+
+  // Layout токены — единственный источник правды для размеров layout'а
+  const appLayout: AppLayoutConfig = {
+    uiScaleFactor: fontScale,
+    header: {
+      height: {
+        mobile: 56,
+        desktop: 64,
+      },
+    },
+    page: {
+      paddingX: 2, // theme.spacing(2) = 16px — достаточно для мобильных 375–425px
+      paddingY: 2,
+    },
+    sidebar: {
+      width: {
+        desktopExpanded: 260,
+        desktopCollapsed: 64,
+        mobile: 260,
+      },
+      itemPaddingY: densityTokens.itemPaddingY,
+      itemGap: densityTokens.itemGap,
+    },
+    fullPage: {
+      minHeight: "100vh",
+    },
+    controls: {
+      buttonHeight: 40,
+      inputHeight: 40,
+    },
+    card: {
+      paddingX: 3,
+      paddingY: 3,
+    },
+    auth: {
+      cardMinHeight: 520,
+    },
+    table: {
+      rowHeight: 44,
+      headerRowHeight: 52,
+    },
+    viewportOffset: {
+      home: {
+        // Высоты, использовавшиеся раньше как calc(100dvh - 80px / 128px)
+        mobileOffset: 52, // Высота AppBar (56) + внутренние отступы (24)
+        desktopOffset: 63, // Высота AppBar (64) + внутренние отступы (24)
+      },
+      employees: {
+        // Ранее: calc(100dvh - 120px)
+        desktopOffset: 120,
+        // Ранее: minHeight: { xs: "100svh", md: "auto" }
+        minHeightMobile: "100svh",
+      },
+      patientSearch: {
+        // Ранее: calc(100dvh - 64px)
+        mobileOffset: 64,
+        // Планшет: список чуть компактнее из-за двух колонок
+        listTabletHeight: "calc(100dvh - 164px - 16px)",
+        // Ранее: calc(100dvh - 164px - 16px)
+        listDesktopHeight: "calc(100dvh - 164px - 16px)",
+      },
+    },
+    drawer: {
+      bottomSheet: {
+        // Общая высота bottom-sheet на мобильных. dvh, а не vh: vh считается по
+        // «большому» вьюпорту (адресная строка скрыта), из-за чего лист вылезал
+        // за видимую область на телефоне.
+        height: "85dvh",
+        // Габариты "ручки" для перетаскивания
+        handleWidth: 40,
+        handleHeight: 4,
+        handleRadius: 2,
+      },
+    },
+  };
+
+  // Derive tokens from base to keep compatibility with Refine defaults.
+  // primaryColor (если задан в кастомайзере) переопределяет основной цвет —
+  // от него же зависят бордеры карточек, divider, акценты и т.п.
+  const hasCustomPrimary = Boolean(accentTokens?.accent || primaryColor);
+  const primary = accentTokens?.accent || primaryColor || base.palette.primary.main;
+  const primaryLight = hasCustomPrimary ? lighten(primary, 0.25) : base.palette.primary.light;
+  const primaryDark = hasCustomPrimary ? darken(primary, 0.2) : base.palette.primary.dark;
+  const backgroundPaper = surface?.paper || accentTokens?.surface || base.palette.background.paper;
+  const backgroundDefault = surface?.default || accentTokens?.page || base.palette.background.default;
+  // Тема принесла свои поверхности: фон, карточки и границы взяты из её токенов
+  // и подобраны друг к другу. Явно переданная surface (витрина, лендинг) это
+  // отключает — там границы и подсветка считаются по-старому, от primary.
+  const themed = Boolean(accentTokens) && !surface;
+  // Единый цвет границ карточек, ящиков и шапки.
+  const borderColor =
+    themed && accentTokens ? accentTokens.border : alpha(primary, m === "dark" ? 0.18 : 0.1);
+
+  // Автоподбор цвета текста НА ЗАЛИВКЕ основного цвета — выбираем тот вариант
+  // (белый/тёмный), у которого контраст ВЫШЕ, а не просто «тёмный если ≥3».
+  const useWhiteOnPrimary =
+    getContrastRatio(primary, "#ffffff") >= getContrastRatio(primary, "#000000");
+  const primaryContrastText =
+    accentTokens?.accentFg ?? (useWhiteOnPrimary ? "#fff" : "rgba(0, 0, 0, 0.87)");
+
+  // Контраст-безопасный вариант основного цвета для использования КАК ТЕКСТ на
+  // поверхности: подкручиваем яркость (темнее в светлой теме, светлее в тёмной),
+  // пока контраст к background.paper не достигнет ~AA (4.5:1).
+  const ensureOnSurface = (color: string, bg: string, dark: boolean, min = 4.5): string => {
+    let c = color;
+    let guard = 0;
+    while (getContrastRatio(c, bg) < min && guard < 24) {
+      c = dark ? lighten(c, 0.06) : darken(c, 0.06);
+      guard += 1;
+    }
+    return c;
+  };
+  const primaryOnSurface = ensureOnSurface(primary, backgroundPaper, m === "dark");
+
+  // Производные акцентные поля для ЛЮБОГО цвета палитры: контраст-безопасный
+  // вариант как текст/иконка (onSurface) и лёгкий тон для фонов (lighter).
+  // Раньше эти поля были объявлены в типах, но присвоены только primary —
+  // из-за чего error.lighter / success.onSurface и т.п. были undefined.
+  const accent = (mainColor: string) => ({
+    onSurface: ensureOnSurface(mainColor, backgroundPaper, m === "dark"),
+    lighter: alpha(mainColor, m === "dark" ? 0.24 : 0.12),
+  });
+
+  // Единый кастомный токен purple/indigo.
+  const purpleMain = "#6366f1";
+  const purpleContrastText =
+    getContrastRatio(purpleMain, "#ffffff") >= getContrastRatio(purpleMain, "#000000")
+      ? "#fff"
+      : "rgba(0, 0, 0, 0.87)";
+
+  // Единый кастомный токен teal. Взят между info (синий) и success (зелёный),
+  // но заметно холоднее зелёного. Несёт два состояния приёма: контуром —
+  // «Пациент здесь» (ход визита), заливкой — «Оплачено безналом» (деньги).
+  // Дорожки различает форма чипа, поэтому один оттенок им не мешает.
+  const tealMain = "#0d9488";
+  const tealContrastText =
+    getContrastRatio(tealMain, "#ffffff") >= getContrastRatio(tealMain, "#000000")
+      ? "#fff"
+      : "rgba(0, 0, 0, 0.87)";
+
+  let theme = createTheme({
+    ...base,
+    appLayout,
+    breakpoints: {
+      values: APP_BREAKPOINTS,
+    },
+    palette: {
+      ...base.palette,
+      mode: m,
+      // Fine-tune neutrals and accents for a calmer, designer look
+      primary: {
+        ...base.palette.primary,
+        main: primary,
+        light: primaryLight,
+        dark: primaryDark,
+        contrastText: primaryContrastText,
+        // Лёгкий тон для фонов активных состояний (кнопки фильтра и т.п.).
+        // В тонированном режиме это непрозрачный цвет из палитры: полупрозрачная
+        // подложка «плывёт» поверх цветных строк таблиц и выделения. На
+        // нейтральном фоне остаётся прежняя alpha — цвет из палитры подобран к
+        // её собственной поверхности и на чужой смотрелся бы инородно.
+        lighter:
+          themed && accentTokens
+            ? accentTokens.accentBg
+            : alpha(primary, m === "dark" ? 0.24 : 0.12),
+        // Контраст-безопасный цвет для primary КАК ТЕКСТ на поверхности.
+        onSurface: primaryOnSurface,
+      },
+      secondary: {
+        ...base.palette.secondary,
+        main: base.palette.secondary.main,
+        // lighter/onSurface были undefined — а secondary носит чипы «Скидка
+        // 100%» и «Бесплатно», где цвет идёт текстом по поверхности.
+        ...accent(base.palette.secondary.main),
+      },
+      // Статусным цветам добавляем lighter/onSurface (были undefined).
+      error: { ...base.palette.error, ...accent(base.palette.error.main) },
+      success: { ...base.palette.success, ...accent(base.palette.success.main) },
+      warning: { ...base.palette.warning, ...accent(base.palette.warning.main) },
+      info: { ...base.palette.info, ...accent(base.palette.info.main) },
+      // Кастомный акцент purple/indigo.
+      purple: {
+        main: purpleMain,
+        light: lighten(purpleMain, 0.25),
+        dark: darken(purpleMain, 0.2),
+        contrastText: purpleContrastText,
+        ...accent(purpleMain),
+      },
+      // Кастомный акцент teal — статус «Пациент здесь».
+      teal: {
+        main: tealMain,
+        light: lighten(tealMain, 0.25),
+        dark: darken(tealMain, 0.2),
+        contrastText: tealContrastText,
+        ...accent(tealMain),
+      },
+      background: {
+        default: backgroundDefault,
+        paper: backgroundPaper,
+      },
+      divider: themed ? borderColor : alpha(primary, m === "dark" ? 0.18 : 0.12),
+    },
+    shape: {
+      // Базовый радиус для всего: карточки/кнопки переопределяются ниже
+      borderRadius: 12,
+    },
+    typography: {
+      ...base.typography,
+      fontFamily: fontStack,
+      h1: { fontWeight: 600, letterSpacing: -0.5 },
+      h2: { fontWeight: 600, letterSpacing: -0.5 },
+      h3: { fontWeight: 600, letterSpacing: -0.4 },
+      h4: { fontWeight: 600, letterSpacing: -0.3 },
+      h5: { fontWeight: 600, letterSpacing: -0.2 },
+      h6: { fontWeight: 600, letterSpacing: -0.15 },
+      subtitle1: { fontWeight: 500 },
+      subtitle2: { fontWeight: 500 },
+      button: { fontWeight: 500, textTransform: "none", letterSpacing: 0.2 },
+    },
+    components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          // Global scrollbar hiding
+          "*": {
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+            "&::-webkit-scrollbar": {
+              display: "none",
+            },
+          },
+          ":root": {
+            colorScheme: m,
+          },
+          // Размер интерфейса: корневой кегль <html> задаёт базу для всех rem,
+          // поэтому масштабирует весь текст MUI при рендере (варианты в rem).
+          // База браузера — 16px.
+          html: {
+            fontSize: `${16 * fontScale}px`,
+          },
+          // Единое фокус-кольцо для клавиатурной навигации: только :focus-visible,
+          // чтобы не мешать кликам мышью. Цвет — из primary, работает в обеих темах.
+          ":focus-visible": {
+            outline: `2px solid ${alpha(primary, 0.55)}`,
+            outlineOffset: 2,
+            borderRadius: 4,
+          },
+          // У полей ввода MUI своя индикация фокуса (граница OutlinedInput,
+          // underline) — глобальное кольцо на внутреннем input дало бы двойную
+          // обводку.
+          "input:focus-visible, textarea:focus-visible, [contenteditable]:focus-visible": {
+            outline: "none",
+          },
+          body: {
+            margin: 0,
+            overflowX: "hidden",
+            WebkitTapHighlightColor: "transparent",
+            // Поверхность темы уже несёт свой тон: подсветка поверх неё мутит
+            // оттенок и спорит с «плоским» гайдом. Градиент остаётся только
+            // там, где связки токенов нет.
+            backgroundImage: themed
+              ? "none"
+              : m === "dark"
+                ? `linear-gradient(180deg, rgba(15,18,24,0.9), rgba(15,18,24,0.9)), radial-gradient(1200px 600px at 0% 0%, ${alpha(primary, 0.06)}, transparent)`
+                : `radial-gradient(1200px 600px at 0% 0%, ${alpha(primary, 0.06)}, transparent)`,
+            backgroundRepeat: "no-repeat",
+            backgroundAttachment: "fixed",
+          },
+          // Убираем жёлтый фон автозаполнения Chrome/WebKit: откладываем переход
+          // фона «в бесконечность», текст берём из темы. Работает в обеих темах.
+          "input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus, input:-webkit-autofill:active": {
+            transitionDelay: "9999s",
+            transitionProperty: "background-color, color",
+            WebkitTextFillColor: "inherit",
+            caretColor: "inherit",
+          },
+          // Hide scrollbars inside MUI X time picker (hours/minutes) columns
+          ".MuiPickersSectionList-root, .MuiMultiSectionDigitalClock-root .MuiPickersSectionList-root, .MuiMultiSectionDigitalClock-root ul, .MuiMultiSectionDigitalClock-root [role='listbox']": {
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+            "&::-webkit-scrollbar": { width: 0, height: 0 },
+          },
+          // Fallback: hide any scrollbar inside the pickers popper (Chrome/Edge/Firefox)
+          ".MuiPickersPopper-root *": {
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+          },
+          ".MuiPickersPopper-root *::-webkit-scrollbar": {
+            width: 0,
+            height: 0,
+          },
+        },
+      },
+      MuiAppBar: {
+        defaultProps: { elevation: 0, color: "default" },
+        styleOverrides: {
+          root: {
+            backdropFilter: "saturate(180%) blur(10px)",
+            // Шапка — «стекло» поверх поверхности: жёстко белый фон выбивался бы
+            // из тонированного окружения.
+            backgroundColor: alpha(backgroundPaper, m === "dark" ? 0.75 : 0.7),
+            borderBottom: `1px solid ${borderColor}`,
+          },
+        },
+      },
+      MuiToolbar: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            minHeight: theme.appLayout.header.height.mobile,
+            [theme.breakpoints.up("md")]: {
+              minHeight: theme.appLayout.header.height.desktop,
+            },
+          }),
+        },
+      },
+      MuiCard: {
+        defaultProps: { elevation: 0, variant: "outlined" },
+        styleOverrides: {
+          root: {
+            borderRadius: 14,
+            backgroundImage: "none",
+            transition: "box-shadow .2s ease, transform .2s ease",
+          },
+        },
+      },
+      MuiButton: {
+        defaultProps: { disableElevation: true },
+        styleOverrides: {
+          root: ({ theme }) => ({
+            borderRadius: 10,
+            minHeight: theme.appLayout.controls.buttonHeight,
+            // Тактильный отклик: лёгкое сжатие при нажатии (без теней и подъёма).
+            transition: "background-color .15s ease, border-color .15s ease, color .15s ease, transform .1s ease",
+            "&:active": { transform: "scale(0.98)" },
+          }),
+          containedPrimary: {
+            backgroundImage:
+              "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.06))",
+          },
+          // Текстовые/контурные primary-кнопки используют primary как ТЕКСТ —
+          // берём контраст-безопасный вариант (важно для тёмной темы и ссылок).
+          textPrimary: { color: primaryOnSurface },
+          outlinedPrimary: { color: primaryOnSurface },
+        },
+      },
+      MuiTab: {
+        styleOverrides: {
+          root: {
+            "&.Mui-selected": { color: primaryOnSurface },
+          },
+        },
+      },
+      MuiInputBase: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            minHeight: theme.appLayout.controls.inputHeight,
+            // Автозаполнение Chrome/WebKit красит фон поля синим (особенно
+            // заметно в тёмной теме). Перекрываем его цветом поверхности через
+            // inset box-shadow, а текст берём из темы — работает в обеих темах.
+            "& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus, & input:-webkit-autofill:active": {
+              WebkitBoxShadow: `0 0 0 1000px ${theme.palette.background.paper} inset`,
+              WebkitTextFillColor: theme.palette.text.primary,
+              caretColor: theme.palette.text.primary,
+              borderRadius: "inherit",
+              transition: "background-color 9999s ease-in-out 0s",
+            },
+          }),
+        },
+      },
+      MuiCardContent: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            padding: `${theme.spacing(theme.appLayout.card.paddingY)} ${theme.spacing(theme.appLayout.card.paddingX)}`,
+          }),
+        },
+      },
+      MuiChip: {
+        styleOverrides: {
+          root: {
+            fontWeight: 500,
+            borderRadius: 8,
+          },
+        },
+      },
+      MuiSkeleton: {
+        // Shimmer вместо пульсации — заметно «дороже» выглядит на скелетонах.
+        defaultProps: { animation: "wave" },
+      },
+      MuiListItemButton: {
+        styleOverrides: {
+          root: {
+            borderRadius: 10,
+            transition: "background-color .15s ease, transform .1s ease",
+            "&:active": {
+              transform: "translateY(0.5px)",
+            },
+          },
+        },
+      },
+      MuiDrawer: {
+        styleOverrides: {
+          paper: {
+            borderLeft: `1px solid ${borderColor}`,
+            backgroundImage: "none",
+          },
+        },
+      },
+      MuiDivider: {
+        styleOverrides: {
+          root: {
+            opacity: 0.9,
+          },
+        },
+      },
+      // Скин панелей (Card и Paper используют класс MuiPaper-outlined):
+      // bordered — рамка без тени; shadow — мягкая тень без рамки.
+      MuiPaper: {
+        styleOverrides: {
+          outlined:
+            cardSkin === "shadow"
+              ? {
+                  borderColor: "transparent",
+                  boxShadow:
+                    m === "dark"
+                      ? "0 1px 2px rgba(0,0,0,0.30), 0 6px 20px rgba(0,0,0,0.30)"
+                      : "0 1px 2px rgba(2,6,23,0.04), 0 6px 20px rgba(2,6,23,0.07)",
+                }
+              : {
+                  borderColor,
+                },
+        },
+      },
+      MuiTextField: {
+        defaultProps: {
+          size: "small",
+        },
+      },
+      MuiAutocomplete: {
+        defaultProps: {
+          // Мобильные клавиатуры после принятия подсказки дописывают пробел
+          // («Запор »), а дефолтный фильтр Autocomplete ввод не тримит
+          // (trim: false) — поиск «не находил» существующие опции. Тримим
+          // глобально; компонент со своим filterOptions перекрывает дефолт.
+          filterOptions: createFilterOptions({ trim: true }),
+          noOptionsText: "Ничего не найдено",
+          loadingText: "Загрузка…",
+          clearText: "Очистить",
+          closeText: "Закрыть",
+          openText: "Открыть",
+        },
+      },
+      MuiDataGrid: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            "& .MuiDataGrid-row": {
+              maxHeight: theme.appLayout.table.rowHeight,
+              minHeight: theme.appLayout.table.rowHeight,
+            },
+            "& .MuiDataGrid-columnHeaders": {
+              maxHeight: theme.appLayout.table.headerRowHeight,
+              minHeight: theme.appLayout.table.headerRowHeight,
+            },
+          }),
+        },
+      },
+      MuiIconButton: {
+        defaultProps: {
+          size: "small",
+        },
+      },
+    },
+  });
+
+  // Make typography responsive
+  theme = responsiveFontSizes(theme, { factor: 2.6 });
+
+  return theme;
+}
+
+/**
+ * Лёгкая подложка под плитки/иконки/ховеры — единственное «исключение» с
+ * вычисляемым цветом, и оно централизовано здесь. Используй вместо ручных
+ * `rgba(255,255,255,0.0x)` / `rgba(0,0,0,0.0x)` в компонентах.
+ * В тёмной теме — светлее фона на пару %, в светлой — чуть темнее.
+ */
+export const subtleBg = (t: Theme, strong = false) =>
+  t.palette.mode === "dark"
+    ? alpha("#ffffff", strong ? 0.06 : 0.03)
+    : alpha("#0b0d0f", strong ? 0.04 : 0.018);

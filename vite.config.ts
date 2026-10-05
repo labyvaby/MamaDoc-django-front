@@ -127,12 +127,17 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           // Разделяем код на оптимальные чанки
+          // Shared dependencies must not be absorbed into the staff-only Refine
+          // chunk: booking also uses dayjs and use-sync-external-store.
           manualChunks: {
-            // Vendor чанк для библиотек
-            'vendor-react': ['react', 'react-dom', 'react-router'],
-            'vendor-mui': ['@mui/material', '@mui/icons-material', '@mui/x-date-pickers'],
-            'vendor-refine': ['@refinedev/core', '@refinedev/mui', '@refinedev/react-router'],
+            'vendor-react': [
+              'react', 'react-dom', 'react-router',
+              'use-sync-external-store/shim', 'use-sync-external-store/shim/with-selector',
+            ],
             'vendor-utils': ['dayjs', 'lodash'],
+            'vendor-mui': ['@mui/material', '@mui/icons-material'],
+            'vendor-pickers': ['@mui/x-date-pickers'],
+            'vendor-refine': ['@refinedev/core', '@refinedev/mui', '@refinedev/react-router'],
           },
 
           // Оптимизация имен файлов для кэширования

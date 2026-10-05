@@ -14,7 +14,7 @@ import {
 } from "../../../api/publicPatient";
 import { ApiError } from "../../../api/client";
 import { useWebOtpAutofill } from "../../../components/auth/useWebOtpAutofill";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 import { capitalizeFullName } from "../../../utility/name";
 import { shortYearInputBlur } from "../../../utility/shortYear";
 import type { PhoneCountryInfo } from "../../../utility/phone";
