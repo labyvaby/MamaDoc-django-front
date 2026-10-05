@@ -136,7 +136,7 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.ESTATE_DASHBOARD_VIEW],
   },
 
-  // Продажи застройщика: воронка и лиды (realty)
+  // Продажи застройщика (realty): воронка, лиды, звонки, показы, брони, каталог, ипотека, партнёры, маркетинг
   {
     path: '/realestate/funnel',
     requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
@@ -144,6 +144,40 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
   {
     path: '/realestate/leads',
     requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/calls',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/shows',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/deals',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/catalog',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/mortgage',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/partners',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/marketing',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+
+  // «Планы и мотивация» застройщика (группа «Персонал»): salary
+  {
+    path: '/realestate/motivation',
+    requiredPermissions: [PERMISSIONS.SALARY_VIEW],
   },
 
   // «Мой день» застройщика: задачи CRM (realty)

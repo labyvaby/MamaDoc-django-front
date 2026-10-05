@@ -435,6 +435,7 @@ const RealEstateSidebarMenu: React.FC = () => {
   // «Риелторы и партнёры» и «Маркетинг» в матрице есть только у руководителя (гайд §1) — по ссылке открываются всем с realty.view.
   const canPartners = can(PAGE_PERMISSIONS.realtySales) && seen("partners");
   const canMarketing = can(PAGE_PERMISSIONS.realtySales) && seen("marketing");
+  const canMotivation = can(PAGE_PERMISSIONS.realtyMotivation) && seen("motivation");
   // «Мой день» — задачи CRM застройщика; внутренние заявки MamaDoc («Задачи»)
   // застройщику не нужны: его звонки и показы живут в /api/v2/realty/tasks/.
   const canToday = can(PAGE_PERMISSIONS.realtyToday) && seen("today");
@@ -517,8 +518,11 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canBilling && sectionLabel("Финансы")}
       {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
 
-      {(canEmployees || canSettings) && sectionLabel("Компания")}
+      {(canEmployees || canMotivation) && sectionLabel("Персонал")}
       {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />}
+      {canMotivation && <SidebarMenuItem to="/realestate/motivation" icon={<EmojiEventsOutlined />} label="Планы и мотивация" collapsed={siderCollapsed} />}
+
+      {canSettings && sectionLabel("Компания")}
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
       )}

@@ -58,6 +58,8 @@ export const PAGE_PERMISSIONS = {
   realtyToday: "realty.view",
   // Воронка и лиды застройщика — /api/v2/realty/leads/, менять — realty.manage.
   realtySales: "realty.view",
+  // «Планы и мотивация» застройщика — /api/v2/salary/motivation/, менять — salary.manage.
+  realtyMotivation: "salary.view",
   // ЭДО застройщика: реестр, договоры, шаблоны, архив — edo.view (менять — edo.manage).
   edo: "edo.view",
   // «Документы (CRM)» — файлы сделок модуля продаж.

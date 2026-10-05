@@ -86,6 +86,8 @@ export interface LeadsParams {
   /** Только горячие. */
   hot?: boolean;
   filter?: LeadsFilter;
+  /** Один этап: «Из CRM — сделки на этапе договора» в мотивации. */
+  stage?: LeadStage;
 }
 
 export interface LeadInput {
@@ -140,6 +142,7 @@ function listQuery(params: LeadsParams): string {
   if (params.managerId != null) query.set("managerId", String(params.managerId));
   if (params.hot) query.set("temp", "hot");
   if (params.filter && params.filter !== "active") query.set("filter", params.filter);
+  if (params.stage) query.set("stage", params.stage);
   const qs = query.toString();
   return qs ? `?${qs}` : "";
 }

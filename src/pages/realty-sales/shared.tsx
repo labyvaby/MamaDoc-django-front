@@ -121,9 +121,9 @@ export function SearchBox({ value, onChange, placeholder }: { value: string; onC
  * Ошибка загрузки экрана продаж: выключенный модуль и 403 — экраном «нет
  * доступа», остальное — плашкой с «Повторить».
  */
-export function ScreenError({ error, onRetry, title }: { error: unknown; onRetry: () => void; title?: string }) {
+export function ScreenError({ error, onRetry, title, moduleOffHint }: { error: unknown; onRetry: () => void; title?: string; moduleOffHint?: string }) {
   const { t } = useT("realtySales");
-  if (isModuleDisabled(error)) return <AccessDenied title={t("common.moduleOff")} description={t("common.moduleOffHint")} showBack={false} />;
+  if (isModuleDisabled(error)) return <AccessDenied title={t("common.moduleOff")} description={moduleOffHint ?? t("common.moduleOffHint")} showBack={false} />;
   if (error instanceof ApiError && error.status === 403) return <AccessDenied />;
   return (
     <Alert

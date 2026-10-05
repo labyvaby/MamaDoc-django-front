@@ -115,6 +115,7 @@ const RealtyCatalogPage = lazy(() => import("./pages/realty-sales/CatalogPage"))
 const RealtyMortgagePage = lazy(() => import("./pages/realty-sales/MortgagePage"));
 const RealtyPartnersPage = lazy(() => import("./pages/realty-sales/PartnersPage"));
 const RealtyMarketingPage = lazy(() => import("./pages/realty-sales/MarketingPage"));
+const RealtyMotivationPage = lazy(() => import("./pages/realty-sales/MotivationPage"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const EdoRegistryPage = lazy(() => import("./pages/edo/EdoRegistryPage"));
 const EdoTemplatesPage = lazy(() => import("./pages/edo/TemplatesPage"));
@@ -1312,6 +1313,17 @@ function App() {
                                 }
                               />
                             ))}
+                            {/* «Планы и мотивация» застройщика (AIVIO, группа «Персонал»): /api/v2/salary/motivation/. */}
+                            <Route
+                              path="realestate/motivation"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.realtyMotivation}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <RealtyMotivationPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
                             {/* «Мой день» застройщика (AIVIO): задачи CRM, не внутренние заявки MamaDoc. */}
                             <Route
                               path="realestate/today"
