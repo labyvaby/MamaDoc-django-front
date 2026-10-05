@@ -49,6 +49,7 @@ import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import HubOutlined from "@mui/icons-material/HubOutlined";
 import ManageHistoryOutlined from "@mui/icons-material/ManageHistoryOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import HotelOutlined from "@mui/icons-material/HotelOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
@@ -96,6 +97,12 @@ type TabDef = {
 const TAB_DEFS: TabDef[] = [
   { key: "store", to: "/settings/store", icon: <ReceiptLongOutlined fontSize="small" />, group: "operations" },
   { key: "procurement", to: "/settings/procurement", icon: <LocalShippingOutlined fontSize="small" />, group: "operations" },
+  {
+    key: "appointmentPayments",
+    to: "/settings/appointment-payments",
+    icon: <PaymentsOutlined fontSize="small" />,
+    group: "operations",
+  },
   {
     key: "discountKinds",
     to: "/settings/discount-kinds",
@@ -346,6 +353,13 @@ export function useVisibleSettingsTabs(): TabDef[] {
       return false;
     }
     if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
+    // История оплат живёт в карточке приёма — у магазина и отеля приёмов нет.
+    if (
+      tab.key === "appointmentPayments" &&
+      (activeOrganization?.vertical === "retail" || activeOrganization?.vertical === "hotel")
+    ) {
+      return false;
+    }
     if (tab.key === "clients" && activeOrganization?.vertical !== "retail") return false;
     if (tab.key === "integrations" && activeOrganization?.vertical !== "hotel") return false;
     if (tab.key === "hotelProperty" && activeOrganization?.vertical !== "hotel") return false;

@@ -371,3 +371,34 @@ describe("стиль платёжного чипа", () => {
     expect(state({ paymentStatus: "partial", paidTotal: "500.00" }).paymentStyleStatus).toBe("partially_paid");
   });
 });
+
+describe("предоплата до начала приёма — не долг", () => {
+  // Решение заказчика 05.10.2026: красный «Долг 1100 из 1600» у будущей
+  // записи с внесённой предоплатой путал кассу.
+  const partial = { status: "scheduled" as const, paymentStatus: "partial" as const, paidTotal: "500.00", debt: "1100.00", totalAmount: "1600.00" };
+
+  it("будущий приём: чип предоплаты вместо долга", () => {
+    const s = state({ ...partial, scheduledAt: future });
+    expect(s.prepaidAmount).toBe(500);
+    expect(s.debtAmount).toBeNull();
+    expect(s.totalAmount).toBe(1600);
+    expect(s.showPayChip).toBe(false);
+  });
+
+  it("приём начался — остаток становится долгом", () => {
+    const s = state({ ...partial, scheduledAt: recent });
+    expect(s.debtAmount).toBe(1100);
+    expect(s.prepaidAmount).toBeNull();
+  });
+
+  it("фаза от бэка важнее часов браузера", () => {
+    expect(state({ ...partial, scheduledAt: future, paymentPhase: "debt" }).debtAmount).toBe(1100);
+    expect(state({ ...partial, scheduledAt: recent, paymentPhase: "prepaid" }).prepaidAmount).toBe(500);
+  });
+
+  it("без даты и фазы — как раньше, долг", () => {
+    const s = state(partial);
+    expect(s.debtAmount).toBe(1100);
+    expect(s.prepaidAmount).toBeNull();
+  });
+});

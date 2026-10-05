@@ -65,6 +65,9 @@ export const djangoQueryKeys = {
       ["django", "appointments", "form-data", context] as const,
     payments: (appointmentId: number) =>
       ["django", "appointments", appointmentId, "payments"] as const,
+    /** Переключатели модуля «История оплат» — на организацию. */
+    paymentSettings: (organizationId: number | null) =>
+      ["django", "appointments", "payment-settings", organizationId] as const,
     conclusionSlots: (appointmentId: number) =>
       ["django", "appointments", appointmentId, "conclusion-slots"] as const,
     /** Шапка заключения: пациент и время приёма (см. getConclusionContext). */

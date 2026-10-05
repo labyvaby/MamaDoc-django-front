@@ -13,6 +13,35 @@ export type PaymentStatus =
   | "discounted"
   | "refunded";
 
+/**
+ * Где стоит счёт приёма (бэк: appointments.payment_access.payment_phase).
+ * До начала приёма неоплаченный остаток — «к оплате» (`awaiting`/`prepaid`),
+ * после начала — `debt`. Поле `debt` приёма по-прежнему значит «остаток».
+ */
+export type PaymentPhase =
+  | "awaiting"
+  | "prepaid"
+  | "paid"
+  | "debt"
+  | "discounted"
+  | "refunded"
+  | "free"
+  | "canceled";
+
+/** Вид одной оплаты: до начала приёма, на приёме, погашение долга позже. */
+export type PaymentKind = "prepayment" | "payment" | "debt_repayment";
+
+/** Почему правка/возврат недоступны — стабильные коды бэка. */
+export type PaymentLockReason =
+  | "module_disabled"
+  | "no_permission"
+  | "online_prepayment"
+  | "internal_method"
+  | "has_refund"
+  | "appointment_closed"
+  | "day_closed"
+  | "fully_refunded";
+
 export interface AppointmentPayment {
   id: number;
   method: PaymentMethod;
@@ -44,6 +73,23 @@ export interface AppointmentPayment {
   prepaymentSource?: "manual" | "booking" | null;
   /** Current appointment date; changes when the appointment is rescheduled. */
   targetAppointmentDate?: string | null;
+  /** Комментарий кассира к оплате. */
+  note?: string;
+  /** Auth-user id того, кто принял деньги. */
+  createdById?: number | null;
+  // ── История оплат (undefined — бэк без релиза истории) ──────────────────
+  /** Предоплата / оплата на приёме / погашение долга — от текущего начала приёма. */
+  kind?: PaymentKind;
+  /** Кто принял: ФИО из карточки сотрудника, иначе имя/логин. */
+  createdByName?: string | null;
+  /** Что можно сделать запрашивающему: права + настройки + «день в день». */
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canRefund?: boolean;
+  editLockReason?: PaymentLockReason | null;
+  refundLockReason?: PaymentLockReason | null;
+  /** Сколько раз оплату правили (подробности — в `revisions` сводки). */
+  revisionsCount?: number;
 }
 
 export interface AppointmentRefund {
@@ -57,6 +103,70 @@ export interface AppointmentRefund {
   /** Способ безнала наследуется от платежа, по которому идёт возврат */
   cashlessMethodId?: number | null;
   cashlessMethodName?: string | null;
+  /** Кто оформил возврат. */
+  createdByName?: string | null;
+}
+
+/**
+ * Оплата, какой она была до правки, — снимок бэка. Ключи snake_case: это
+ * JSON-поле, бэк его не переименовывает.
+ */
+export interface PaymentRevisionSnapshot {
+  id?: number;
+  method?: PaymentMethod;
+  amount?: string;
+  cashless_method?: number | null;
+  cashless_method_name?: string | null;
+  insurer?: number | null;
+  insurer_name?: string | null;
+  policy_number?: string;
+  cash_date?: string | null;
+  note?: string;
+  is_prepayment?: boolean;
+  created_at?: string;
+  created_by?: number | null;
+}
+
+/** Одна правка принятой оплаты (из истории или из формы оплаты). */
+export interface PaymentRevision {
+  id: number;
+  paymentId: number;
+  action: "updated" | "deleted";
+  source: "history" | "payment_form";
+  /** `{amount: {old: "500.00", new: "300.00"}, method: {...}}` — snake_case поля оплаты. */
+  changes: Record<string, { old: unknown; new: unknown }>;
+  snapshot: PaymentRevisionSnapshot;
+  reason: string;
+  createdById: number | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+/** Счёт, разделённый моментом начала приёма. Суммы — decimal-строки. */
+export interface PaymentSettlement {
+  phase: PaymentPhase;
+  started: boolean;
+  startsAt: string;
+  /** Чистыми, пришло до начала приёма. */
+  prepaidAmount: string;
+  /** Чистыми, пришло после начала. */
+  paidAfterStartAmount: string;
+  /** Неоплаченный остаток: до начала — «к оплате», после — долг. */
+  remainingAmount: string;
+  /** Остаток, ставший долгом; до начала приёма — 0. */
+  debtAmount: string;
+}
+
+/** Настройки модуля истории и права запрашивающего. */
+export interface PaymentHistoryAccess {
+  historyEnabled: boolean;
+  editingEnabled: boolean;
+  sameDayOnly: boolean;
+  canEdit: boolean;
+  canEditAnyDay: boolean;
+  canRefund: boolean;
+  /** «Сегодня» клиники (Asia/Bishkek) — от него считается «день в день». */
+  today: string;
 }
 
 export interface PaymentSummary {
@@ -102,6 +212,11 @@ export interface PaymentSummary {
    * 30.07.2026: поле присутствует).
    */
   consumptionWarnings?: AppointmentConsumptionWarning[];
+  // ── История оплат (undefined — бэк без релиза истории) ──────────────────
+  settlement?: PaymentSettlement | null;
+  access?: PaymentHistoryAccess | null;
+  /** Правки оплат, старые сначала; пусто, когда история выключена. */
+  revisions?: PaymentRevision[];
 }
 
 export interface PaymentLineInput {
@@ -220,5 +335,81 @@ export function createAppointmentRefund(
   return apiRequest<CreateRefundResponse>(
     `/appointments/${appointmentId}/payments/${paymentId}/refund/`,
     { method: "POST", body: payload },
+  );
+}
+
+// ── История оплат: правка и удаление одной оплаты ───────────────────────────
+
+/**
+ * Правка оплаты из истории. Отсутствующие поля не трогаются; `reason`
+ * обязателен — он попадает в историю. Смена способа с карты/страховки
+ * снимает терминал/страховую.
+ */
+export interface UpdateAppointmentPaymentPayload {
+  reason: string;
+  amount?: string;
+  method?: "cash" | "card" | "insurance";
+  cashlessMethodId?: number | null;
+  insurerId?: number | null;
+  policyNumber?: string;
+  note?: string;
+}
+
+/** Коды ошибок правки, по которым ветвится UI (`ApiError.code`). */
+export const PAYMENT_HISTORY_ERROR_CODES = {
+  /** Чужой день без права «за прошлые дни». */
+  dayLocked: "PAYMENT_DAY_LOCKED",
+  /** Онлайн-предоплата, баланс/бонусы, был возврат, приём отменён. */
+  locked: "PAYMENT_LOCKED",
+  /** Правку выключили в настройках организации. */
+  editingDisabled: "PAYMENT_EDITING_DISABLED",
+} as const;
+
+export function updateAppointmentPayment(
+  appointmentId: number,
+  paymentId: number,
+  payload: UpdateAppointmentPaymentPayload,
+): Promise<PaymentSummary> {
+  return apiRequest<PaymentSummary>(
+    `/appointments/${appointmentId}/payments/${paymentId}/`,
+    { method: "PATCH", body: payload },
+  );
+}
+
+/** Удалить оплату, которой не было (дубль, ошибка). Возврат денег — это refund. */
+export function deleteAppointmentPayment(
+  appointmentId: number,
+  paymentId: number,
+  reason: string,
+): Promise<PaymentSummary> {
+  return apiRequest<PaymentSummary>(
+    `/appointments/${appointmentId}/payments/${paymentId}/delete/`,
+    { method: "POST", body: { reason } },
+  );
+}
+
+/** Три переключателя модуля «История оплат» организации. */
+export interface AppointmentPaymentSettings {
+  historyEnabled: boolean;
+  editingEnabled: boolean;
+  sameDayOnly: boolean;
+}
+
+export function getAppointmentPaymentSettings(
+  signal?: AbortSignal,
+): Promise<AppointmentPaymentSettings> {
+  return apiRequest<AppointmentPaymentSettings>(
+    "/appointments/payment-settings/",
+    { signal },
+  );
+}
+
+/** Менять может только `organization.update`. */
+export function updateAppointmentPaymentSettings(
+  patch: Partial<AppointmentPaymentSettings>,
+): Promise<AppointmentPaymentSettings> {
+  return apiRequest<AppointmentPaymentSettings>(
+    "/appointments/payment-settings/",
+    { method: "PATCH", body: patch },
   );
 }

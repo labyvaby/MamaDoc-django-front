@@ -639,7 +639,14 @@ export interface DjangoAppointment {
   paidTotal?: string;
   discountAmount?: string;
   payableAmount?: string;
+  /** Неоплаченный остаток. Долг ли это уже — говорит `paymentPhase`. */
   debt?: string;
+  /**
+   * Где стоит счёт: до начала приёма остаток — «к оплате» (`prepaid` при
+   * внесённой предоплате, `awaiting` без неё), после начала — `debt`.
+   * undefined — бэк без релиза истории оплат (см. resolvePaymentPhase).
+   */
+  paymentPhase?: import("./payments").PaymentPhase;
   paymentMethods?: string[];
   // Medical conclusion flag — true if the appointment has at least one conclusion
   hasMedicalConclusion?: boolean;

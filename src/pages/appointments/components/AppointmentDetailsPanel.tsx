@@ -87,7 +87,9 @@ import AppointmentProductLines, {
 import AppointmentConsumptions from "./details/AppointmentConsumptions";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
 import AppointmentPriceHistory from "./details/AppointmentPriceHistory";
+import AppointmentPaymentHistory from "./details/AppointmentPaymentHistory";
 import { appointmentNetPaid } from "./paymentCancelGuard";
+import { knownPaymentPhase } from "../../../utility/paymentPhase";
 import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
 
 /** Действие шапки карточки — рисуется кнопкой или пунктом меню. */
@@ -382,6 +384,18 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const discountAmount = pay?.discountAmount ?? appt.discountAmount;
   const refundedTotal = pay?.refundedTotal;
   const payStatus = pay?.paymentStatus ?? appt.paymentStatus;
+  // До начала приёма остаток — «к оплате», после — долг. Сводка оплат свежее
+  // приёма из списка, поэтому её фаза важнее.
+  const paymentPhase =
+    pay?.settlement?.phase ??
+    knownPaymentPhase({
+      ...appt,
+      paymentStatus: payStatus,
+      paidTotal: pay?.paidNet ?? paidTotal,
+      payableAmount: pay?.payableAmount ?? appt.payableAmount,
+    }) ??
+    undefined;
+  const historyEnabled = pay?.access?.historyEnabled === true;
 
   // Подтверждение банка бэк шлёт не на всех эндпоинтах, в типе приёма поля нет.
   const hasBankConfirmation = (appt as DjangoAppointment & { hasBankConfirmation?: boolean })
@@ -527,10 +541,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       ...appt,
       paymentStatus: payStatus,
       paidTotal,
+      paymentPhase,
       paymentMethods:
         methodsFromPayments.length > 0 ? methodsFromPayments : appt.paymentMethods,
     };
-  }, [appt, payStatus, paidTotal, cashPaid, cardPaid, balancePaid, bonusesPaid, insurancePaid]);
+  }, [appt, payStatus, paidTotal, paymentPhase, cashPaid, cardPaid, balancePaid, bonusesPaid, insurancePaid]);
 
   // Services grouped by employee — исполнитель и его услуги одной группой
   const servicesByEmployee = React.useMemo<ServiceEmployeeGroup[]>(() => {
@@ -623,6 +638,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       finalTotal: Math.max(0, Number(totalAmount || 0) - Number(discountAmount || 0)),
       debt: Number(debt || 0),
       status: payStatus ?? appt.status,
+      phase: paymentPhase,
     };
 
     const actionBtn =
@@ -1283,6 +1299,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                 </Typography>
                 {paymentBlock(false)}
               </>
+            )}
+
+            {/* ── История оплат — в самом низу: кто, когда и каким способом
+                принял деньги, предоплата/долг, правка и возврат. Модуль
+                включается в настройках организации; права — finance.payments.* ── */}
+            {(canViewFinance || canManageFinance) && historyEnabled && (
+              <AppointmentPaymentHistory
+                appointment={appt}
+                summary={pay}
+                loading={payQuery.isLoading}
+                error={payQuery.isError}
+                onRetry={() => void payQuery.refetch()}
+                canAcceptPayment={canManageFinance}
+                onPay={() => onPay(appt)}
+              />
             )}
 
             {/* Заключение теперь открывается отдельной (третьей) колонкой на
