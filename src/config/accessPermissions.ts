@@ -36,6 +36,9 @@ export const PAGE_PERMISSIONS = {
   // ни бэкфиллом: после выкладки страницу видит только суперадминистратор,
   // пока право не отметят роли в редакторе.
   load: "reports.load.view",
+  // «Сводка» — тоже своё право, никому не выданное: раньше раздел видел
+  // только суперадминистратор, теперь его открывают ролям в редакторе.
+  dashboard: "reports.dashboard.view",
   payroll: ["payroll.view", "payroll.view_own"],
   notifications: "notifications.page.view",
   reviews: ["reviews.view", "reviews.view_own", "reviews.handle", "reviews.manage"],
