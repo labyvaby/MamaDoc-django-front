@@ -233,7 +233,11 @@ export const LoadAnalyticsPage: React.FC = () => {
                 }}
               >
                 <Box sx={{ flex: 1, minHeight: 0 }}>
-                  <LoadChart metric={metric} buckets={buckets} />
+                  <LoadChart
+                    metric={metric}
+                    buckets={buckets}
+                    scheduleSpan={activeGranularity === "hourly" ? data.scheduleSpan ?? null : null}
+                  />
                 </Box>
               </Card>
 
