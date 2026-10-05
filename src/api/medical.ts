@@ -1,4 +1,4 @@
-import { ApiError, apiRequest, apiRequestWithHeaders } from "./client";
+import { ApiError, apiRequest, apiRequestWithHeaders, apiStream } from "./client";
 import { preparePhotoOrThrow, withUploadErrors } from "./uploads";
 import { parseBackendError } from "./appointments";
 
@@ -739,6 +739,8 @@ export interface AiAssistForm {
 interface AiAssistSuggestionDto {
   text?: string | null;
   confidence?: number;
+  /** Причина правки (ответ бэка 05.10.2026): до ~80 символов, может не быть. */
+  reason?: string | null;
 }
 
 interface AiAssistBatchResponse {
@@ -753,6 +755,19 @@ export interface AiAssistBatchResult {
   fields: AiAssistFieldsResult;
   /** По `id` строк бланка; ключи — ровно отправленные строки. */
   rows: Record<string, string | null>;
+  /** Причины правки — только там, где модель её дала. */
+  fieldReasons: Partial<Record<AiAssistField, string>>;
+  rowReasons: Record<string, string>;
+}
+
+/**
+ * Причина правки или null. Бэк присылает её не всегда (ключа нет вовсе) и
+ * сам режет до 200 символов; пустую строку за причину не считаем.
+ */
+export function normalizeAiReason(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.replace(INVISIBLE_CHARS_RE, "").trim();
+  return text || null;
 }
 
 /**
@@ -771,9 +786,17 @@ export function normalizeAiBatchSuggestions(
   const dto = response as AiAssistBatchResponse | null;
   const suggestions = dto?.suggestions ?? {};
   const formSuggestions = dto?.formSuggestions ?? {};
-  const result: AiAssistBatchResult = { fields: {}, rows: {} };
-  for (const field of fields) result.fields[field] = normalizeAiText(suggestions[field]?.text);
-  for (const id of rowIds) result.rows[id] = normalizeAiText(formSuggestions[id]?.text);
+  const result: AiAssistBatchResult = { fields: {}, rows: {}, fieldReasons: {}, rowReasons: {} };
+  for (const field of fields) {
+    result.fields[field] = normalizeAiText(suggestions[field]?.text);
+    const reason = normalizeAiReason(suggestions[field]?.reason);
+    if (result.fields[field] != null && reason) result.fieldReasons[field] = reason;
+  }
+  for (const id of rowIds) {
+    result.rows[id] = normalizeAiText(formSuggestions[id]?.text);
+    const reason = normalizeAiReason(formSuggestions[id]?.reason);
+    if (result.rows[id] != null && reason) result.rowReasons[id] = reason;
+  }
   return result;
 }
 
@@ -819,12 +842,34 @@ export function fitAiFormRows(rows: readonly AiAssistFormRow[]): AiAssistFormRow
  */
 export async function requestAiAssistBatch(
   entries: readonly AiAssistBatchEntry[],
-  options: {
-    serviceLineId?: number | null;
-    form?: AiAssistForm | null;
-    signal?: AbortSignal;
-  } = {},
+  options: AiAssistRequestOptions = {},
 ): Promise<AiAssistBatchResult> {
+  const { body, fields, rowIds } = buildAiAssistBody(entries, options);
+  const response = await apiRequest<AiAssistBatchResponse>("/medical/ai/assist/batch/", {
+    method: "POST",
+    body,
+    signal: options.signal,
+  });
+  return normalizeAiBatchSuggestions(response, fields, rowIds);
+}
+
+interface AiAssistRequestOptions {
+  serviceLineId?: number | null;
+  form?: AiAssistForm | null;
+  signal?: AbortSignal;
+}
+
+interface AiAssistBody {
+  fields: AiAssistBatchEntry[];
+  serviceLineId?: number;
+  form?: { title?: string; target: AiAssistField; rows: AiAssistFormRow[] };
+}
+
+/** Тело `batch/` и `batch/stream/` — у обоих одно (ответ бэка 05.10.2026). */
+function buildAiAssistBody(
+  entries: readonly AiAssistBatchEntry[],
+  options: AiAssistRequestOptions,
+): { body: AiAssistBody; fields: AiAssistField[]; rowIds: string[] } {
   const rows = options.form ? fitAiFormRows(options.form.rows) : [];
   const form = options.form && rows.length > 0 ? { ...options.form, rows } : null;
   const sent = form ? entries.filter((entry) => entry.field !== form.target) : [...entries];
@@ -837,11 +882,7 @@ export async function requestAiAssistBatch(
     // 422 бэка здесь — баг фронта; ловим его до запроса.
     throw new Error(`AI assist batch: 1–${AI_ASSIST_BATCH_MAX} уникальных полей, получено [${fields.join(", ")}]`);
   }
-  const body: {
-    fields: AiAssistBatchEntry[];
-    serviceLineId?: number;
-    form?: { title?: string; target: AiAssistField; rows: AiAssistFormRow[] };
-  } = {
+  const body: AiAssistBody = {
     fields: sent.map(({ field, text }) => ({ field, text })),
   };
   if (options.serviceLineId != null) body.serviceLineId = options.serviceLineId;
@@ -849,12 +890,208 @@ export async function requestAiAssistBatch(
     body.form = { target: form.target, rows };
     if (form.title?.trim()) body.form.title = form.title.trim();
   }
-  const response = await apiRequest<AiAssistBatchResponse>("/medical/ai/assist/batch/", {
+  return { body, fields, rowIds: rows.map((row) => row.id) };
+}
+
+/** Событие SSE: имя (`event:`) и склеенные строки `data:`. */
+export interface SseEvent {
+  event: string;
+  data: string;
+}
+
+/**
+ * Разбор `text/event-stream` по кускам, как они приходят из сети: событие
+ * может разорваться посередине строки, `\r\n` — между двумя кусками.
+ * Комментарии (`: ping` — heartbeat бэка раз в 15 с) пропускаются. Событие
+ * без пустой строки в конце потока по спецификации не отдаётся.
+ */
+export function createSseParser(onEvent: (event: SseEvent) => void) {
+  let buffer = "";
+  let name = "";
+  let data: string[] = [];
+  const line = (raw: string) => {
+    if (raw === "") {
+      if (data.length > 0) onEvent({ event: name || "message", data: data.join("\n") });
+      name = "";
+      data = [];
+      return;
+    }
+    if (raw.startsWith(":")) return;
+    const colon = raw.indexOf(":");
+    const field = colon < 0 ? raw : raw.slice(0, colon);
+    let value = colon < 0 ? "" : raw.slice(colon + 1);
+    if (value.startsWith(" ")) value = value.slice(1);
+    if (field === "event") name = value;
+    else if (field === "data") data.push(value);
+  };
+  return {
+    push(chunk: string) {
+      buffer += chunk;
+      for (;;) {
+        const lf = buffer.indexOf("\n");
+        const cr = buffer.indexOf("\r");
+        if (lf < 0 && cr < 0) return;
+        const end = cr >= 0 && (lf < 0 || cr < lf) ? cr : lf;
+        // `\r` в самом конце куска — возможно, половина `\r\n`: ждём следующий.
+        if (end === cr && cr === buffer.length - 1) return;
+        line(buffer.slice(0, end));
+        buffer = buffer.slice(end === cr && buffer[cr + 1] === "\n" ? end + 2 : end + 1);
+      }
+    },
+  };
+}
+
+/** Одна подсказка из потока — колонка заключения или строка бланка. */
+export interface AiAssistStreamSuggestion {
+  kind: "field" | "row";
+  /** Имя колонки (`anamnesis`) или `id` строки бланка из запроса. */
+  key: string;
+  /** null — модели нечего предложить (пустой текст или заглушка). */
+  text: string | null;
+  reason: string | null;
+}
+
+/**
+ * Поток оборвался после старта: `event: error` от бэка (`AI_UNAVAILABLE` —
+ * сервис, таймаут, битый ответ модели) или конец потока без `done`
+ * (gunicorn убивает запрос дольше 120 с). Пришедшие подсказки валидны.
+ */
+export class AiAssistStreamError extends Error {
+  code: string;
+  /** Сколько подсказок пришло до обрыва. */
+  received: number;
+  constructor(code: string, received: number) {
+    super(`AI assist stream: ${code}`);
+    this.name = "AiAssistStreamError";
+    this.code = code;
+    this.received = received;
+  }
+}
+
+/** Ответ пришёл, но это не поток — фронт стоит перед старым бэком или прокси. */
+const NOT_A_STREAM = "NOT_A_STREAM";
+/** Поток кончился без `done`/`error`. */
+const STREAM_TRUNCATED = "STREAM_TRUNCATED";
+
+/**
+ * POST /api/medical/ai/assist/batch/stream/ — те же подсказки, что у
+ * `batch/`, но по мере готовности (SSE, ответ бэка 05.10.2026 на
+ * `docs/backend_ticket_ai_assist_streaming.md`). Единица потока — готовый
+ * чанк модели до 8 элементов: обычное заключение — один чанк, всё придёт
+ * почти разом; выигрыш — на длинных протоколах УЗИ.
+ *
+ * Каждый ключ — не больше одного раза; чужие ключи бэк отбрасывает сам, мы
+ * тоже. Ошибки до старта — `ApiError` (JSON-конверт), после — `AiAssistStreamError`.
+ * Таймаута у клиента нет, как и у `batch/`.
+ */
+export async function streamAiAssistBatch(
+  entries: readonly AiAssistBatchEntry[],
+  options: AiAssistRequestOptions & { onSuggestion: (s: AiAssistStreamSuggestion) => void },
+): Promise<{ total: number; suggested: number }> {
+  const { body, fields, rowIds } = buildAiAssistBody(entries, options);
+  const response = await apiStream("/medical/ai/assist/batch/stream/", {
     method: "POST",
     body,
     signal: options.signal,
   });
-  return normalizeAiBatchSuggestions(response, fields, rows.map((row) => row.id));
+  if (!response.body || !(response.headers.get("Content-Type") ?? "").includes("text/event-stream")) {
+    throw new AiAssistStreamError(NOT_A_STREAM, 0);
+  }
+
+  const expected = {
+    field: new Set<string>(fields),
+    row: new Set<string>(rowIds),
+  };
+  let received = 0;
+  let finished: { total: number; suggested: number } | null = null;
+  let failure: string | null = null;
+  const parser = createSseParser(({ event, data }) => {
+    if (finished || failure) return;
+    let payload: Record<string, unknown> | null = null;
+    try {
+      const parsed: unknown = JSON.parse(data);
+      if (parsed && typeof parsed === "object") payload = parsed as Record<string, unknown>;
+    } catch {
+      payload = null;
+    }
+    if (event === "suggestion" && payload) {
+      const kind = payload.kind === "row" ? "row" : payload.kind === "field" ? "field" : null;
+      const key = typeof payload.key === "string" ? payload.key : null;
+      if (!kind || !key || !expected[kind].delete(key)) return;
+      received += 1;
+      options.onSuggestion({
+        kind,
+        key,
+        text: normalizeAiText(payload.text),
+        reason: normalizeAiReason(payload.reason),
+      });
+    } else if (event === "done") {
+      finished = {
+        total: typeof payload?.total === "number" ? payload.total : fields.length + rowIds.length,
+        suggested: typeof payload?.suggested === "number" ? payload.suggested : received,
+      };
+    } else if (event === "error") {
+      failure = typeof payload?.code === "string" && payload.code ? payload.code : "AI_UNAVAILABLE";
+    }
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  try {
+    while (!finished && !failure) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parser.push(decoder.decode(value, { stream: true }));
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new AiAssistStreamError(STREAM_TRUNCATED, received);
+  } finally {
+    // После `done`/`error` бэк закрывает соединение сам; рвём и на всякий случай.
+    reader.cancel().catch(() => undefined);
+  }
+  if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  if (failure) throw new AiAssistStreamError(failure, received);
+  if (!finished) throw new AiAssistStreamError(STREAM_TRUNCATED, received);
+  return finished;
+}
+
+/**
+ * Подсказки потоком, а где поток недоступен — пакетом.
+ *
+ * На `batch/` падаем, только если до модели дело не дошло: 404/405 (бэк без
+ * стрима), сетевая ошибка до ответа, ответ не `text/event-stream`. Тогда
+ * подсказки придут разом, через тот же `onSuggestion`.
+ *
+ * ⚠ Сознательное отличие от рекомендации бэка: на `event: error` до первой
+ * подсказки `batch/` НЕ зовём. Это ответ того же AI-сервиса: при исчерпанной
+ * квоте `batch/` вернёт тот же 502, а при таймауте врач прождал бы ещё до
+ * двух минут. Остаток после частичного обрыва тоже не дозапрашиваем — квота
+ * провайдера общая на всех (ответ бэка 16.09.2026).
+ */
+export async function requestAiAssistStream(
+  entries: readonly AiAssistBatchEntry[],
+  options: AiAssistRequestOptions & { onSuggestion: (s: AiAssistStreamSuggestion) => void },
+): Promise<{ total: number; suggested: number }> {
+  try {
+    return await streamAiAssistBatch(entries, options);
+  } catch (err) {
+    const noStream =
+      (err instanceof ApiError && (err.status === 404 || err.status === 405 || err.status === 0)) ||
+      (err instanceof AiAssistStreamError && err.code === NOT_A_STREAM);
+    if (!noStream) throw err;
+  }
+  const result = await requestAiAssistBatch(entries, options);
+  let suggested = 0;
+  const emit = (kind: "field" | "row", key: string, text: string | null, reason: string | undefined) => {
+    if (text != null) suggested += 1;
+    options.onSuggestion({ kind, key, text, reason: reason ?? null });
+  };
+  for (const [field, text] of Object.entries(result.fields) as Array<[AiAssistField, string | null]>) {
+    emit("field", field, text, result.fieldReasons[field]);
+  }
+  for (const [id, text] of Object.entries(result.rows)) emit("row", id, text, result.rowReasons[id]);
+  return { total: Object.keys(result.fields).length + Object.keys(result.rows).length, suggested };
 }
 
 /**

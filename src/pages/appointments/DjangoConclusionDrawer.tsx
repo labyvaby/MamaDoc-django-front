@@ -470,11 +470,16 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const canAiAssist = useCan("medical.conclusions.create") && !readOnly;
   const ai = useAiAssist({
     serviceLineId,
-    // Один тост на нажатие, и только когда подсказок нет совсем: в поле, где
-    // модели нечего сказать, плашки просто нет. Пакет — всё или ничего,
-    // «часть полей упала» не бывает (частичный ответ бэк отдаёт как 200).
+    // Один тост на нажатие: когда подсказок нет совсем (в поле, где модели
+    // нечего сказать, плашки просто нет) или поток оборвался на середине —
+    // пришедшие карточки остаются, по остальным полям AI не ответил.
     onSettled: ({ suggested, empty, unchanged, unavailable, failed }) => {
-      if (suggested > 0) return;
+      if (suggested > 0) {
+        if (unavailable > 0) {
+          notify?.({ type: "error", message: t("conclusion.aiAssist.partial", { count: unavailable }) });
+        }
+        return;
+      }
       if (unavailable > 0) {
         notify?.({ type: "error", message: t("conclusion.aiAssist.unavailable") });
       } else if (failed > 0) {
@@ -1767,6 +1772,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         key,
         suggestion: ai.of(key).suggestion as string,
         source: ai.of(key).source,
+        reason: ai.of(key).reason,
       }));
     if (entries.length > 0) setAiReview(entries);
   };

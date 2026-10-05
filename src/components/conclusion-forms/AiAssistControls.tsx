@@ -272,6 +272,12 @@ export const AiAssistSuggestion: React.FC<{
             {stale ? t("conclusion.aiAssist.cardStale") : t("conclusion.aiAssist.cardDraft")}
           </Typography>
         )}
+        {/* Причина правки — врач быстрее решает, принимать ли её (бэк 05.10.2026). */}
+        {state.reason && (
+          <Typography variant="caption" color="text.secondary">
+            {t("conclusion.aiAssist.reason", { reason: state.reason })}
+          </Typography>
+        )}
         {parts ? (
           <AiDiffText ref={textRef} parts={parts} sx={{ lineHeight: 1.6, ...clampSx }} />
         ) : (

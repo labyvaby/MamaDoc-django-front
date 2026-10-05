@@ -54,6 +54,8 @@ export interface AiReviewEntry {
   suggestion: string;
   /** Текст поля, ушедший в AI, — для предупреждения о правках за время ответа. */
   source?: string;
+  /** Причина правки от модели, если она её дала. */
+  reason?: string | null;
 }
 
 type Decision =
@@ -289,6 +291,11 @@ export const AiReviewDialog: React.FC<{
         </Stack>
 
         {shown.stale && <Alert severity="warning">{t("conclusion.aiAssist.review.stale")}</Alert>}
+        {entry.reason && (
+          <Typography variant="body2" color="text.secondary">
+            {t("conclusion.aiAssist.reason", { reason: entry.reason })}
+          </Typography>
+        )}
 
         {editing ? (
           <TextField
