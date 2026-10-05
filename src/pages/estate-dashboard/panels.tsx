@@ -232,7 +232,11 @@ function Sales({ data }: { data: SalesPanel }) {
   const theme = useTheme();
   const max = Math.max(1, ...data.stages.map((s) => s.value));
   return (
-    <Panel title={t("panels.sales.title")} summary={`${t("panels.sales.summary", { count: data.leads, sum: compactMoney(data.amount, t) })} · ${t("panels.sales.hot", { count: data.hot })}`}>
+    <Panel
+      title={t("panels.sales.title")}
+      summary={`${t("panels.sales.summary", { count: data.leads, sum: compactMoney(data.amount, t) })} · ${t("panels.sales.hot", { count: data.hot })}`}
+      to={estateHref("funnel")}
+    >
       <Box sx={{ display: "grid", gap: 1 }}>
         {data.stages.map((s) => (
           <Box key={s.stage} sx={{ display: "grid", gridTemplateColumns: "minmax(0, 150px) minmax(0, 1fr) auto", alignItems: "center", gap: 1.25 }}>

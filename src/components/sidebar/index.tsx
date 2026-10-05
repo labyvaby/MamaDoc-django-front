@@ -419,6 +419,8 @@ const RealEstateSidebarMenu: React.FC = () => {
 
   const canDashboard = can(PAGE_PERMISSIONS.estateDashboard) && seen("dashboard");
   const canChessboard = moduleGate("realty") && seen("inventory");
+  const canFunnel = can(PAGE_PERMISSIONS.realtySales) && seen("funnel");
+  const canLeads = can(PAGE_PERMISSIONS.realtySales) && seen("leads");
   // «Мой день» — задачи CRM застройщика; внутренние заявки MamaDoc («Задачи»)
   // застройщику не нужны: его звонки и показы живут в /api/v2/realty/tasks/.
   const canToday = can(PAGE_PERMISSIONS.realtyToday) && seen("today");
@@ -469,9 +471,13 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canToday && (
         <SidebarMenuItem to="/realestate/today" icon={<AssignmentOutlined />} label="Мой день" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
       )}
-      {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
       {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
       {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
+
+      {(canFunnel || canLeads || canChessboard) && sectionLabel("Продажи")}
+      {canFunnel && <SidebarMenuItem to="/realestate/funnel" icon={<FilterAltOutlined />} label="CRM · воронка" collapsed={siderCollapsed} />}
+      {canLeads && <SidebarMenuItem to="/realestate/leads" icon={<SearchOutlined />} label="Лиды и клиенты" collapsed={siderCollapsed} />}
+      {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
 
       {(docsItems.length > 0 || canSalesDocs) && sectionLabel("Документы")}
       {docsItems.map(([screen, to, label, icon]) => (

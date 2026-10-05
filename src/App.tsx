@@ -106,6 +106,8 @@ const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPag
 const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
 const EstateDashboardPage = lazy(() => import("./pages/estate-dashboard"));
 const RealtyTodayPage = lazy(() => import("./pages/estate-dashboard/TodayPage"));
+const RealtyFunnelPage = lazy(() => import("./pages/realty-sales/FunnelPage"));
+const RealtyLeadsPage = lazy(() => import("./pages/realty-sales/LeadsPage"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const EdoRegistryPage = lazy(() => import("./pages/edo/EdoRegistryPage"));
 const EdoTemplatesPage = lazy(() => import("./pages/edo/TemplatesPage"));
@@ -1277,6 +1279,25 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {/* Продажи застройщика (AIVIO): воронка и лиды на /api/v2/realty/leads/, не MamaDoc /deals и /patients. */}
+                            {(
+                              [
+                                ["realestate/funnel", RealtyFunnelPage],
+                                ["realestate/leads", RealtyLeadsPage],
+                              ] as const
+                            ).map(([path, Page]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.realtySales}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
                             {/* «Мой день» застройщика (AIVIO): задачи CRM, не внутренние заявки MamaDoc. */}
                             <Route
                               path="realestate/today"

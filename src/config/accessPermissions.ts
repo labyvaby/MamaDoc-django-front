@@ -56,6 +56,8 @@ export const PAGE_PERMISSIONS = {
   estateDashboard: "estate_dashboard.view",
   // «Мой день» застройщика — задачи CRM `/api/v2/realty/tasks/`, менять — realty.manage.
   realtyToday: "realty.view",
+  // Воронка и лиды застройщика — /api/v2/realty/leads/, менять — realty.manage.
+  realtySales: "realty.view",
   // ЭДО застройщика: реестр, договоры, шаблоны, архив — edo.view (менять — edo.manage).
   edo: "edo.view",
   // «Документы (CRM)» — файлы сделок модуля продаж.

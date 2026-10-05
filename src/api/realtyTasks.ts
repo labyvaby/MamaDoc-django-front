@@ -55,6 +55,8 @@ export interface RealtyTaskInput {
   meta?: string;
   kind: RealtyTaskKind;
   managerId?: number | null;
+  /** Задача по заявке («⌖ Показ» из карточки лида). */
+  leadId?: number | null;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- сырой ответ разбирается здесь и только здесь */
@@ -93,6 +95,7 @@ export async function createRealtyTask(input: RealtyTaskInput, scope?: RealtySco
   const body: Record<string, unknown> = { text: input.text, date: input.date, time: input.time, kind: input.kind };
   if (input.meta?.trim()) body.meta = input.meta.trim();
   if (input.managerId != null) body.managerId = input.managerId;
+  if (input.leadId != null) body.leadId = input.leadId;
   return fromRaw(await apiRequest(`${TASKS_API}/`, { method: "POST", body, headers: realtyHeaders(scope) }));
 }
 

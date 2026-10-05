@@ -16,12 +16,21 @@ import {
   type RealtyTaskKind,
 } from "../../api/realtyTasks";
 import { estateDashboardKeys } from "../../api/estateDashboard";
+import { realtyLeadKeys } from "../../api/realtyLeads";
 import { CustomDatePicker, CustomTimePicker } from "../../components/ui";
 import { useCan } from "../../hooks/useCan";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { useT } from "../../i18n/VerticalProvider";
 
-export type TaskDrawerMode = { kind: "create"; date: string } | { kind: "reschedule"; task: RealtyTaskItem } | { kind: "delegate"; task: RealtyTaskItem };
+export type TaskDrawerMode =
+  | {
+      kind: "create";
+      date: string;
+      /** Из карточки лида: тип, текст, ответственный и привязка к заявке — сразу заполнены. */
+      preset?: { kind?: RealtyTaskKind; text?: string; managerId?: number | null; leadId?: number };
+    }
+  | { kind: "reschedule"; task: RealtyTaskItem }
+  | { kind: "delegate"; task: RealtyTaskItem };
 
 interface Form {
   text: string;
@@ -37,7 +46,15 @@ const timeOf = (date: string, time: string) => (time ? dayjs(`${date}T${time}`) 
 function formFor(mode: TaskDrawerMode): Form {
   if (mode.kind === "create") {
     // Время по умолчанию — ближайший час: задачу обычно ставят «на сегодня, попозже».
-    return { text: "", kind: "call", date: dayjs(mode.date), time: dayjs().add(1, "hour").startOf("hour"), meta: "", managerId: "" };
+    const preset = mode.preset;
+    return {
+      text: preset?.text ?? "",
+      kind: preset?.kind ?? "call",
+      date: dayjs(mode.date),
+      time: dayjs().add(1, "hour").startOf("hour"),
+      meta: "",
+      managerId: preset?.managerId != null ? String(preset.managerId) : "",
+    };
   }
   const { task } = mode;
   return {
@@ -82,7 +99,7 @@ export function TaskDrawer({ mode, onClose }: { mode: TaskDrawerMode | null; onC
       const time = form.time?.format("HH:mm") ?? "";
       const managerId = form.managerId ? Number(form.managerId) : null;
       if (mode.kind === "create") {
-        await createRealtyTask({ text: form.text.trim(), kind: form.kind, date, time, meta: form.meta, managerId }, scope);
+        await createRealtyTask({ text: form.text.trim(), kind: form.kind, date, time, meta: form.meta, managerId, leadId: mode.preset?.leadId }, scope);
       } else if (mode.kind === "reschedule") {
         await updateRealtyTask(mode.task.id, { date, time }, scope);
       } else {
@@ -93,6 +110,8 @@ export function TaskDrawer({ mode, onClose }: { mode: TaskDrawerMode | null; onC
       enqueueSnackbar(mode?.kind === "create" ? t("today.toast.created") : t("today.toast.saved"), { variant: "success" });
       void queryClient.invalidateQueries({ queryKey: realtyTaskKeys.all });
       void queryClient.invalidateQueries({ queryKey: estateDashboardKeys.all });
+      // Задача по заявке видна в её карточке и в «Следующем деле».
+      void queryClient.invalidateQueries({ queryKey: realtyLeadKeys.all });
       onClose();
     },
   });

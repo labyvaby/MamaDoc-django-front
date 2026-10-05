@@ -136,6 +136,16 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.ESTATE_DASHBOARD_VIEW],
   },
 
+  // Продажи застройщика: воронка и лиды (realty)
+  {
+    path: '/realestate/funnel',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/leads',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+
   // «Мой день» застройщика: задачи CRM (realty)
   {
     path: '/realestate/today',
