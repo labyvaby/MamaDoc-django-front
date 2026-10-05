@@ -69,7 +69,7 @@ const CATEGORY_KEYS = [
   "attendance", "schedule", "services", "expenses", "achievements",
   "announcements", "billing", "bookings", "chatwoot", "cleaning", "clients",
   "deals", "documents", "ecommerce", "knowledge", "loyalty", "medical",
-  "messaging", "notifications", "odoctor", "offerings", "payroll", "pnl", "pos",
+  "messaging", "notifications", "odoctor", "offerings", "payroll", "pos",
   "printforms", "procurement", "profigram", "programs", "promotions", "retail",
   "reviews", "targets", "tasks", "tenancy", "vaccinations",
 ] as const;
