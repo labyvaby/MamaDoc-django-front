@@ -51,6 +51,8 @@ import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
 // import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import DonutSmallOutlined from "@mui/icons-material/DonutSmallOutlined";
+import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
@@ -85,6 +87,7 @@ import { useModuleGate } from "../../hooks/useModuleGate";
 import { useEstateNav } from "../../hooks/useEstateNav";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { getRealtyTasks, realtyTaskKeys } from "../../api/realtyTasks";
+import { getCashForecast, getDebtSummary, treasuryKeys } from "../../api/treasury";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -443,6 +446,12 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canKnowledge = moduleGate("knowledge");
   const canEmployees = can(PAGE_PERMISSIONS.employees);
   const canBilling = can(PAGE_PERMISSIONS.billing) && seen("billing");
+  // «Финансы» AIVIO (гайд frontend-finance §1): все четыре экрана — treasury.view, пункты — по матрице.
+  const canFinance = can(PAGE_PERMISSIONS.realtyFinance);
+  const canCashbank = canFinance && seen("cashbank");
+  const canPaycal = canFinance && seen("paycal");
+  const canBudget = canFinance && seen("budget");
+  const canReceivables = canFinance && seen("receivables");
   const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
@@ -467,6 +476,21 @@ const RealEstateSidebarMenu: React.FC = () => {
     refetchOnWindowFocus: true,
   }).data;
   const tasksBadgeCount = todayTasks?.filter((task) => !task.done).length ?? 0;
+  // «!» у календаря — кассовый разрыв в ближайшие 30 дней; у долгов — просроченная кредиторка (гайд §3, §5).
+  const gap = useQuery({
+    queryKey: treasuryKeys.forecast(realtyScope, 30, false),
+    queryFn: ({ signal }) => getCashForecast(30, realtyScope, signal, false),
+    enabled: canPaycal && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.hasGap;
+  const payableOverdue = useQuery({
+    queryKey: treasuryKeys.debtSummary(realtyScope, "payable"),
+    queryFn: ({ signal }) => getDebtSummary("payable", realtyScope, signal),
+    enabled: canReceivables && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.overdueCount;
   const tasksBadgeColor: "error" | "primary" = todayTasks?.some((task) => task.overdue && !task.done) ? "error" : "primary";
 
   const sectionLabel = (text: string) =>
@@ -515,7 +539,13 @@ const RealEstateSidebarMenu: React.FC = () => {
       ))}
       {canSalesDocs && <SidebarMenuItem to="/realestate/documents" icon={<FolderOutlined />} label="Документы CRM" collapsed={siderCollapsed} />}
 
-      {canBilling && sectionLabel("Финансы")}
+      {(canCashbank || canPaycal || canBudget || canReceivables || canBilling) && sectionLabel("Финансы")}
+      {canCashbank && <SidebarMenuItem to="/finance/cashbank" icon={<PaymentsOutlined />} label="Касса и банк" collapsed={siderCollapsed} />}
+      {canPaycal && <SidebarMenuItem to="/finance/paycal" icon={<CalendarMonthOutlined />} label="Платёжный календарь" collapsed={siderCollapsed} badgeText={gap ? "!" : undefined} badgeColor="error" />}
+      {canBudget && <SidebarMenuItem to="/finance/budget" icon={<DonutSmallOutlined />} label="Бюджеты проектов" collapsed={siderCollapsed} />}
+      {canReceivables && (
+        <SidebarMenuItem to="/finance/receivables" icon={<RequestQuoteOutlined />} label="Дебиторка / кредиторка" collapsed={siderCollapsed} badgeCount={payableOverdue ?? 0} badgeColor="warning" />
+      )}
       {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
 
       {(canEmployees || canMotivation) && sectionLabel("Персонал")}
@@ -1186,6 +1216,8 @@ type SidebarMenuItemProps = {
   badgeCount?: number;
   /** Цвет бейджа: срочность (error — просрочено, primary — новые). */
   badgeColor?: "error" | "primary" | "warning";
+  /** Знак вместо числа («!» — кассовый разрыв); показывается и без badgeCount. */
+  badgeText?: string;
   /**
    * Child paths that belong to a *different* menu item and must not light
    * this one up. Used by a parent route (e.g. "/settings") so it stays
@@ -1203,14 +1235,15 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   collapsed,
   badgeCount = 0,
   badgeColor = "error",
+  badgeText,
   excludePaths,
 }) => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const collapsedFinal = (collapsed ?? false) && !isMobile;
-  const hasBadge = badgeCount > 0;
-  const badgeLabel = badgeCount > 99 ? "99+" : String(badgeCount);
+  const hasBadge = badgeCount > 0 || Boolean(badgeText);
+  const badgeLabel = badgeText ?? (badgeCount > 99 ? "99+" : String(badgeCount));
   const matchesSelf =
     location.pathname === to || location.pathname.startsWith(to + "/");
   const matchesExcluded = (excludePaths ?? []).some(

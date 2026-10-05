@@ -317,6 +317,14 @@ export async function createEdoDocument(input: NewEdoDocumentInput, scope?: Real
   return fromRawDocument(await edo<RawDocument>(scope, "/documents/", { method: "POST", body }));
 }
 
+/**
+ * «Сверка» из дебиторки/кредиторки (гайд `frontend-finance.md` §5): документ ЭДО
+ * «Акт сверки» по контрагенту за период «01.07.2026 – 05.10.2026». Право — `edo.manage`.
+ */
+export async function createReconciliationAct(counterparty: string, period: string, scope?: RealtyScope): Promise<EdoDocument> {
+  return fromRawDocument(await edo<RawDocument>(scope, "/documents/", { method: "POST", body: { type: "recon", counterparty, fields: { period } } }));
+}
+
 /** Действия над документом без тела ответа, которое нужно разбирать: карточку перечитываем. */
 export type EdoAction =
   | { kind: "submit" }

@@ -198,6 +198,24 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.TREASURY_VIEW, PERMISSIONS.REALESTATE_VIEW],
   },
 
+  // Финансы застройщика: касса и банк, платёжный календарь, бюджеты, долги (treasury)
+  {
+    path: '/finance/cashbank',
+    requiredPermissions: [PERMISSIONS.TREASURY_VIEW],
+  },
+  {
+    path: '/finance/paycal',
+    requiredPermissions: [PERMISSIONS.TREASURY_VIEW],
+  },
+  {
+    path: '/finance/budget',
+    requiredPermissions: [PERMISSIONS.TREASURY_VIEW],
+  },
+  {
+    path: '/finance/receivables',
+    requiredPermissions: [PERMISSIONS.TREASURY_VIEW],
+  },
+
   // Документы застройщика: ЭДО, договоры, шаблоны, архив.
   // Не /docs/ — этот префикс на сервере занят Django (swagger/openapi): F5 давал 404.
   {

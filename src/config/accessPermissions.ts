@@ -51,6 +51,8 @@ export const PAGE_PERMISSIONS = {
   pos: "pos.view",
   // Застройщик (AIVIO): бэк пускает в биллинг по treasury.view или realty.view.
   billing: ["treasury.view", "realty.view"],
+  // Финансы застройщика (касса, календарь, бюджеты, долги) — /api/v2/treasury/, действия — treasury.manage.
+  realtyFinance: "treasury.view",
   // Рабочий стол застройщика: экран и его панели — estate_dashboard.view,
   // остальные панели бэк режет правами своих модулей сам.
   estateDashboard: "estate_dashboard.view",

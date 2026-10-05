@@ -117,6 +117,10 @@ const RealtyPartnersPage = lazy(() => import("./pages/realty-sales/PartnersPage"
 const RealtyMarketingPage = lazy(() => import("./pages/realty-sales/MarketingPage"));
 const RealtyMotivationPage = lazy(() => import("./pages/realty-sales/MotivationPage"));
 const BillingPage = lazy(() => import("./pages/billing"));
+const CashbankPage = lazy(() => import("./pages/realty-finance/CashbankPage"));
+const PaycalPage = lazy(() => import("./pages/realty-finance/PaycalPage"));
+const BudgetPage = lazy(() => import("./pages/realty-finance/BudgetPage"));
+const ReceivablesPage = lazy(() => import("./pages/realty-finance/ReceivablesPage"));
 const EdoRegistryPage = lazy(() => import("./pages/edo/EdoRegistryPage"));
 const EdoTemplatesPage = lazy(() => import("./pages/edo/TemplatesPage"));
 const SalesDocumentsPage = lazy(() => import("./pages/edo/SalesDocumentsPage"));
@@ -1357,6 +1361,27 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {/* Финансы застройщика (AIVIO) на /api/v2/treasury/: касса и банк, платёжный календарь, бюджеты, долги. */}
+                            {(
+                              [
+                                ["finance/cashbank", CashbankPage],
+                                ["finance/paycal", PaycalPage],
+                                ["finance/budget", BudgetPage],
+                                ["finance/receivables", ReceivablesPage],
+                              ] as const
+                            ).map(([path, Page]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.realtyFinance}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
                             {/* Документы застройщика (AIVIO): ЭДО, реестр договоров, архив — один экран-реестр со срезом.
                                 Префикс /edo, не /docs: /docs/ на сервере уходит в Django (swagger), F5 давал 404. */}
                             {(["edo", "contracts", "archive"] as const).map((view) => (

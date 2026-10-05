@@ -41,6 +41,14 @@ export function estateHref(view: string, objectId?: number | null): string | nul
       return objectId ? `/edo?doc=${objectId}` : "/edo";
     case "billing":
       return objectId ? `/finance/billing?account=${objectId}` : "/finance/billing";
+    case "cashbank":
+      return objectId ? `/finance/cashbank?operation=${objectId}` : "/finance/cashbank";
+    case "paycal":
+      return objectId ? `/finance/paycal?payment=${objectId}` : "/finance/paycal";
+    case "budget":
+      return objectId ? `/finance/budget?project=${objectId}` : "/finance/budget";
+    case "receivables":
+      return "/finance/receivables";
     case "inventory":
       return "/realestate/chessboard";
     case "documents":
