@@ -756,7 +756,7 @@ export const ResultsWidget: React.FC<WidgetProps> = ({ range }) => {
   }
 
   return (
-    <DashCard title="Итоги" subheader={range.label} href="/reports" linkLabel="Отчёты">
+    <DashCard title="Итоги" subheader={range.label} href="/reports" linkLabel="Отчет о доходах">
       {error ? (
         <WidgetError error={error} />
       ) : tiles.length === 0 ? (
