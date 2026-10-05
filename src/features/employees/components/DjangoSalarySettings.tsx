@@ -99,7 +99,7 @@ const num = (s: string) => parseFloat(s) || 0;
 // ── маленькие строительные блоки ─────────────────────────────────────────────
 
 /** Числовое поле с кастомными степперами ▲/▼ (нативные спиннеры скрыты). */
-const NumberField: React.FC<{
+export const NumberField: React.FC<{
   value: string;
   onChange: (v: string) => void;
   unit?: string;
@@ -194,7 +194,7 @@ const NumberField: React.FC<{
 };
 
 /** Заголовок секции: иконка-плашка + название/подпись + опц. тумблер. */
-const SalarySection: React.FC<{
+export const SalarySection: React.FC<{
   icon: React.ReactNode;
   title: string;
   subtitle: string;
@@ -378,7 +378,7 @@ const DjangoSalarySettings: React.FC<Props> = ({
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr 1fr" },
+            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr" },
             gap: 1.25,
             opacity: value.enabled ? 1 : 0.4,
             pointerEvents: value.enabled && !disabled ? "auto" : "none",

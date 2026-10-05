@@ -53,8 +53,14 @@ import { usePermissions } from "../../../hooks/usePermissions";
 import { AccessDenied } from "../../../components/rbac/AccessDenied";
 import SettingsIcon from "@mui/icons-material/SettingsOutlined";
 import DescriptionIcon from "@mui/icons-material/DescriptionOutlined";
+import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import { PeriodSettingsDialog } from "../../../features/payroll/components/PeriodSettingsDialog";
 import { PayrollStatementDrawer } from "../../../features/payroll/components/PayrollStatementDrawer";
+import {
+  buildTaxStatementXlsx,
+  taxStatementRows,
+} from "../../../features/payroll/statement/buildTaxStatementXlsx";
+import { downloadBlob } from "../../../utility/download";
 import {
   getPayrollActiveMonths,
   getPayrollReport,
@@ -187,6 +193,8 @@ const DjangoSalaryReportsPage: React.FC = () => {
     [reportRows],
   );
   const hiddenEmptyCount = (reportRows?.length ?? 0) - rowsWithData.length;
+  // Налоговая ведомость — по оформленным сотрудникам; без них кнопки нет.
+  const taxRows = useMemo(() => taxStatementRows(reportRows ?? []), [reportRows]);
 
   const [busy, setBusy] = React.useState(false);
   const [recalcOpen, setRecalcOpen] = React.useState(false);
@@ -290,6 +298,34 @@ const DjangoSalaryReportsPage: React.FC = () => {
                   sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
                 >
                   {compactHeader ? <DescriptionIcon fontSize="small" /> : t("actions.statement")}
+                </Button>
+              </Tooltip>
+            )}
+            {canManage && taxRows.length > 0 && (
+              <Tooltip title={t("taxStatement.title")}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={async () => {
+                    try {
+                      const monthLabel = dayjs(date).locale("ru").format("MMMM YYYY");
+                      const blob = await buildTaxStatementXlsx({
+                        rows: taxRows,
+                        monthLabel: monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1),
+                        organizationName: activeOrganization?.name,
+                      });
+                      downloadBlob(
+                        blob,
+                        t("taxStatement.fileName", { month: dayjs(date).format("MM.YYYY") }),
+                      );
+                    } catch {
+                      notify?.({ type: "error", message: t("taxStatement.buildError") });
+                    }
+                  }}
+                  startIcon={compactHeader ? undefined : <AccountBalanceOutlined />}
+                  sx={compactHeader ? { minWidth: "auto", px: 1 } : undefined}
+                >
+                  {compactHeader ? <AccountBalanceOutlined fontSize="small" /> : t("actions.taxStatement")}
                 </Button>
               </Tooltip>
             )}

@@ -44,7 +44,13 @@
     "unfreeze": "Разморозить",
     "payout": "Выплатить",
     "paidBadge": "✓ Выплачено",
-    "statement": "Ведомость"
+    "statement": "Ведомость",
+    "taxStatement": "Налоги"
+  },
+  "taxStatement": {
+    "title": "Налоговая ведомость: ПН и Соцфонд по оформленным сотрудникам (Excel)",
+    "fileName": "Налоги {{month}}.xlsx",
+    "buildError": "Не удалось сформировать налоговую ведомость"
   },
   "statement": {
     "title": "Ведомость на выплату",
@@ -164,8 +170,16 @@
       "products": "Товары",
       "hourly": "Почасовая",
       "cleaning": "Уборки",
-      "bonus": "Надбавка"
-    }
+      "bonus": "Надбавка",
+      "deals": "Сделки",
+      "customAccruals": "Свои начисления"
+    },
+    "deductions": {
+      "incomeTax": "Подоходный налог",
+      "socialFund": "Соцфонд работника",
+      "custom": "Удержания"
+    },
+    "employerSocialFund": "Соцфонд работодателя, сверху"
   },
   "bonusDialog": {
     "title": "Надбавки",

@@ -219,6 +219,10 @@ export const djangoQueryKeys = {
       ["django", "payroll", "active-months", params] as const,
     rules: (employeeId: number) =>
       ["django", "payroll", employeeId, "rules"] as const,
+    salaryCard: (employeeId: number, organizationId: number | null) =>
+      ["django", "payroll", employeeId, "salary-card", organizationId] as const,
+    fields: (organizationId: number | null) =>
+      ["django", "payroll", "fields", organizationId] as const,
     bonuses: (params: Record<string, unknown>) =>
       ["django", "payroll", "bonuses", params] as const,
   },

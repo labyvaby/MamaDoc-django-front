@@ -70,6 +70,7 @@ import {
 import { AchievementBadge } from "../../../components/achievements/AchievementBadge";
 import { tierTone } from "../../../components/achievements/meta";
 import EmployeeRelatedModal, { type RelatedModalType } from "./EmployeeRelatedModal";
+import EmployeeSalaryModal from "./salary/EmployeeSalaryModal";
 import {
   useEmployeeShiftsMonth,
   useEmployeeExpensesMonth,
@@ -262,6 +263,12 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   // Услуги сотрудника вынесены из staff.view/staff.update в свои права,
   // чтобы назначение услуг настраивалось отдельно от доступа к карточке.
   const canViewPayroll = useCan("staff.related.payroll.view");
+  // Условия зарплаты (модалка «Зарплата»): чужие — по payroll.view, свои — по
+  // payroll.view_own только на чтение. Править ставки, налоги и поля решают
+  // отдельные права — их бэк отдаёт в access самой карточки ЗП.
+  const canViewSalaryRules = useCan("payroll.view");
+  const canViewOwnSalaryRules = useCan("payroll.view_own");
+  const [salaryOpen, setSalaryOpen] = useState(false);
   const canViewAchievements = useCan("achievements.view");
   const apiOrgId = useApiOrgId();
 
@@ -270,6 +277,8 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
   // Своя карточка: сотрудник всегда видит свои связанные данные (own-bypass).
   const isOwnCard = activeEmployee?.id != null && empIdNum === activeEmployee.id;
+  const canOpenSalary =
+    empIdNum > 0 && (canViewSalaryRules || (isOwnCard && canViewOwnSalaryRules));
   // Свои услуги врач видит всегда; чужие — по catalog.view (кода
   // staff.services.view на бэке нет, см. DjangoEditEmployeeDrawer).
   // Границу держит бэкенд.
@@ -435,14 +444,29 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
           </Stack>
         }
         action={
-          emp && onEdit ? (
-            <AppButton
-              size="small"
-              startIcon={<EditOutlined fontSize="small" />}
-              onClick={() => onEdit(emp)}
-            >
-              {t("common:actions.edit")}
-            </AppButton>
+          emp && (onEdit || canOpenSalary) ? (
+            <Stack direction="row" alignItems="center" gap={1}>
+              {canOpenSalary && (
+                <AppButton
+                  size="small"
+                  variant="outlined"
+                  startIcon={<PaymentsOutlined fontSize="small" />}
+                  onClick={() => setSalaryOpen(true)}
+                  data-testid="employee-card-salary"
+                >
+                  {t("card.salaryAction")}
+                </AppButton>
+              )}
+              {onEdit && (
+                <AppButton
+                  size="small"
+                  startIcon={<EditOutlined fontSize="small" />}
+                  onClick={() => onEdit(emp)}
+                >
+                  {t("common:actions.edit")}
+                </AppButton>
+              )}
+            </Stack>
           ) : undefined
         }
       />
@@ -998,6 +1022,19 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
                 organizationId={activeOrganization?.id ?? undefined}
                 monthAnchor={relatedMonth}
                 onClose={() => setRelated(null)}
+              />
+            )}
+
+            {emp && canOpenSalary && (
+              <EmployeeSalaryModal
+                open={salaryOpen}
+                onClose={() => setSalaryOpen(false)}
+                employeeId={empIdNum}
+                employeeName={emp.full_name || String(emp.id)}
+                photo={photo}
+                position={roleText}
+                isDoctor={emp._djangoRole?.code === "doctor" || emp.clinicalRole === "doctor"}
+                canViewReport={canViewPayroll || isOwnCard}
               />
             )}
           </Stack>
