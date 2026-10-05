@@ -586,6 +586,7 @@ const SidebarSecondary: React.FC = () => {
     // у всех, кому reports.view выдан (владелец, бухгалтер, главврач,
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
     reports: can(PAGE_PERMISSIONS.reports),
+    dashboard: can(PAGE_PERMISSIONS.dashboard),
     cashbox: can(PAGE_PERMISSIONS.cashbox),
     pnl: can(PAGE_PERMISSIONS.pnl),
     load: !isRetail && can(PAGE_PERMISSIONS.load),
@@ -866,9 +867,10 @@ const SidebarSecondary: React.FC = () => {
             Остальные → placeholder (видны в меню, не скрыты)
             ══════════════════════════════════════════ */}
 
-        {/* Сводка доступна суперадминистратору только при включённом модуле
-            reports. Роут дополнительно закрыт RequirePermission в App.tsx. */}
-        {show("my-work") && isSuper && can_.reports && (
+        {/* Сводка — по своему праву reports.dashboard.view при включённом модуле
+            reports (суперадминистратор видит всегда). Роут закрыт тем же
+            правом в App.tsx. */}
+        {show("my-work") && can_.dashboard && (
           <SidebarMenuItem
             to="/dashboard"
             icon={<InsightsOutlined />}

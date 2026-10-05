@@ -635,20 +635,19 @@ function App() {
                             </RequirePermission>
                           }
                         />
-                        {/* Сводка — пока только суперадминистратору (решение
-                            заказчика 27.08.2026). Состав виджетов внутри
-                            определяется правами, но сам раздел скрыт от
-                            организаций до отдельного распоряжения. */}
+                        {/* Сводка — своё право «Сводка — просмотр» (2026-10-06).
+                            До того была только у суперадминистратора (решение
+                            заказчика 27.08.2026); право никому не выдано, так что
+                            видимость не изменилась, пока роли его не отметят.
+                            Состав виджетов внутри по-прежнему режут права разделов. */}
                         <Route
                           path="dashboard"
                           element={
-                            <RequireSuperAdmin>
-                              <RequirePermission permission={PAGE_PERMISSIONS.reports}>
-                                <Suspense fallback={<LinearProgress />}>
-                                  <DashboardPage />
-                                </Suspense>
-                              </RequirePermission>
-                            </RequireSuperAdmin>
+                            <RequirePermission permission={PAGE_PERMISSIONS.dashboard}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <DashboardPage />
+                              </Suspense>
+                            </RequirePermission>
                           }
                         />
                         <Route
