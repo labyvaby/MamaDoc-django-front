@@ -849,7 +849,6 @@
       "finance": "Финансы",
       "warehouse": "Склад",
       "reports": "Отчёты",
-      "pnl": "Прибыли и убытки",
       "attendance": "СКУД",
       "schedule": "Расписание",
       "services": "{{service.nomPl, capitalize}}",
