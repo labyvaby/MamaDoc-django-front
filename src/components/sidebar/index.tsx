@@ -36,6 +36,7 @@ import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
 import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
 import CurrencyExchangeOutlined from "@mui/icons-material/CurrencyExchangeOutlined";
 import HomeWorkOutlined from "@mui/icons-material/HomeWorkOutlined";
+import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
@@ -429,6 +430,7 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canShows = can(PAGE_PERMISSIONS.realtySales) && seen("measurements");
   const canDeals = can(PAGE_PERMISSIONS.realtySales) && seen("estimates");
   const canCatalog = can(PAGE_PERMISSIONS.realtySales) && seen("objects");
+  const canMortgage = can(PAGE_PERMISSIONS.realtySales) && seen("mortgage");
   // «Мой день» — задачи CRM застройщика; внутренние заявки MamaDoc («Задачи»)
   // застройщику не нужны: его звонки и показы живут в /api/v2/realty/tasks/.
   const canToday = can(PAGE_PERMISSIONS.realtyToday) && seen("today");
@@ -482,7 +484,7 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
       {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
 
-      {(canFunnel || canLeads || canCalls || canShows || canChessboard || canDeals || canCatalog) && sectionLabel("Продажи")}
+      {(canFunnel || canLeads || canCalls || canShows || canChessboard || canDeals || canCatalog || canMortgage) && sectionLabel("Продажи")}
       {canFunnel && <SidebarMenuItem to="/realestate/funnel" icon={<FilterAltOutlined />} label="CRM · воронка" collapsed={siderCollapsed} />}
       {canLeads && <SidebarMenuItem to="/realestate/leads" icon={<SearchOutlined />} label="Лиды и клиенты" collapsed={siderCollapsed} />}
       {canCalls && <SidebarMenuItem to="/realestate/calls" icon={<PhoneInTalkOutlined />} label="Звонки и записи" collapsed={siderCollapsed} />}
@@ -490,6 +492,7 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
       {canDeals && <SidebarMenuItem to="/realestate/deals" icon={<CurrencyExchangeOutlined />} label="Брони и оплаты" collapsed={siderCollapsed} />}
       {canCatalog && <SidebarMenuItem to="/realestate/catalog" icon={<HomeWorkOutlined />} label="Каталог объектов" collapsed={siderCollapsed} />}
+      {canMortgage && <SidebarMenuItem to="/realestate/mortgage" icon={<AccountBalanceOutlined />} label="Ипотека и банки" collapsed={siderCollapsed} />}
 
       {(docsItems.length > 0 || canSalesDocs) && sectionLabel("Документы")}
       {docsItems.map(([screen, to, label, icon]) => (
