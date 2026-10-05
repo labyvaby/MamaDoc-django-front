@@ -116,6 +116,9 @@ export const SETTINGS_TAB_PERMISSIONS = {
   banks: "staff.private.view",
   insurers: "finance.view",
   cashlessMethods: "finance.view",
+  // «Оплаты приёмов» — переключатели истории оплат. Менять их бэк разрешает
+  // только organization.update: ослаблять контроль денег — не решение кассира.
+  appointmentPayments: "organization.update",
   expenseCategories: "finance.expense.manage",
   diagnoses: "medical.diagnoses.manage",
   // Своё право: бланки настраивает администратор, а читают их врачи по праву

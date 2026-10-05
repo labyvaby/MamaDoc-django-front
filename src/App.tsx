@@ -157,6 +157,7 @@ const SiteSettingsPage = lazy(() => import("./pages/settings/SiteSettingsPage"))
 const RolesSettingsPage = lazy(() => import("./pages/settings/RolesSettingsPage"));
 const PosModuleSettingsPage = lazy(() => import("./pages/settings/PosModuleSettingsPage"));
 const ProcurementSettingsPage = lazy(() => import("./pages/settings/ProcurementSettingsPage"));
+const AppointmentPaymentsSettingsPage = lazy(() => import("./pages/settings/AppointmentPaymentsSettingsPage"));
 const DiscountKindsSettingsPage = lazy(() => import("./pages/settings/DiscountKindsSettingsPage"));
 const PromotionsSettingsPage = lazy(() => import("./pages/settings/PromotionsSettingsPage"));
 const MembershipsSettingsPage = lazy(() => import("./pages/settings/MembershipsSettingsPage"));
@@ -1022,6 +1023,7 @@ function App() {
                             <Route path="settings/store" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.store}><Suspense fallback={<LinearProgress />}><PosModuleSettingsPage /></Suspense></RequirePermission>} />
                             <Route path="settings/pos-module" element={<Navigate to="/settings/store" replace />} />
                             <Route path="settings/procurement" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.procurement}><Suspense fallback={<LinearProgress />}><ProcurementSettingsPage /></Suspense></RequirePermission>} />
+                            <Route path="settings/appointment-payments" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.appointmentPayments}><Suspense fallback={<LinearProgress />}><AppointmentPaymentsSettingsPage /></Suspense></RequirePermission>} />
                             <Route path="settings/discount-kinds" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.discountKinds}><Suspense fallback={<LinearProgress />}><DiscountKindsSettingsPage /></Suspense></RequirePermission>} />
                             <Route path="settings/promotions" element={<RequirePermission permission={SETTINGS_TAB_PERMISSIONS.promotions}><Suspense fallback={<LinearProgress />}><PromotionsSettingsPage /></Suspense></RequirePermission>} />
                             <Route

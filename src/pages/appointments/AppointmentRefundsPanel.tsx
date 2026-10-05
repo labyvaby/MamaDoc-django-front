@@ -50,7 +50,7 @@ function fmt(n: number): string {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type RefundDialogState = {
+export type RefundDialogState = {
   payment: AppointmentPayment;
   remaining: number;
 } | null;
@@ -73,7 +73,8 @@ type RefundDialogProps = {
   onSuccess: (summary: PaymentSummary) => void;
 };
 
-const RefundDialog: React.FC<RefundDialogProps> = ({
+/** Диалог возврата по одной оплате — общий для формы оплаты и истории оплат. */
+export const RefundDialog: React.FC<RefundDialogProps> = ({
   state,
   appointmentId,
   patientId,
@@ -382,7 +383,10 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
           {summary.payments.map((p) => {
             const refundedAmt = parseDecimal(p.refundedAmount);
             const remaining = Math.max(0, parseDecimal(p.amount) - refundedAmt);
-            const canRefundThis = remaining > 0.001;
+            // Бэк с историей оплат сам решает, можно ли вернуть (правило «день
+            // в день»); без флага — как раньше, по остатку.
+            const dayClosed = p.refundLockReason === "day_closed";
+            const canRefundThis = remaining > 0.001 && p.canRefund !== false;
 
             return (
               <Stack
@@ -425,7 +429,16 @@ const AppointmentRefundsPanel: React.FC<Props> = ({
                     {t("refunds.refund")}
                   </Button>
                 )}
-                {!canRefundThis && refundedAmt > 0 && (
+                {!canRefundThis && dayClosed && remaining > 0.001 && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ ml: 1, flexShrink: 1, maxWidth: 180, textAlign: "right" }}
+                  >
+                    {t("paymentHistory.lock.day_closed")}
+                  </Typography>
+                )}
+                {!canRefundThis && !dayClosed && refundedAmt > 0 && (
                   <Typography variant="caption" color="text.disabled" sx={{ ml: 1, flexShrink: 0 }}>
                     {t("refunds.refundedChip")}
                   </Typography>

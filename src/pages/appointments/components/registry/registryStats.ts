@@ -85,6 +85,9 @@ export function isFullyRefunded(appt: DjangoAppointment): boolean {
  */
 export function isDebtBearing(appt: DjangoAppointment, now: dayjs.Dayjs = dayjs()): boolean {
   if (isCancelledStatus(appt.status)) return false;
+  // Бэк с историей оплат сам говорит, стал ли остаток долгом: с начала
+  // приёма — да, до начала (в т.ч. при внесённой предоплате) — нет.
+  if (appt.paymentPhase) return appt.paymentPhase === "debt";
   if (appt.paymentStatus === "partial") return true;
   if (appt.paymentStatus === "paid" || appt.paymentStatus === "discounted") return false;
   if (appt.paymentStatus === "refunded") return false;
