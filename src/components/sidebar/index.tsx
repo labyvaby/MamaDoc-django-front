@@ -585,7 +585,7 @@ const SidebarSecondary: React.FC = () => {
     // управляющий филиалом). Тот же принцип, что у соседнего пункта load.
     reports: can(PAGE_PERMISSIONS.reports),
     cashbox: can(PAGE_PERMISSIONS.cashbox),
-    load: !isRetail && can(PAGE_PERMISSIONS.reports),
+    load: !isRetail && can(PAGE_PERMISSIONS.load),
     notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
   };

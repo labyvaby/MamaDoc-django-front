@@ -937,7 +937,7 @@ function App() {
                         <Route
                           path="load"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.reports}>
+                            <RequirePermission permission={PAGE_PERMISSIONS.load}>
                               <Suspense fallback={<LinearProgress />}>
                                 <LoadAnalyticsPage />
                               </Suspense>
