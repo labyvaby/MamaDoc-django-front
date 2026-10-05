@@ -34,7 +34,7 @@ export function PnlPage() {
   const scope = useActiveScope();
   const needsOrg = isSuperAdmin() && !activeOrganization;
 
-  const [period, setPeriod] = React.useState<PnlPeriod>(() => periodFor("year", dayjs()));
+  const [period, setPeriod] = React.useState<PnlPeriod>(() => periodFor("month", dayjs()));
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set(DEFAULT_EXPANDED));
   const [exporting, setExporting] = React.useState<"excel" | "form2" | null>(null);
 
