@@ -18,6 +18,16 @@ describe("PnlTable", () => {
     expect(html).toContain("−220");
   });
 
+  it("свободная ширина уходит в пустую колонку в конце — цифры не уезжают от названий", () => {
+    const html = renderToString(
+      <PnlTable report={makeReport()} expanded={new Set(DEFAULT_EXPANDED)} onToggle={() => {}} />,
+    );
+    const rows = html.match(/<tr\b/g) ?? [];
+    const fillers = html.match(/data-pnl-filler/g) ?? [];
+    expect(rows.length).toBeGreaterThan(1);
+    expect(fillers.length).toBe(rows.length);
+  });
+
   it("помечает незакрытый месяц и подписывает год, если период через год", () => {
     const report = makeReport({ months: [{ key: "2025-12", open: false }, { key: "2026-01", open: true }] });
     const html = renderToString(<PnlTable report={report} expanded={new Set()} onToggle={() => {}} />);
