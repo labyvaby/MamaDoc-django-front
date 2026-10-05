@@ -99,10 +99,13 @@ export async function createRealtyTask(input: RealtyTaskInput, scope?: RealtySco
   return fromRaw(await apiRequest(`${TASKS_API}/`, { method: "POST", body, headers: realtyHeaders(scope) }));
 }
 
-/** Галочка, перенос (`date`/`time`), делегирование (`managerId`). Бэк сам ставит/снимает `doneAt`. */
+/**
+ * Галочка, перенос (`date`/`time`), делегирование (`managerId`), статус показа
+ * (`status`). Бэк сам ставит/снимает `doneAt`.
+ */
 export async function updateRealtyTask(
   id: number,
-  patch: Partial<Pick<RealtyTaskItem, "done" | "date" | "time" | "managerId">>,
+  patch: Partial<Pick<RealtyTaskItem, "done" | "date" | "time" | "managerId">> & { status?: ShowStatus },
   scope?: RealtyScope,
 ): Promise<RealtyTaskItem> {
   return fromRaw(await apiRequest(`${TASKS_API}/${id}/`, { method: "PATCH", body: patch, headers: realtyHeaders(scope) }));
@@ -123,9 +126,43 @@ export function realtyTaskStats(tasks: readonly RealtyTaskItem[]) {
   };
 }
 
+/** Статусы показа (`kind=show`, гайд `frontend-sales.md` §5); подпись — `statusLabel` бэка. */
+export const SHOW_STATUSES = ["planned", "confirmed", "online"] as const;
+export type ShowStatus = (typeof SHOW_STATUSES)[number];
+
+export interface ShowsSummary {
+  date: string;
+  today: number;
+  todayDone: number;
+  /** Показы текущей недели (пн–вс). */
+  week: number;
+  weekFrom: string;
+  weekTo: string;
+  /** «Перешли к выбору», % — лиды с показом за 30 дней, дошедшие до «Выбора квартиры». */
+  toChoicePct: number;
+  /** «Конверсия в бронь», % — дошедшие до «Бронирования». */
+  toBookingPct: number;
+}
+
+/** KPI экрана «Показы» за день `date` (без даты — сегодня). */
+export async function getShowsSummary(date: string | null, scope?: RealtyScope, signal?: AbortSignal): Promise<ShowsSummary> {
+  const raw = await apiRequest<Partial<ShowsSummary>>(`/v2/realty/shows/summary/${date ? `?date=${date}` : ""}`, { headers: realtyHeaders(scope), signal });
+  return {
+    date: raw.date ?? date ?? "",
+    today: Number(raw.today) || 0,
+    todayDone: Number(raw.todayDone) || 0,
+    week: Number(raw.week) || 0,
+    weekFrom: raw.weekFrom ?? "",
+    weekTo: raw.weekTo ?? "",
+    toChoicePct: Number(raw.toChoicePct) || 0,
+    toBookingPct: Number(raw.toBookingPct) || 0,
+  };
+}
+
 const scopeKey = (scope: RealtyScope | undefined) => [scope?.organizationId ?? "session", scope?.branchId ?? "all"] as const;
 
 export const realtyTaskKeys = {
   all: ["django", "realty-tasks"] as const,
   list: (scope: RealtyScope | undefined, params: RealtyTaskParams) => [...realtyTaskKeys.all, ...scopeKey(scope), params] as const,
+  showsSummary: (scope: RealtyScope | undefined, date: string) => [...realtyTaskKeys.all, ...scopeKey(scope), "shows-summary", date] as const,
 };
