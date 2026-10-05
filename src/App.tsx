@@ -111,6 +111,7 @@ const RealtyLeadsPage = lazy(() => import("./pages/realty-sales/LeadsPage"));
 const RealtyCallsPage = lazy(() => import("./pages/realty-sales/CallsPage"));
 const RealtyShowsPage = lazy(() => import("./pages/realty-sales/ShowsPage"));
 const RealtyDealsPage = lazy(() => import("./pages/realty-sales/DealsPage"));
+const RealtyCatalogPage = lazy(() => import("./pages/realty-sales/CatalogPage"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const EdoRegistryPage = lazy(() => import("./pages/edo/EdoRegistryPage"));
 const EdoTemplatesPage = lazy(() => import("./pages/edo/TemplatesPage"));
@@ -1282,7 +1283,7 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            {/* Продажи застройщика (AIVIO) на /api/v2/realty/: воронка и лиды (не MamaDoc /deals и /patients), звонки, показы, брони. */}
+                            {/* Продажи застройщика (AIVIO) на /api/v2/realty/: воронка и лиды (не MamaDoc /deals и /patients), звонки, показы, брони, каталог. */}
                             {(
                               [
                                 ["realestate/funnel", RealtyFunnelPage],
@@ -1290,6 +1291,7 @@ function App() {
                                 ["realestate/calls", RealtyCallsPage],
                                 ["realestate/shows", RealtyShowsPage],
                                 ["realestate/deals", RealtyDealsPage],
+                                ["realestate/catalog", RealtyCatalogPage],
                               ] as const
                             ).map(([path, Page]) => (
                               <Route
