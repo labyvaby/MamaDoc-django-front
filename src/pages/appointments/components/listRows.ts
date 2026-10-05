@@ -27,6 +27,23 @@ export function itemStartTs(item: RenderItem): number {
   return dayjs(isGap(item) ? item.dateIso : item.scheduledAt).valueOf();
 }
 
+/**
+ * Одна плашка окна на время в группе. Окна строятся несколькими ветками
+ * (между приёмами, на месте отменённого, перед первым, по сменам), и разные
+ * ветки могут прийти к одному времени: 13:00 активный, 13:30 отменён, 14:00
+ * активный — окно 13:30 давали и промежуток 13:00→14:00, и отменённая запись.
+ * Оставляем первое по порядку, приёмы не трогаем.
+ */
+export function dedupeGapsByTime(items: RenderItem[]): RenderItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (!isGap(item)) return true;
+    if (seen.has(item.dateIso)) return false;
+    seen.add(item.dateIso);
+    return true;
+  });
+}
+
 export type ListRow = { /** Над этим рядом рисуется линия «сейчас». */ nowLine: boolean } & (
   | { kind: "gaps"; gaps: GapSlot[] }
   | { kind: "appt"; appt: DjangoAppointment }

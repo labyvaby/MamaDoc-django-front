@@ -60,7 +60,7 @@ import {
   matchesMoneyFlags,
   type AppointmentMoneyFlag,
 } from "./listFilters";
-import { buildListRows, isGap, type RenderItem } from "./listRows";
+import { buildListRows, dedupeGapsByTime, isGap, type RenderItem } from "./listRows";
 import { isAppointmentCancelReason, type AppointmentCancelReason } from "../../../api/appointments";
 import { AppBottomSheet } from "../../../components/ui";
 
@@ -903,10 +903,15 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
               { start: seg.start, end: clippedEnd },
               activeIntervals,
             );
-            if (slot && slot.isBefore(firstStart)) {
+            // Две смены с одним началом (правило 10:00–15:30 + разовая
+            // 10:00–13:30) дают одно и то же окно — без дедупа это две плашки
+            // с одинаковым ключом.
+            const key = `gap-before-${first.id}-${slot?.format("HH:mm")}`;
+            if (slot && slot.isBefore(firstStart) && !addedGapKeys.has(key)) {
+              addedGapKeys.add(key);
               renderItems.push({
                 isGap: true,
-                id: `gap-before-${first.id}-${slot.format("HH:mm")}`,
+                id: key,
                 timeStr: slot.format("HH:mm"),
                 dateIso: slot.format("YYYY-MM-DDTHH:mm"),
                 employeeId: groupEmployeeId,
@@ -1025,7 +1030,7 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
           employeeId: groupEmployeeId,
           name: docName,
           appts: sorted,
-          renderItems: cancelledToBottom(renderItems),
+          renderItems: cancelledToBottom(dedupeGapsByTime(renderItems)),
         });
       }
     });
@@ -1050,19 +1055,23 @@ const AppointmentListPanel: React.FC<AppointmentListPanelProps> = React.memo(({
         if (occupancyByEmployee.has(employeeId)) continue;
 
         const slots: RenderItem[] = [];
-        // Правило и разовая смена на те же часы дают два одинаковых сегмента —
-        // без дедупа это две одинаковые плашки.
-        const seenSegments = new Set<string>();
+        // Дедуп по времени окна, а не по сегменту: правило 10:00–15:30 и разовая
+        // смена 10:00–13:30 — разные сегменты, но одно окно 10:00 и один ключ
+        // `shift-20-10:00`. Двойной ключ ломал React: когда приёмы дня
+        // догружались и группа «свободной смены» становилась группой с
+        // приёмами, одна плашка оставалась в DOM сиротой — «Есть окно на 10:00»
+        // висело над занятым 10:00 и переезжало на другие дни.
+        const seenSlots = new Set<string>();
         const employeeIntervals = occupancyByEmployee.get(employeeId) ?? [];
         for (const seg of dayShifts.segments.get(employeeId) ?? []) {
-          const segKey = `${seg.start}-${seg.end}`;
-          if (seenSegments.has(segKey)) continue;
-          seenSegments.add(segKey);
           const slot = firstFreeSlotInSegmentFor(date, seg, employeeIntervals);
           if (!slot) continue;
+          const slotKey = slot.format("HH:mm");
+          if (seenSlots.has(slotKey)) continue;
+          seenSlots.add(slotKey);
           slots.push({
             isGap: true,
-            id: `shift-${employeeId}-${seg.start}`,
+            id: `shift-${employeeId}-${slotKey}`,
             timeStr: slot.format("HH:mm"),
             dateIso: slot.format("YYYY-MM-DDTHH:mm"),
             employeeId,
