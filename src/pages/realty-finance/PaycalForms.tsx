@@ -147,6 +147,11 @@ export function PlannedDrawer({ id, preview, canManage, onClose }: { id: number 
             <InfoRow label={t("common.project")} value={item.projectName ?? t("common.company")} />
             {item.doc && <InfoRow label={t("common.doc")} value={item.doc} />}
             {item.note && <InfoRow label={t("common.note")} value={item.note} />}
+            {item.settledOperationId != null && (
+              <Link component={RouterLink} to={`/finance/cashbank?operation=${item.settledOperationId}`} underline="hover" sx={{ mt: 2, mr: 2, display: "inline-block", fontSize: "0.875rem", fontWeight: 600 }}>
+                {t("paycal.planned.settled", { number: item.settledOperationNumber || item.settledOperationId })}
+              </Link>
+            )}
             {item.documentId != null && (
               <Link component={RouterLink} to={`/edo?doc=${item.documentId}`} underline="hover" sx={{ mt: 2, display: "inline-block", fontSize: "0.875rem", fontWeight: 600 }}>
                 {t("common.openDocument")}
@@ -157,21 +162,23 @@ export function PlannedDrawer({ id, preview, canManage, onClose }: { id: number 
         )}
       </Box>
       {item && canManage && open && action !== "billing" && (
-        <Box sx={{ px: 2.5, py: 1.5, display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 1, borderTop: 1, borderColor: "divider" }}>
-          <Button color="error" onClick={() => setConfirmDelete(true)} disabled={busy} sx={{ mr: "auto" }}>
-            {t("paycal.planned.delete")}
-          </Button>
-          <Button onClick={() => cancel.mutate()} disabled={busy}>
-            {t("paycal.planned.cancelPayment")}
-          </Button>
-          <Button onClick={() => move.mutate()} disabled={busy}>
-            {t("paycal.planned.moveWeek")}
-          </Button>
+        <Box sx={{ px: 2.5, py: 1.5, display: "grid", gap: 1, borderTop: 1, borderColor: "divider" }}>
           {(action === "pay" || action === "receive") && (
-            <Button variant="contained" onClick={() => setSettling(item)} disabled={busy}>
+            <Button fullWidth variant="contained" onClick={() => setSettling(item)} disabled={busy}>
               {t(action === "receive" ? "paycal.table.receive" : "paycal.table.pay")}
             </Button>
           )}
+          <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+            <Button color="error" onClick={() => setConfirmDelete(true)} disabled={busy} sx={{ mr: "auto" }}>
+              {t("paycal.planned.delete")}
+            </Button>
+            <Button onClick={() => cancel.mutate()} disabled={busy}>
+              {t("paycal.planned.cancelPayment")}
+            </Button>
+            <Button onClick={() => move.mutate()} disabled={busy}>
+              {t("paycal.planned.moveWeek")}
+            </Button>
+          </Box>
         </Box>
       )}
       <SettleDialog item={settling} onClose={() => setSettling(null)} onDone={onClose} />

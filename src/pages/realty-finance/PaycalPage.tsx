@@ -528,7 +528,7 @@ function ForecastView({ forecast }: { forecast: CashForecast }) {
                     contentStyle={{ background: theme.palette.background.paper, border: `1px solid ${theme.palette.divider}`, borderRadius: 8, fontSize: 12 }}
                   />
                   {min < 0 && <ReferenceLine y={0} stroke={theme.palette.error.main} strokeDasharray="4 4" />}
-                  <Area type="monotone" dataKey="balance" stroke={theme.palette.primary.main} strokeWidth={2} fill={theme.palette.primary.main} fillOpacity={0.08} />
+                  <Area type="linear" dataKey="balance" stroke={theme.palette.primary.main} strokeWidth={2} fill={theme.palette.primary.main} fillOpacity={0.08} />
                 </AreaChart>
               </ResponsiveContainer>
             )}

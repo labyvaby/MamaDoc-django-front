@@ -168,6 +168,9 @@ export interface CalendarItem {
   /** «Остаток после» — только в `/payment-calendar/`. */
   runningBalance: number | null;
   note: string;
+  /** Операция, которой исполнен плановый платёж (только в карточке `/planned-payments/<id>/`). */
+  settledOperationId: number | null;
+  settledOperationNumber: string;
 }
 
 export interface ForecastDay {
@@ -431,7 +434,8 @@ export const fromRawItem = (raw: any): CalendarItem => ({
   projectName: raw.projectName ?? null,
   doc: str(raw.doc),
   status: str(raw.status),
-  done: Boolean(raw.done),
+  // В карточке `/planned-payments/<id>/` поля `done` нет — исполненность видна по операции оплаты.
+  done: Boolean(raw.done) || raw.settledOperationId != null,
   moved: Boolean(raw.moved),
   originalDate: raw.originalDate ?? null,
   billingAccountId: raw.billingAccountId ?? null,
@@ -439,6 +443,8 @@ export const fromRawItem = (raw: any): CalendarItem => ({
   documentId: raw.documentId ?? null,
   runningBalance: numOrNull(raw.runningBalance),
   note: str(raw.note),
+  settledOperationId: raw.settledOperationId ?? null,
+  settledOperationNumber: str(raw.settledOperationNumber),
 });
 
 const fromRawDay = (raw: any): ForecastDay => ({
@@ -708,7 +714,9 @@ export async function getCalendarMonth(month: string, scope?: RealtyScope, signa
 }
 
 export async function getPlannedPayment(id: number, scope?: RealtyScope, signal?: AbortSignal): Promise<CalendarItem> {
-  return fromRawItem(await treasury(scope, `/planned-payments/${id}/`, { signal }));
+  // В карточке нет `kind` (это всегда плановый платёж) — без него не нашлась бы кнопка «Оплатить».
+  const raw = await treasury<Record<string, unknown>>(scope, `/planned-payments/${id}/`, { signal });
+  return fromRawItem({ kind: "planned", ...raw });
 }
 
 /** «Оплатить» (выплата) / «Получено» (поступление); без счёта — основной расчётный. */

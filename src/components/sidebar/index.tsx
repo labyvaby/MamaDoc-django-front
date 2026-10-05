@@ -1267,7 +1267,12 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         gap: 1,
       }}
     >
-      <ListItemText primary={label} sx={{ my: 0 }} />
+      {/* Длинная подпись с бейджем («Дебиторка / кредиторка») — многоточие, полный текст в title. */}
+      <ListItemText
+        primary={label}
+        primaryTypographyProps={{ noWrap: true, title: typeof label === "string" ? label : undefined }}
+        sx={{ my: 0, minWidth: 0 }}
+      />
       {/* Standalone Badge позиционируется absolute (translate 50%) и вылезает за
           границы — его срезал бы overflow:hidden. Поэтому в развёрнутом сайдбаре
           рисуем счётчик обычной пилюлей в потоке; цвет = срочность. */}
