@@ -3,6 +3,7 @@ import { Box, CircularProgress, IconButton, InputAdornment, MenuItem, Select, Ty
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CakeOutlined from "@mui/icons-material/CakeOutlined";
 import ClearOutlined from "@mui/icons-material/ClearOutlined";
+import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
 import { motion } from "framer-motion";
@@ -14,8 +15,11 @@ import { AccessDenied } from "../../components/rbac/AccessDenied";
 import { usePermissions } from "../../hooks/usePermissions";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSheetBackClose } from "../../hooks/useSheetBackClose";
+import type { AttachmentOwner } from "../../api/attachments";
 import { getClients, getClientStatuses, type DjangoClient } from "../../api/clients";
 import { getClientPurchases, type ClientPurchase } from "../../api/retail";
+import CardAttachmentsPanel from "../../components/attachments/CardAttachmentsPanel";
+import { useCardAttachments } from "../../components/attachments/useCardAttachments";
 import { ReceiptDetailDrawer } from "../pos/ReceiptDetailDrawer";
 import ClientCard from "./ClientCard";
 import ClientEditorDrawer from "./ClientEditorDrawer";
@@ -25,7 +29,8 @@ import { defaultClientLayoutSettings, getClientLayoutSettings, type ClientLayout
 
 const MotionBox = motion(Box);
 
-type DetailTab = "card" | "purchases";
+type DetailTab = "card" | "purchases" | "files";
+type DesktopTab = "purchases" | "files";
 
 const MONTHS = Array.from({ length: 12 }, (_, index) => {
   const name = new Intl.DateTimeFormat("ru-RU", { month: "long" }).format(new Date(2020, index, 1));
@@ -59,6 +64,8 @@ export default function ClientsPage() {
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [layout, setLayout] = React.useState<ClientLayoutSettings>(defaultClientLayoutSettings);
   const [detailTab, setDetailTab] = React.useState<DetailTab>("card");
+  // Десктоп: карточка — своей колонкой, справа покупки и файлы вкладками.
+  const [desktopTab, setDesktopTab] = React.useState<DesktopTab>("purchases");
   const [mobileOpen, setMobileOpen] = React.useState(false);
   // Чек держим и после закрытия — иначе дровер пустеет на анимации выезда.
   const [openedPurchase, setOpenedPurchase] = React.useState<ClientPurchase | null>(null);
@@ -110,6 +117,14 @@ export default function ClientsPage() {
 
   const purchases = useQuery({ queryKey: ["client-purchases", organizationId, selected?.id], queryFn: ({ signal }) => getClientPurchases(selected!.id, signal), enabled: Boolean(selected && canViewPurchaseHistory) });
 
+  // Файлы карточки: панель грузит их сама, а тот же запрос даёт счётчик на вкладке.
+  const selectedId = selected?.id ?? null;
+  const attachmentsOwner = React.useMemo<AttachmentOwner | null>(
+    () => (selectedId !== null && organizationId ? { kind: "client", id: selectedId, organizationId } : null),
+    [selectedId, organizationId],
+  );
+  const attachments = useCardAttachments(attachmentsOwner);
+
   const openCreate = () => { setEditorClient(null); setEditorOpen(true); };
   const openEdit = () => { if (selected) { setEditorClient(selected); setEditorOpen(true); } };
   const onClientSaved = (saved: DjangoClient) => { setSelected(saved); void queryClient.invalidateQueries({ queryKey: ["clients", organizationId] }); };
@@ -129,13 +144,17 @@ export default function ClientsPage() {
       onOpen={openPurchase}
     />
   );
+  const filesNode = <CardAttachmentsPanel owner={attachmentsOwner} canManage={canUpdate} />;
+  const purchasesTab = { key: "purchases" as const, label: "Покупки", icon: <ShoppingBagOutlined />, badge: purchases.data?.length || undefined };
+  const filesTab = { key: "files" as const, label: "Файлы", icon: <FolderOutlined />, badge: attachments.data?.length || undefined };
   const detailTabs: Array<{ key: DetailTab; label: string; icon: React.ReactElement; badge?: number }> = [
     { key: "card", label: "Карточка", icon: <PersonOutlineOutlined /> },
-    ...(canViewPurchaseHistory
-      ? [{ key: "purchases" as const, label: "Покупки", icon: <ShoppingBagOutlined />, badge: purchases.data?.length || undefined }]
-      : []),
+    ...(canViewPurchaseHistory ? [purchasesTab] : []),
+    filesTab,
   ];
-  const activeTab: DetailTab = canViewPurchaseHistory ? detailTab : "card";
+  const activeTab: DetailTab = detailTabs.some((tab) => tab.key === detailTab) ? detailTab : "card";
+  const detailNode = activeTab === "card" ? cardNode : activeTab === "purchases" ? historyNode : filesNode;
+  const desktopTabs: Array<{ key: DesktopTab; label: string; icon: React.ReactElement; badge?: number }> = [purchasesTab, filesTab];
   const noSelection = (
     <Box sx={{ height: "100%", display: "grid", placeItems: "center", border: "1px dashed", borderColor: "divider", borderRadius: "12px", bgcolor: "background.paper", p: 3, textAlign: "center" }}>
       <Box>
@@ -220,7 +239,7 @@ export default function ClientsPage() {
                   <SegmentedTabs layoutId="clients-tablet-tabs" tabs={detailTabs} value={activeTab} onChange={setDetailTab} />
                 </Box>
               )}
-              <Box sx={{ flex: 1, minHeight: 0 }}>{activeTab === "card" ? cardNode : historyNode}</Box>
+              <Box sx={{ flex: 1, minHeight: 0 }}>{detailNode}</Box>
             </>
           ) : noSelection}
         </MotionBox>
@@ -232,10 +251,19 @@ export default function ClientsPage() {
           <MotionBox variants={cascadeItem} sx={{ flex: "3.5 1 0", minWidth: 0, height: "100%" }}>
             {selected ? cardNode : noSelection}
           </MotionBox>
-          <MotionBox variants={cascadeItem} sx={{ flex: "5.5 1 0", minWidth: 0, height: "100%" }}>
-            {selected ? historyNode : (
+          <MotionBox variants={cascadeItem} sx={{ flex: "5.5 1 0", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
+            {selected ? (
+              canViewPurchaseHistory ? (
+                <>
+                  <Box sx={{ flexShrink: 0, mb: 1.5 }}>
+                    <SegmentedTabs layoutId="clients-desktop-right-tabs" tabs={desktopTabs} value={desktopTab} onChange={setDesktopTab} />
+                  </Box>
+                  <Box sx={{ flex: 1, minHeight: 0 }}>{desktopTab === "purchases" ? historyNode : filesNode}</Box>
+                </>
+              ) : filesNode
+            ) : (
               <Box sx={{ height: "100%", display: "grid", placeItems: "center", border: "1px dashed", borderColor: "divider", borderRadius: "12px", bgcolor: "background.paper" }}>
-                <Typography color="text.secondary">История покупок</Typography>
+                <Typography color="text.secondary">{canViewPurchaseHistory ? "Покупки и файлы клиента" : "Файлы клиента"}</Typography>
               </Box>
             )}
           </MotionBox>
@@ -256,7 +284,7 @@ export default function ClientsPage() {
         ) : undefined}
       >
         <Box sx={{ p: 1.5, height: "100%", minHeight: 0, display: "flex", flexDirection: "column" }}>
-          <Box sx={{ flex: 1, minHeight: 0 }}>{activeTab === "card" ? cardNode : historyNode}</Box>
+          <Box sx={{ flex: 1, minHeight: 0 }}>{detailNode}</Box>
         </Box>
       </AppBottomSheet>
     )}
