@@ -72,9 +72,19 @@ export const RunList: React.FC<RunListProps> = ({ runs, showAutomationName = fal
 
             {run.error && <Alert severity="error">{run.error}</Alert>}
 
+            {/* Тексты вырезаны бэком: у смотрящего нет права, которого
+                требует событие правила (зарплата — «Просмотр зарплаты»). */}
+            {run.hidden && (
+              <Typography variant="caption" color="text.secondary">
+                {t("automations.runs.hidden")}
+              </Typography>
+            )}
+
             {run.jobs.length === 0 ? (
               <Typography variant="caption" color="text.secondary">
-                {t("automations.runs.noJobs")}
+                {fanoutCount(run) != null
+                  ? t("automations.runs.fanoutSent", { count: fanoutCount(run) ?? 0 })
+                  : t("automations.runs.noJobs")}
               </Typography>
             ) : (
               run.jobs.map((job) => (
@@ -99,8 +109,12 @@ export const RunList: React.FC<RunListProps> = ({ runs, showAutomationName = fal
                       {t("automations.runs.attempts", { count: job.attemptsCount })}
                     </Typography>
                   </Stack>
-                  <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", mt: 0.5 }}>
-                    {job.renderedBody}
+                  <Typography
+                    variant="body2"
+                    color={run.hidden ? "text.secondary" : undefined}
+                    sx={{ whiteSpace: "pre-wrap", mt: 0.5 }}
+                  >
+                    {run.hidden ? t("automations.runs.hiddenShort") : job.renderedBody}
                   </Typography>
                   {job.error && (
                     <Typography variant="caption" color="error">
@@ -111,6 +125,7 @@ export const RunList: React.FC<RunListProps> = ({ runs, showAutomationName = fal
               ))
             )}
 
+            {!run.hidden && (
             <details>
               <summary style={{ cursor: "pointer", fontSize: 12, opacity: 0.7 }}>
                 {t("automations.runs.payload")}
@@ -130,11 +145,24 @@ export const RunList: React.FC<RunListProps> = ({ runs, showAutomationName = fal
                 {JSON.stringify(run.eventPayload, null, 2)}
               </Box>
             </details>
+            )}
           </Stack>
         </Paper>
       ))}
     </Stack>
   );
 };
+
+/**
+ * Сколько человек получило сообщение по срабатыванию правила «каждому
+ * сотруднику». У такого срабатывания своих отправок нет — они у запусков
+ * каждого сотрудника, — поэтому «Отправок нет» вводило бы в заблуждение.
+ * `null` — это обычный запуск.
+ */
+function fanoutCount(run: AutomationRun): number | null {
+  if (run.eventPayload?.fanout_parent !== true) return null;
+  const count = Number(run.eventPayload.recipients_count);
+  return Number.isFinite(count) ? count : 0;
+}
 
 export default RunList;
