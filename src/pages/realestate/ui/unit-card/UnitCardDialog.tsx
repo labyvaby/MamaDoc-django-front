@@ -3,12 +3,13 @@ import { Box, Button, Dialog, DialogContent, IconButton, Skeleton, Typography, u
 import { useTheme } from "@mui/material/styles";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
+import MoreTimeOutlined from "@mui/icons-material/MoreTimeOutlined";
 import SendOutlined from "@mui/icons-material/SendOutlined";
 import { useQuery } from "@tanstack/react-query";
 
 import { REALESTATE_USE_MOCKS, getMortgageRateFrom, getProjectUnits, getUnit, realEstateKeys, type Project, type Unit, type UnitDetails } from "../../../../api/realestate";
 import { AppButton } from "../../../../components/ui";
-import { useApiOrgId } from "../../../../hooks/useApiOrgId";
+import { useRealtyScope } from "../../../../hooks/useRealtyScope";
 import { useCanChecker } from "../../../../hooks/useCan";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { DEFAULT_OFFER, pickFloorUnit, pickOffer, priceWithOffer } from "../../model/unitCard";
@@ -16,6 +17,7 @@ import { formatMoney } from "../../model/units";
 import { useRealEstateToast } from "../toast";
 import {
   ContractScreen,
+  ExtendScreen,
   MeetingScreen,
   OfferScreen,
   OperationScreen,
@@ -86,17 +88,17 @@ export function UnitCardDialog({ project, unitId, onClose, onOpenUnit, onCompare
 
 function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare, startScreen }: Omit<UnitCardDialogProps, "unitId"> & { unitId: string }) {
   const { t } = useT("realestate");
-  const organizationId = useApiOrgId();
+  const scope = useRealtyScope();
   const { can } = useCanChecker();
   // Команды над квартирой — realty.manage; без него карточка только для чтения.
   const canManage = REALESTATE_USE_MOCKS || can("realty.manage");
-  const query = useQuery({ queryKey: realEstateKeys.unit(organizationId, unitId), queryFn: () => getUnit(unitId, organizationId) });
+  const query = useQuery({ queryKey: realEstateKeys.unit(scope, unitId), queryFn: () => getUnit(unitId, scope) });
   const projectUnits = useQuery({
-    queryKey: realEstateKeys.units(organizationId, project.id),
-    queryFn: () => getProjectUnits(project.id, organizationId),
+    queryKey: realEstateKeys.units(scope, project.id),
+    queryFn: () => getProjectUnits(project.id, scope),
   }).data;
   const mortgageFrom =
-    useQuery({ queryKey: realEstateKeys.mortgageRate(organizationId), queryFn: () => getMortgageRateFrom(organizationId), staleTime: 30 * 60_000 })
+    useQuery({ queryKey: realEstateKeys.mortgageRate(scope), queryFn: () => getMortgageRateFrom(scope), staleTime: 30 * 60_000 })
       .data ?? null;
   // Без права на команды быстрый вход в бронь/КП не пускаем — только просмотр карточки.
   const [screen, setScreen] = React.useState<Screen>(startScreen && canManage ? startScreen : "unit");
@@ -131,10 +133,11 @@ function UnitCard({ project, unitId, onClose, onOpenUnit, onCompare, startScreen
   }
 
   const offer = pickOffer(unit.offers, offerId);
-  const flow: FlowProps = { project, unit, offer, organizationId, canManage, onBack: () => setScreen("unit"), onClose, go: setScreen, onOpenUnit };
+  const flow: FlowProps = { project, unit, offer, scope, canManage, onBack: () => setScreen("unit"), onClose, go: setScreen, onOpenUnit };
   const flows: Record<Exclude<Screen, "unit">, () => React.ReactElement> = {
     reserve: () => <ReserveScreen {...flow} />,
     payment: () => <PaymentScreen {...flow} />,
+    extend: () => <ExtendScreen {...flow} />,
     success: () => <SuccessScreen {...flow} />,
     proposal: () => <ProposalScreen {...flow} />,
     meeting: () => <MeetingScreen {...flow} />,
@@ -258,6 +261,11 @@ function ApartmentDetail({
               <Button variant="outlined" startIcon={<EventOutlined />} onClick={() => go("meeting")}>
                 {t("actions.meeting")}
               </Button>
+              {unit.status === "reserved" && reservation && (
+                <Button variant="outlined" startIcon={<MoreTimeOutlined />} onClick={() => go("extend")}>
+                  {t("actions.extend")}
+                </Button>
+              )}
             </>
           )}
           {unit.status === "free" ? (

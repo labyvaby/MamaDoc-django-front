@@ -24,6 +24,7 @@ import {
   CONTRACT_PAYMENT_LABELS,
   REALESTATE_USE_MOCKS,
   confirmUnitPrepayment,
+  extendUnitReservation,
   getProjectUnits,
   getSalesManagers,
   realEstateKeys,
@@ -32,15 +33,19 @@ import {
   scheduleUnitMeeting,
   sendUnitProposal,
   signUnitContract,
+  type ContractInput,
   type ContractPayment,
   type Project,
+  type RealtyScope,
   type ReservationTerm,
   type ReservationType,
   type UnitDetails,
   type UnitOffer,
   type UnitOperation,
 } from "../../../../api/realestate";
-import { AppButton, CustomDateTimePicker } from "../../../../components/ui";
+import { getErrorCode } from "../../../../api/client";
+import { AppButton, ConfirmDialog, CustomDateTimePicker } from "../../../../components/ui";
+import { useCanChecker } from "../../../../hooks/useCan";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { tt } from "../../../../i18n/t";
 import { subtleBg } from "../../../../theme/uiHelpers";
@@ -62,6 +67,7 @@ export type Screen =
   | "unit"
   | "reserve"
   | "payment"
+  | "extend"
   | "success"
   | "proposal"
   | "meeting"
@@ -74,8 +80,8 @@ export interface FlowProps {
   project: Project;
   unit: UnitDetails;
   offer: UnitOffer;
-  /** Суперпользователю бэк без него отвечает 400. */
-  organizationId: number | undefined;
+  /** Организация и филиал запросов: организация уходит заголовком, филиал — в ключи кэша. */
+  scope: RealtyScope;
   /** realty.manage — команды над квартирой. */
   canManage: boolean;
   onBack: () => void;
@@ -96,17 +102,39 @@ const tomorrowAt11 = () => dayjs().add(1, "day").hour(11).minute(0).second(0).mi
  * Команда над квартирой: ответ — свежая карточка. Шахматка и соседние карточки
  * перезапрашиваются, потому что меняются статусы.
  */
-function useUnitCommand<Input>(organizationId: number | undefined, run: (input: Input) => Promise<UnitDetails>) {
+function useUnitCommand<Input>(scope: RealtyScope, run: (input: Input) => Promise<UnitDetails>) {
   const queryClient = useQueryClient();
-  const toast = useRealEstateToast();
+  const onError = useCommandError();
   return useMutation({
     mutationFn: run,
     onSuccess: (next) => {
-      queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
+      queryClient.setQueryData(realEstateKeys.unit(scope, next.id), next);
       void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
     },
-    onError: (error) => toast(errorMessage(error)),
+    onError,
   });
+}
+
+/**
+ * Ошибка команды: текст бэка (`error.message` уже по-русски). 409
+ * `UNIT_NOT_FREE` — квартиру заняли из другого окна: перечитываем шахматку и
+ * карточку, иначе менеджер продолжит работать со старым статусом.
+ */
+function useCommandError() {
+  const queryClient = useQueryClient();
+  const toast = useRealEstateToast();
+  const { t } = useT("realestate");
+  return React.useCallback(
+    (error: unknown) => {
+      if (getErrorCode(error) === "UNIT_NOT_FREE") {
+        void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
+        toast(errorMessage(error), t("flow.unitTakenHint"));
+        return;
+      }
+      toast(errorMessage(error));
+    },
+    [queryClient, toast, t],
+  );
 }
 
 // ─── Общая разметка ────────────────────────────────────────────────────────
@@ -191,10 +219,10 @@ interface ReserveForm {
   meetingAt: Dayjs | null;
 }
 
-export function ReserveScreen({ project, unit, offer, organizationId, onBack, go }: FlowProps) {
+export function ReserveScreen({ project, unit, offer, scope, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
-  const reserve = useUnitCommand(organizationId, (input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input, organizationId));
+  const reserve = useUnitCommand(scope, (input: Parameters<typeof reserveUnit>[1]) => reserveUnit(unit.id, input, scope));
   const finalPrice = priceWithOffer(unit, offer);
   const { register, control, handleSubmit, watch, formState } = useForm<ReserveForm>({
     defaultValues: { buyer: "", phone: "", term: "48", type: "free", withMeeting: true, meetingAt: tomorrowAt11() },
@@ -391,10 +419,10 @@ function OfferCell({ label, value, hint, strong }: { label: string; value: strin
   );
 }
 
-export function PaymentScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
+export function PaymentScreen({ project, unit, scope, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
-  const confirm = useUnitCommand(organizationId, () => confirmUnitPrepayment(unit, organizationId));
+  const confirm = useUnitCommand(scope, () => confirmUnitPrepayment(unit, scope));
   const amount = unit.reservation?.amount || project.defaultPrepayment || 0;
   return (
     <Box>
@@ -428,6 +456,61 @@ export function PaymentScreen({ project, unit, organizationId, onBack, go }: Flo
           }
         >
           {t("flow.payment.received")}
+        </AppButton>
+      </Actions>
+    </Box>
+  );
+}
+
+/** Продление брони: срок выбирается теми же шагами, что при создании (24/48/72 ч). */
+export function ExtendScreen({ project, unit, scope, onBack }: FlowProps) {
+  const toast = useRealEstateToast();
+  const { t } = useT("realestate");
+  const extend = useUnitCommand(scope, (hours: ReservationTerm) => extendUnitReservation(unit, hours, scope));
+  const [hours, setHours] = React.useState<ReservationTerm>(24);
+  return (
+    <Box>
+      <FlowHead
+        eyebrow={t("flow.extend.eyebrow")}
+        title={t("card.title", { number: unit.number })}
+        intro={t("flow.extend.intro", { buyer: unit.reservation?.buyer || "—" })}
+      />
+      <Summary
+        items={[
+          [t("flow.payment.purpose"), t("flow.payment.purposeValue", { number: unit.number, name: project.name })],
+          [t("flow.extend.currentUntil"), unit.reservation?.expiresAt || "—"],
+        ]}
+      />
+      <TextField
+        select
+        fullWidth
+        label={t("flow.extend.hours")}
+        value={String(hours)}
+        onChange={(event) => setHours(Number(event.target.value) as ReservationTerm)}
+      >
+        {[24, 48, 72].map((value) => (
+          <MenuItem key={value} value={String(value)}>
+            {t("flow.hours", { count: value })}
+          </MenuItem>
+        ))}
+      </TextField>
+      <Actions>
+        <Button variant="outlined" onClick={onBack}>
+          {t("flow.backToUnit")}
+        </Button>
+        <AppButton
+          variant="contained"
+          loading={extend.isPending}
+          onClick={() =>
+            extend.mutate(hours, {
+              onSuccess: (next) => {
+                onBack();
+                toast(t("flow.extend.done"), next.reservation?.expiresAt ? t("flow.extend.doneUntil", { date: next.reservation.expiresAt }) : undefined);
+              },
+            })
+          }
+        >
+          {t("flow.extend.submit")}
         </AppButton>
       </Actions>
     </Box>
@@ -469,17 +552,17 @@ export function SuccessScreen({ unit, onBack, go }: FlowProps) {
 
 // ─── КП, встреча ───────────────────────────────────────────────────────────
 
-export function ProposalScreen({ project, unit, offer, organizationId, onBack, onClose }: FlowProps) {
+export function ProposalScreen({ project, unit, offer, scope, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
   const queryClient = useQueryClient();
   const send = useMutation({
-    mutationFn: (input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input, organizationId),
+    mutationFn: (input: Parameters<typeof sendUnitProposal>[1]) => sendUnitProposal(unit.id, input, scope),
     onSuccess: ({ unit: next }) => {
-      queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
+      queryClient.setQueryData(realEstateKeys.unit(scope, next.id), next);
       void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
     },
-    onError: (error) => toast(errorMessage(error)),
+    onError: useCommandError(),
   });
   const finalPrice = priceWithOffer(unit, offer);
   const perMeter = money(Math.round(finalPrice / unit.totalArea));
@@ -577,10 +660,10 @@ interface MeetingForm {
   note: string;
 }
 
-export function MeetingScreen({ project, unit, organizationId, onBack, onClose }: FlowProps) {
+export function MeetingScreen({ project, unit, scope, onBack, onClose }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
-  const schedule = useUnitCommand(organizationId, (input: Parameters<typeof scheduleUnitMeeting>[1]) => scheduleUnitMeeting(unit.id, input, organizationId));
+  const schedule = useUnitCommand(scope, (input: Parameters<typeof scheduleUnitMeeting>[1]) => scheduleUnitMeeting(unit.id, input, scope));
   const { register, control, handleSubmit, formState } = useForm<MeetingForm>({
     defaultValues: { buyer: unit.reservation?.buyer ?? "", phone: unit.reservation?.phone ?? "", meetingAt: tomorrowAt11(), note: "" },
   });
@@ -657,18 +740,22 @@ interface OperationForm {
   comment: string;
 }
 
-export function OperationScreen({ unit, organizationId, go, onBack, onOpenUnit }: FlowProps) {
+export function OperationScreen({ unit, scope, go, onBack, onOpenUnit }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
-  const run = useUnitCommand(organizationId, (input: Parameters<typeof runUnitOperation>[1]) => runUnitOperation(unit.id, input, organizationId));
+  const run = useUnitCommand(scope, (input: Parameters<typeof runUnitOperation>[1]) => runUnitOperation(unit.id, input, scope));
+  const { can } = useCanChecker();
+  // Справочник сотрудников — только с staff.view: без права бэк ответит 403, ответственный вводится текстом.
+  const canListStaff = REALESTATE_USE_MOCKS || can("staff.view");
   const managersData = useQuery({
-    queryKey: realEstateKeys.managers(organizationId),
-    queryFn: () => getSalesManagers(organizationId),
+    queryKey: realEstateKeys.managers(scope),
+    queryFn: () => getSalesManagers(scope),
     staleTime: Infinity,
+    enabled: canListStaff,
   }).data;
   const managers = React.useMemo(() => managersData ?? [], [managersData]);
   const projectUnits =
-    useQuery({ queryKey: realEstateKeys.units(organizationId, unit.projectId), queryFn: () => getProjectUnits(unit.projectId, organizationId) }).data ?? [];
+    useQuery({ queryKey: realEstateKeys.units(scope, unit.projectId), queryFn: () => getProjectUnits(unit.projectId, scope) }).data ?? [];
   const freeUnits = projectUnits.filter((u) => u.status === "free" && u.id !== unit.id).slice(0, 20);
 
   const options: [UnitOperation, string][] = [
@@ -856,11 +943,11 @@ interface ContractForm {
   accept: boolean;
 }
 
-export function ContractScreen({ project, unit, organizationId, onBack, go }: FlowProps) {
+export function ContractScreen({ project, unit, scope, onBack, go }: FlowProps) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
   const sign = useMutation({
-    mutationFn: (input: Parameters<typeof signUnitContract>[1]) => signUnitContract(unit.id, input, organizationId),
+    mutationFn: (input: Parameters<typeof signUnitContract>[1]) => signUnitContract(unit.id, input, scope),
   });
   const queryClient = useQueryClient();
   // Договор заключается по цене брони (с акцией), без брони — по цене квартиры, как на бэке.
@@ -878,20 +965,35 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
     },
   });
 
-  const submit = handleSubmit((form) => {
-    const { buyer, passport, phone, email, payment, signCode } = form;
-    sign.mutate({ buyer, passport, phone, email, payment, signCode }, {
+  const commandError = useCommandError();
+  // 409 INVALID_STATE на брони — квартира забронирована на другого покупателя:
+  // бэк продаёт только после явного подтверждения (`allowOtherBuyer: true`).
+  const [otherBuyer, setOtherBuyer] = React.useState<{ input: ContractInput; message: string } | null>(null);
+
+  const runSign = (input: ContractInput) =>
+    sign.mutate(input, {
       onSuccess: (next) => {
-        queryClient.setQueryData(realEstateKeys.unit(organizationId, next.id), next);
+        setOtherBuyer(null);
+        queryClient.setQueryData(realEstateKeys.unit(scope, next.id), next);
         void queryClient.invalidateQueries({ queryKey: realEstateKeys.all });
         go("signed");
         toast(t("flow.contract.signedToast"), next.contract?.number);
       },
-      onError: (error) =>
-        REALESTATE_USE_MOCKS && error instanceof Error && /код/i.test(error.message)
-          ? toast(t("flow.contract.wrongCode"), t("flow.contract.wrongCodeHint"))
-          : toast(errorMessage(error)),
+      onError: (error) => {
+        setOtherBuyer(null);
+        if (REALESTATE_USE_MOCKS && error instanceof Error && /код/i.test(error.message)) {
+          toast(t("flow.contract.wrongCode"), t("flow.contract.wrongCodeHint"));
+        } else if (getErrorCode(error) === "INVALID_STATE" && unit.status === "reserved" && !input.allowOtherBuyer) {
+          setOtherBuyer({ input, message: errorMessage(error) });
+        } else {
+          commandError(error);
+        }
+      },
     });
+
+  const submit = handleSubmit((form) => {
+    const { buyer, passport, phone, email, payment, signCode } = form;
+    runSign({ buyer, passport, phone, email, payment, signCode });
   });
 
   const required = (message: string) => ({ required: message });
@@ -984,6 +1086,17 @@ export function ContractScreen({ project, unit, organizationId, onBack, go }: Fl
           </AppButton>
         </Actions>
       </form>
+      <ConfirmDialog
+        open={otherBuyer !== null}
+        variant="warning"
+        title={t("flow.contract.otherBuyerTitle")}
+        message={otherBuyer ? t("flow.contract.otherBuyerText", { message: otherBuyer.message, buyer: otherBuyer.input.buyer }) : ""}
+        confirmText={t("flow.contract.otherBuyerConfirm")}
+        cancelText={t("flow.cancel")}
+        loading={sign.isPending}
+        onClose={() => setOtherBuyer(null)}
+        onConfirm={() => otherBuyer && runSign({ ...otherBuyer.input, allowOtherBuyer: true })}
+      />
     </Box>
   );
 }

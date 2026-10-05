@@ -1,9 +1,12 @@
 import React from "react";
 import { Box, Button, Skeleton, Typography, useMediaQuery, type Theme } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
+import AddOutlined from "@mui/icons-material/AddOutlined";
 
 import { REALESTATE_USE_MOCKS, getProjectUnits, getRealEstateProjects, realEstateKeys, type Project, type Unit } from "../../api/realestate";
-import { useApiOrgId } from "../../hooks/useApiOrgId";
+import { ApiError, isModuleDisabled } from "../../api/client";
+import { AccessDenied } from "../../components/rbac/AccessDenied";
+import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { useT } from "../../i18n/VerticalProvider";
 import { useCanChecker } from "../../hooks/useCan";
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -14,11 +17,12 @@ import { countByStatus, countHolds, hasActiveFilters, matchesUnitFilters } from 
 import { useMinuteClock } from "./model/useMinuteClock";
 import { Board, CompactNote, FloorGuide } from "./ui/Board";
 import { COMPARE_LIMIT, CompareDialog, SelectionBar } from "./ui/Compare";
-import { BoardToolbar, FilterBar, PriceLegend, ProjectSummary, ProjectTabs } from "./ui/Filters";
+import { BoardToolbar, FilterBar, PriceLegend, ProjectKpis, ProjectSummary, ProjectTabs } from "./ui/Filters";
 import { FloorList } from "./ui/FloorList";
 import { RealEstateToastProvider, useRealEstateToast } from "./ui/toast";
 import { UnitCardDialog, type QuickScreen } from "./ui/unit-card/UnitCardDialog";
 import { UnitPreview } from "./ui/UnitPreview";
+import { NewProjectWizard } from "./ui/wizard/NewProjectWizard";
 
 /**
  * «Квартиры и шахматка» — модуль вертикали realestate (застройщик).
@@ -40,34 +44,76 @@ export default function RealEstateChessboardPage() {
 
 function ChessboardPage() {
   const { t } = useT("realestate");
+  const toast = useRealEstateToast();
   const [params, updateParams] = useChessboardParams();
-  const organizationId = useApiOrgId();
+  const scope = useRealtyScope();
+  const { can } = useCanChecker();
+  const [wizardOpen, setWizardOpen] = React.useState(false);
+  // «Новый ЖК» — только с правом на каталог: с одним realty.manage бэк отвечает 403.
+  const canCreate = REALESTATE_USE_MOCKS || can("realty.catalog.manage");
+  const onCreate = canCreate ? () => setWizardOpen(true) : undefined;
   const projectsQuery = useQuery({
-    queryKey: realEstateKeys.projects(organizationId),
-    queryFn: () => getRealEstateProjects(organizationId),
+    queryKey: realEstateKeys.projects(scope),
+    queryFn: () => getRealEstateProjects(scope),
     staleTime: 5 * 60_000,
+    enabled: scope.orgReady !== false,
   });
 
   const projects = projectsQuery.data;
   const project = projects?.find((p) => p.id === params.projectId) ?? projects?.[0];
 
+  const wizard = (
+    <NewProjectWizard
+      open={wizardOpen}
+      onClose={() => setWizardOpen(false)}
+      onCreated={(projectId, info) => {
+        setWizardOpen(false);
+        updateParams({ project: projectId, unit: null });
+        toast(t("wizard.done", { name: info.name }), t("wizard.doneHint", { count: info.units }));
+      }}
+    />
+  );
+
   if (projectsQuery.isError) return <ErrorState error={projectsQuery.error} onRetry={() => void projectsQuery.refetch()} />;
   if (!projects) return <PageSkeleton />;
   if (!project) {
     return (
-      <Box sx={{ p: 5, textAlign: "center", color: "text.secondary", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
-        {t("page.noProjects")}
+      <Box sx={{ p: 5, display: "flex", flexDirection: "column", alignItems: "center", gap: 1.5, textAlign: "center", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
+        <Typography sx={{ fontWeight: 600 }}>{t("page.noProjects")}</Typography>
+        {onCreate && (
+          <>
+            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 420 }}>
+              {t("page.noProjectsHint")}
+            </Typography>
+            <Button variant="contained" startIcon={<AddOutlined />} onClick={onCreate}>
+              {t("wizard.openHint")}
+            </Button>
+          </>
+        )}
+        {wizard}
       </Box>
     );
   }
 
   return (
-    <ProjectChessboard key={project.id} project={project} projects={projects} onSelectProject={(id) => updateParams({ project: id, unit: null })} />
+    <>
+      <ProjectChessboard
+        key={project.id}
+        project={project}
+        projects={projects}
+        onSelectProject={(id) => updateParams({ project: id, unit: null })}
+        onCreateProject={onCreate}
+      />
+      {wizard}
+    </>
   );
 }
 
 function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const { t } = useT("realestate");
+  // Выключенный модуль правами не лечится — отдельный текст; обычный 403 — «Нет доступа».
+  if (isModuleDisabled(error)) return <AccessDenied title={t("page.moduleOff")} description={t("page.moduleOffHint")} showBack={false} />;
+  if (error instanceof ApiError && error.status === 403) return <AccessDenied />;
   return (
     <Box role="alert" sx={{ p: 5, display: "flex", flexDirection: "column", alignItems: "center", gap: 1.5, textAlign: "center", border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
       <Typography sx={{ fontWeight: 600 }}>{t("page.loadError")}</Typography>
@@ -103,14 +149,24 @@ function PageSkeleton() {
   );
 }
 
-function ProjectChessboard({ project: baseProject, projects, onSelectProject }: { project: Project; projects: Project[]; onSelectProject: (projectId: string) => void }) {
+function ProjectChessboard({
+  project: baseProject,
+  projects,
+  onSelectProject,
+  onCreateProject,
+}: {
+  project: Project;
+  projects: Project[];
+  onSelectProject: (projectId: string) => void;
+  onCreateProject?: () => void;
+}) {
   const toast = useRealEstateToast();
   const { t } = useT("realestate");
   const [params, updateParams] = useChessboardParams();
-  const organizationId = useApiOrgId();
+  const scope = useRealtyScope();
   const unitsQuery = useQuery({
-    queryKey: realEstateKeys.units(organizationId, baseProject.id),
-    queryFn: () => getProjectUnits(baseProject.id, organizationId),
+    queryKey: realEstateKeys.units(scope, baseProject.id),
+    queryFn: () => getProjectUnits(baseProject.id, scope),
     staleTime: 30_000,
   });
   const units = React.useMemo(
@@ -187,7 +243,7 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
   if (!units.length || !bounds) {
     return (
       <Box>
-        <ProjectTabs projects={projects} activeId={project.id} onSelect={onSelectProject} />
+        <ProjectTabs projects={projects} activeId={project.id} onSelect={onSelectProject} onCreate={onCreateProject} />
         <EmptyProject name={project.name} />
       </Box>
     );
@@ -197,12 +253,17 @@ function ProjectChessboard({ project: baseProject, projects, onSelectProject }: 
   const view = params.view === "auto" ? autoBoardView(board) : params.view;
   const selectedUnits = selected.map((id) => units.find((u) => u.id === id)).filter((u): u is Unit => Boolean(u));
 
+  // Цифры шапки — счётчики ЖК с бэка; старый ответ без них — считаем по загруженным квартирам.
+  const kpis = project.stats ?? { total: counts.all, free: counts.free, reserved: counts.reserved, sold: counts.sold };
+
   return (
     <Box sx={{ pb: selected.length ? 10 : 0 }}>
+      <ProjectKpis stats={kpis} />
       <ProjectTabs
         projects={projects}
         activeId={project.id}
         onSelect={onSelectProject}
+        onCreate={onCreateProject}
         onExport={() => toast(t("toast.priceListReady"), downloadPriceList(project, units))}
       />
 

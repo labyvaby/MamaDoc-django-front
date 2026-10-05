@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import dayjs from "dayjs";
 
-import { buildListRows, isGap, type GapSlot } from "./listRows";
+import { buildListRows, dedupeGapsByTime, isGap, type GapSlot } from "./listRows";
 import type { DjangoAppointment } from "../../../api/appointments";
 
 const DAY = "2026-09-19";
@@ -114,5 +114,21 @@ describe("buildListRows: ряды окон", () => {
       [["09:30"], true],
       [1, false],
     ]);
+  });
+});
+
+describe("dedupeGapsByTime", () => {
+  it("оставляет одну плашку на время, приёмы не трогает", () => {
+    // Прод 04.10: 13:00 активный, 13:30 отменён, 14:00 активный — окно 13:30
+    // приходило и из промежутка, и из отменённой записи: две плашки подряд.
+    const between: GapSlot = { ...gap("13:30"), id: "gap-1-3" };
+    const fromCancelled: GapSlot = { ...gap("13:30"), id: "gap-can-13:30" };
+    const result = dedupeGapsByTime([appt(1, "13:00"), between, fromCancelled, appt(3, "14:00")]);
+    expect(result.map((i) => i.id)).toEqual([1, "gap-1-3", 3]);
+  });
+
+  it("разные времена не схлопывает", () => {
+    const result = dedupeGapsByTime([gap("09:00"), gap("09:30")]);
+    expect(result.filter(isGap).map((g) => g.timeStr)).toEqual(["09:00", "09:30"]);
   });
 });

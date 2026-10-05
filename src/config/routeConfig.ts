@@ -135,6 +135,23 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     path: '/realestate/chessboard',
     requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
   },
+
+  // Биллинг рассрочек застройщика: бэк пускает по treasury.view или realty.view
+  {
+    path: '/finance/billing',
+    requiredPermissions: [PERMISSIONS.TREASURY_VIEW, PERMISSIONS.REALESTATE_VIEW],
+  },
+
+  // Документы застройщика: ЭДО, договоры, шаблоны, архив
+  {
+    path: '/docs/',
+    requiredPermissions: [PERMISSIONS.EDO_VIEW],
+  },
+  // «Документы (CRM)» — файлы сделок
+  {
+    path: '/realestate/documents',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
 ];
 
 /**

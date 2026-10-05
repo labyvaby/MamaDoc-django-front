@@ -509,8 +509,6 @@ const UnitCell = React.memo(function UnitCell({
     );
   }
 
-  // Свободных квартир большинство, поэтому свободная ячейка спокойная (карточка + точка),
-  // а выделяются бронь и продажа — иначе вся шахматка залита одним цветом.
   const free = unit.status === "free";
   // Кнопки — соседи ячейки, а не её дети: кнопка внутри кнопки — невалидный HTML.
   // Из Tab-порядка убраны: с клавиатуры те же действия есть в карточке (Enter).
@@ -540,8 +538,9 @@ const UnitCell = React.memo(function UnitCell({
             textAlign: "left",
             fontSize: "0.78rem",
             borderRadius: "9px",
-            border: `${unit.status === "reserved" ? 2 : 1}px solid ${heat !== null ? heatTone(t, heat).border : free ? t.palette.divider : tone.border}`,
-            bgcolor: heat !== null ? heatTone(t, heat).bg : free ? "background.paper" : tone.bg,
+            border: `${unit.status === "reserved" ? 2 : 1}px solid ${heat !== null ? heatTone(t, heat).border : tone.border}`,
+            // Клетка подтонирована цветом статуса, как в макете; тепловая карта перекрашивает свободные.
+            bgcolor: heat !== null ? heatTone(t, heat).bg : tone.bg,
             color: heat !== null ? heatTone(t, heat).text : free ? "text.primary" : tone.text,
             transition: "transform .15s ease, border-color .15s ease",
             "&:hover": { transform: "translateY(-2px)", borderColor: tone.main },
@@ -554,42 +553,47 @@ const UnitCell = React.memo(function UnitCell({
         }}
       >
         {mark}
-        <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 0.5, minHeight: 20, fontSize: "0.72rem" }}>
-          <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.6, minWidth: 0 }}>
-            {free ? (
-              <Box component="i" aria-hidden sx={(t) => ({ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", bgcolor: statusTone(t, "free").main })} />
-            ) : (
-              <Box
-                component="span"
-                sx={(t) => ({
-                  flexShrink: 0,
-                  px: 0.75,
-                  py: 0.25,
-                  borderRadius: "6px",
-                  fontSize: "0.68rem",
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                  bgcolor: unit.status === "reserved" ? (hold?.urgent ? t.palette.error.main : statusTone(t, "reserved").solid) : "transparent",
-                  color:
-                    unit.status === "reserved"
-                      ? hold?.urgent
-                        ? t.palette.error.contrastText
-                        : statusTone(t, "reserved").solidText
-                      : "text.secondary",
-                  ...(unit.status === "sold" ? { px: 0 } : null),
-                })}
-              >
-                {unit.status === "reserved" ? (hold ? (hold.expired ? t("cell.holdExpired") : t("cell.holdLeft", { left: hold.label })) : t("statusShort.reserved")) : status}
-              </Box>
-            )}
-            <Box component="span" sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
-              №{unit.number}
+        {/* Плашка статуса на всю ширину, как в макете: статус читается с первого взгляда. */}
+        <Box
+          component="span"
+          sx={(t) => {
+            const urgent = unit.status === "reserved" && hold?.urgent;
+            const tone = statusTone(t, unit.status);
+            return {
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              px: 0.75,
+              py: 0.3,
+              borderRadius: "6px",
+              fontSize: "0.66rem",
+              fontWeight: 800,
+              letterSpacing: "0.3px",
+              textTransform: "uppercase",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              bgcolor: urgent ? t.palette.error.main : tone.solid,
+              color: urgent ? t.palette.error.contrastText : tone.solidText,
+              "& .MuiSvgIcon-root": { fontSize: 12 },
+            };
+          }}
+        >
+          <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+            {unit.status === "reserved" && hold
+              ? hold.expired
+                ? t("cell.holdExpired")
+                : t("cell.holdLeft", { left: hold.label })
+              : t(`cell.band.${unit.status}`)}
+          </Box>
+          {awaitingPayment && (
+            <Box component="span" title={t("cell.awaitingPayment")} sx={{ display: "grid", ml: "auto" }}>
+              <PaymentsOutlined />
             </Box>
-            {awaitingPayment && (
-              <Box component="span" title={t("cell.awaitingPayment")} sx={{ display: "grid", color: "warning.onSurface", "& .MuiSvgIcon-root": { fontSize: 13 } }}>
-                <PaymentsOutlined />
-              </Box>
-            )}
+          )}
+        </Box>
+        <Box component="span" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 0.5, minHeight: 18, fontSize: "0.72rem" }}>
+          <Box component="span" sx={{ fontWeight: 600, whiteSpace: "nowrap", color: "text.secondary" }}>
+            №{unit.number}
           </Box>
           {/* Иконка, а не буква «Б/Т»: буква путалась с названием секции «Б». */}
           <Box
