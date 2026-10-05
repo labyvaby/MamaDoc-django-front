@@ -393,13 +393,18 @@ const SidebarMenuSkeleton: React.FC = () => {
 
 /**
  * Застройщик: одно плоское меню без клиничных групп «Моя работа /
- * Организация» — отдел продаж работает в шахматке, воронке и задачах, а
- * справочное (сотрудники, настройки) — отдельной секцией «Компания».
- * Каждый пункт — своим правом или модулем: выключенный у организации модуль
- * прячет пункт сам.
+ * Организация» — отдел продаж работает в шахматке и задачах, а справочное
+ * (сотрудники, настройки) — отдельной секцией «Компания». Каждый пункт —
+ * своим правом или модулем: выключенный у организации модуль прячет пункт сам.
+ *
+ * Воронки (`/deals`), покупателей (`/patients`) и расходов (`/expenses`)
+ * MamaDoc здесь нет (решение 06.10.2026): у застройщика лиды и деньги живут в
+ * `/api/v2/realty` и `/api/v2/treasury`, и записи из экранов MamaDoc в AIVIO
+ * не попали бы (гайды бэка frontend-sales/-finance). Права на них есть у
+ * бухгалтера и управляющего — пункты были видны. «Задачи» и «Сотрудники»
+ * MamaDoc оставлены, пока нет их экранов AIVIO (realty tasks, personnel).
  */
 const RealEstateSidebarMenu: React.FC = () => {
-  const { t } = useT("sidebar");
   const { siderCollapsed } = useThemedLayoutContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -412,13 +417,10 @@ const RealEstateSidebarMenu: React.FC = () => {
   const seen = (screen: string) => estateNav?.(screen) ?? true;
 
   const canChessboard = moduleGate("realty") && seen("inventory");
-  const canDeals = DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals);
   const canTasks = can(PAGE_PERMISSIONS.tasks);
-  const canBuyers = can(PAGE_PERMISSIONS.patients);
   const canChats = can(PAGE_PERMISSIONS.chats);
   const canKnowledge = moduleGate("knowledge");
   const canEmployees = can(PAGE_PERMISSIONS.employees);
-  const canExpenses = can(PAGE_PERMISSIONS.expenses);
   const canBilling = can(PAGE_PERMISSIONS.billing) && seen("billing");
   const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
   const canEdo = can(PAGE_PERMISSIONS.edo);
@@ -458,16 +460,13 @@ const RealEstateSidebarMenu: React.FC = () => {
   return (
     <List sx={{ py: 0, mt: 0.5 }}>
       {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
-      {canSalesDocs && <SidebarMenuItem to="/realestate/documents" icon={<FolderOutlined />} label="Документы CRM" collapsed={siderCollapsed} />}
-      {canDeals && <SidebarMenuItem to="/deals" icon={<FilterAltOutlined />} label="Воронка продаж" collapsed={siderCollapsed} />}
       {canTasks && (
         <SidebarMenuItem to="/tasks" icon={<AssignmentOutlined />} label="Задачи" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
       )}
-      {canBuyers && <SidebarMenuItem to="/patients" icon={<SearchOutlined />} label={t("allPatients")} collapsed={siderCollapsed} />}
       {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
       {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
 
-      {docsItems.length > 0 && sectionLabel("Документы")}
+      {(docsItems.length > 0 || canSalesDocs) && sectionLabel("Документы")}
       {docsItems.map(([screen, to, label, icon]) => (
         <SidebarMenuItem
           key={screen}
@@ -479,13 +478,13 @@ const RealEstateSidebarMenu: React.FC = () => {
           excludePaths={screen === "edo" ? ["/edo/contracts", "/edo/templates", "/edo/archive"] : undefined}
         />
       ))}
+      {canSalesDocs && <SidebarMenuItem to="/realestate/documents" icon={<FolderOutlined />} label="Документы CRM" collapsed={siderCollapsed} />}
 
       {canBilling && sectionLabel("Финансы")}
       {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
 
-      {(canEmployees || canExpenses || canSettings) && sectionLabel("Компания")}
+      {(canEmployees || canSettings) && sectionLabel("Компания")}
       {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />}
-      {canExpenses && <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />}
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
       )}

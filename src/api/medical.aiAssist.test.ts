@@ -412,6 +412,26 @@ describe("requestAiAssistStream", () => {
     expect(got).toEqual([{ kind: "field", key: "complaints", text: "Боль.", reason: "орфография" }]);
   });
 
+  it("serviceLineId уходит и в поток, и в batch/ при откате (бэк 06.10.2026: всегда, если есть приём)", async () => {
+    vi.mocked(apiStream).mockRejectedValue(new ApiError("Not found", 404, null));
+    vi.mocked(apiRequest).mockResolvedValue({ suggestions: {} });
+    await requestAiAssistStream([{ field: "complaints", text: "боль" }], {
+      serviceLineId: 14590,
+      onSuggestion: () => undefined,
+    });
+    expect(vi.mocked(apiStream).mock.calls[0][1]?.body).toMatchObject({ serviceLineId: 14590 });
+    expect(vi.mocked(apiRequest).mock.calls[0][1]?.body).toMatchObject({ serviceLineId: 14590 });
+  });
+
+  it("без приёма serviceLineId не шлётся вовсе", async () => {
+    vi.mocked(apiStream).mockResolvedValue(sseResponse([ev("done", { total: 1, suggested: 0 })]));
+    await requestAiAssistStream([{ field: "complaints", text: "боль" }], {
+      serviceLineId: null,
+      onSuggestion: () => undefined,
+    });
+    expect(vi.mocked(apiStream).mock.calls[0][1]?.body).not.toHaveProperty("serviceLineId");
+  });
+
   it("ответ не text/event-stream — тоже batch/", async () => {
     vi.mocked(apiStream).mockResolvedValue(sseResponse(["{}"], "application/json"));
     vi.mocked(apiRequest).mockResolvedValue({ suggestions: {} });
