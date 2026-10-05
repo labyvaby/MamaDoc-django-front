@@ -113,7 +113,10 @@ export function PnlPage() {
   };
 
   return (
-    <Box sx={{ px: theme.appLayout.page.paddingX, py: 2, overflowY: "auto" }}>
+    // height: 100% — каркас (main) обрезает лишнее и прокрутку оставляет
+    // странице; без высоты корень растягивается по содержимому и не
+    // прокручивается (так же у «Нагрузки» и «Отчётов»).
+    <Box sx={{ height: "100%", px: theme.appLayout.page.paddingX, py: 2, overflowY: "auto" }}>
       <Stack spacing={2}>
         <PnlHeader
           period={period}
