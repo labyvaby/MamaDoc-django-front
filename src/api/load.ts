@@ -8,6 +8,8 @@ export interface HourPoint {
   scheduleMinutes: number; // shift minutes in this hour of day (all days, all staff)
   busyMinutes: number; // busy minutes inside those shifts
   outsideMinutes: number; // busy minutes outside shifts (staff with shifts in the period)
+  scheduleSlots: number; // booking-grid slots of the shifts, as in «Окна»
+  busySlots: number; // of them taken by appointments
 }
 
 export interface DayPoint {
@@ -16,6 +18,8 @@ export interface DayPoint {
   scheduleMinutes: number;
   busyMinutes: number;
   outsideMinutes: number;
+  scheduleSlots: number;
+  busySlots: number;
 }
 
 export interface HeatCell {
@@ -32,6 +36,8 @@ export interface EmployeeLoad {
   scheduleMinutes: number; // shift minutes by schedule
   busyMinutes: number; // busy minutes inside shifts
   outsideMinutes: number; // busy minutes outside shifts
+  scheduleSlots: number;
+  busySlots: number;
   utilizationPct: number | null; // 0..100, null without schedule
   attendanceUtilizationPct: number | null; // busy inside attendance ÷ worked, null without attendance
 }
@@ -48,6 +54,8 @@ export interface LoadKpi {
   scheduleMinutes: number;
   busyMinutes: number;
   outsideMinutes: number; // only staff who have shifts in the period
+  scheduleSlots: number;
+  busySlots: number;
   utilizationPct: number | null;
   attendanceUtilizationPct: number | null;
 }
@@ -61,6 +69,8 @@ export interface LoadAnalytics {
   heatmap: HeatCell[];
   byEmployee: EmployeeLoad[];
   kpi: LoadKpi;
+  /** Earliest shift start / latest shift end, minutes from local midnight; null — no shifts. */
+  scheduleSpan?: { startMinute: number; endMinute: number } | null;
 }
 
 export interface LoadParams {

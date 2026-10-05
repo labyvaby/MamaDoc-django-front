@@ -231,6 +231,16 @@ export const PERMISSIONS = {
 
   // Квартиры и шахматка застройщика (модуль бэка realty, test2 28.09.2026)
   REALESTATE_VIEW: 'realty.view',
+  REALESTATE_MANAGE: 'realty.manage',
+
+  // Финансы застройщика (AIVIO): биллинг рассрочек — treasury.* или realty.* (04.10.2026)
+  TREASURY_VIEW: 'treasury.view',
+  TREASURY_MANAGE: 'treasury.manage',
+
+  // ЭДО и документы застройщика (AIVIO, 04.10.2026)
+  EDO_VIEW: 'edo.view',
+  EDO_MANAGE: 'edo.manage',
+  EDO_TEMPLATES_MANAGE: 'edo.templates.manage',
 
   // Вакцины (контракт: frontend-vaccinations-guide.md)
   VACCINATIONS_VIEW: 'vaccinations.view',

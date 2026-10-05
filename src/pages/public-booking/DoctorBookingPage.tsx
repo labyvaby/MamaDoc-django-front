@@ -233,6 +233,8 @@ const DoctorBookingPage: React.FC = () => {
   const [waitlistDone, setWaitlistDone] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+  /** Слоты «дата время», которые сервер отклонил с 409 — уже забронированы. */
+  const [takenSlots, setTakenSlots] = React.useState<ReadonlySet<string>>(() => new Set());
   const [result, setResult] = React.useState<GuestBookingResult | null>(null);
 
   /** Филиалы, где врача можно записать, с графиком (ручка расписания). */
@@ -481,8 +483,15 @@ const DoctorBookingPage: React.FC = () => {
    * Слоты дня — с флагом занятости; фолбэк на `calendar.times` (без busy)
    * нужен только на миг до первого ответа `reloadTimes` при смене даты.
    */
-  const slots: AvailableTimeSlot[] =
-    filteredTimes ?? (selectedDay?.times ?? []).map((time) => ({ time, busy: false }));
+  const slots: AvailableTimeSlot[] = (
+    filteredTimes ?? (selectedDay?.times ?? []).map((time) => ({ time, busy: false }))
+  ).map((slot) =>
+    // Слот, на который бэк ответил 409, держим занятым, даже если свежий
+    // available-times ещё отдаёт его свободным (гонка с чужой бронью).
+    !slot.busy && selectedDate && takenSlots.has(`${selectedDate} ${slot.time}`)
+      ? { ...slot, busy: true }
+      : slot,
+  );
   const hasAvailableDay = calendar.some((d) => d.isAvailable);
 
   /**
@@ -680,6 +689,15 @@ const DoctorBookingPage: React.FC = () => {
         // показанные окна уже неправда — перечитываем календарь и слоты,
         // как после сгоревшей оплаты (handleRetry), чтобы гость не тыкал
         // в них снова.
+        // Слот забронировали, пока гость заполнял форму: помечаем его
+        // «Забронировано» и перечитываем окна дня — иначе выбранное время
+        // так и висело свободным, и гость отправлял заявку на него снова.
+        if (key === "slotTaken" && selectedDate && selectedTime) {
+          const taken = `${selectedDate} ${selectedTime}`;
+          setTakenSlots((prev) => new Set(prev).add(taken));
+          setSelectedTime(null);
+          void reloadTimes(selectedDate, selectedServices);
+        }
         if (key === "bookingClosedForTime") {
           setSelectedTime(null);
           setCalendarReloadKey((k) => k + 1);

@@ -12,6 +12,8 @@ import {
   hourWindow,
   loadBarSegments,
   loadPct,
+  scheduleBand,
+  slotsLabel,
   sortByLoad,
 } from "./loadBuckets";
 
@@ -21,13 +23,15 @@ const day = (
   scheduleMinutes: number,
   busyMinutes: number,
   outsideMinutes = 0,
-): DayPoint => ({ date, count, scheduleMinutes, busyMinutes, outsideMinutes });
+): DayPoint => ({ date, count, scheduleMinutes, busyMinutes, outsideMinutes, scheduleSlots: 0, busySlots: 0 });
 const hour = (h: number, count: number, scheduleMinutes = 0, busyMinutes = 0, outsideMinutes = 0): HourPoint => ({
   hour: h,
   count,
   scheduleMinutes,
   busyMinutes,
   outsideMinutes,
+  scheduleSlots: 0,
+  busySlots: 0,
 });
 const range = (from: string, to: string) => availableGranularities(dayjs(from), dayjs(to));
 
@@ -156,6 +160,8 @@ describe("загрузка врача и полоса", () => {
       scheduleMinutes: 0,
       busyMinutes: 0,
       outsideMinutes: 0,
+      scheduleSlots: 0,
+      busySlots: 0,
       utilizationPct: null,
       attendanceUtilizationPct: null,
     };
@@ -178,6 +184,8 @@ describe("employeeMeta", () => {
     scheduleMinutes: 0,
     busyMinutes: 0,
     outsideMinutes: 0,
+    scheduleSlots: 0,
+    busySlots: 0,
     utilizationPct: null,
     attendanceUtilizationPct: null,
   };
@@ -202,5 +210,35 @@ describe("employeeMeta", () => {
 
   it("без графика процент не от чего — часы", () => {
     expect(employeeMeta({ ...base, outsideMinutes: 90 }, "3 приёма")).toBe("3 приёма · +1,5 ч вне графика");
+  });
+});
+
+describe("слоты и полоса смены", () => {
+  it("подпись слотов с правильным окончанием", () => {
+    expect(slotsLabel(2, 2)).toBe("2 из 2 слотов");
+    expect(slotsLabel(1, 1)).toBe("1 из 1 слота");
+    expect(slotsLabel(5, 21)).toBe("5 из 21 слота");
+    expect(slotsLabel(3, 11)).toBe("3 из 11 слотов");
+  });
+
+  it("слоты складываются в отрезки, бэк без поля — 0", () => {
+    const daily = [
+      { ...day("2026-09-29", 1, 60, 60), scheduleSlots: 2, busySlots: 2 },
+      { ...day("2026-09-30", 1, 60, 30), scheduleSlots: 2, busySlots: 1 },
+    ];
+    expect(buildBuckets("weekly", [], daily)[0]).toMatchObject({ scheduleSlots: 4, busySlots: 3 });
+    const legacy = [{ date: "2026-09-29", count: 1, scheduleMinutes: 60, busyMinutes: 30 }] as DayPoint[];
+    expect(buildBuckets("daily", [], legacy)[0]).toMatchObject({ scheduleSlots: 0, busySlots: 0 });
+  });
+
+  it("полоса смены: от часа начала до часа конца, подпись с минутами", () => {
+    const buckets = buildBuckets("hourly", Array.from({ length: 24 }, (_, h) => hour(h, 0, h >= 10 && h <= 16 ? 60 : 0)), []);
+    expect(scheduleBand({ startMinute: 600, endMinute: 990 }, buckets)).toEqual({
+      x1: "10:00",
+      x2: "17:00",
+      label: "График 10:00–16:30",
+    });
+    expect(scheduleBand(null, buckets)).toBeNull();
+    expect(scheduleBand({ startMinute: 0, endMinute: 1440 }, buckets)?.label).toBe("График 00:00–24:00");
   });
 });

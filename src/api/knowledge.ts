@@ -3,8 +3,8 @@ import { preparePhotoIfImage, withUploadErrors } from "./uploads";
 import { mockDelay, paginate, withOrg } from "./mockUtils";
 
 /**
- * Модуль «База знаний» — статьи (rich-text, TipTap → HTML). Видео вставляются
- * прямо в статью (YouTube-эмбед через @tiptap/extension-youtube), отдельной
+ * Модуль «База знаний» — статьи (rich-text, BlockNote → HTML). Видео вставляются
+ * прямо в статью (YouTube-эмбед через блок YouTube редактора BlockNote), отдельной
  * сущности «видеоурок» нет (UPD заказчика 15.07.2026; была — удалена).
  * Знания общие на организацию, скоупа по филиалам нет. Статьи редактирует
  * только админ (knowledge.manage).
@@ -81,7 +81,7 @@ export interface KnowledgeArticleListItem {
 }
 
 export interface KnowledgeArticle extends KnowledgeArticleListItem {
-  /** HTML из TipTap; бэк санитизирует по allowlist. */
+  /** HTML из BlockNote; бэк санитизирует по allowlist. */
   content: string;
 }
 
@@ -539,7 +539,7 @@ const mockArticles: MockArticle[] = [
     partNumber: null,
     folderId: null,
     folderName: null,
-    // Видео в статье — HTML, который генерирует @tiptap/extension-youtube.
+    // Видео в статье — HTML, (старый формат; BlockNote отдаёт голый iframe).
     content:
       "<p>Полный тур по системе: приёмы, пациенты, расписание.</p>" +
       '<div data-youtube-video><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ" allowfullscreen="true"></iframe></div>' +

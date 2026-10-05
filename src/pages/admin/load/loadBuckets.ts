@@ -13,12 +13,19 @@ export interface LoadBucket {
   scheduleMinutes: number;
   busyMinutes: number;
   outsideMinutes: number;
+  /** Слоты смен по сетке «Окон» и сколько из них занято приёмами. */
+  scheduleSlots: number;
+  busySlots: number;
   /** Загрузка: приёмы в смену и сверх графика ÷ время по графику, % (бывает
    *  больше 100); null — в отрезке нет смен. */
   utilization: number | null;
 }
 
-type Point = Pick<DayPoint, "count" | "scheduleMinutes" | "busyMinutes"> & { outsideMinutes?: number };
+type Point = Pick<DayPoint, "count" | "scheduleMinutes" | "busyMinutes"> & {
+  outsideMinutes?: number;
+  scheduleSlots?: number;
+  busySlots?: number;
+};
 
 const MONTHS = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const COARSE_TO_FINE: LoadGranularity[] = ["monthly", "weekly", "daily", "hourly"];
@@ -111,6 +118,8 @@ function toBucket(label: string, title: string, points: Point[]): LoadBucket {
   const busyMinutes = points.reduce((s, p) => s + p.busyMinutes, 0);
   // ?? 0 — бэк без поля (выложен позже фронта) не должен давать NaN.
   const outsideMinutes = points.reduce((s, p) => s + (p.outsideMinutes ?? 0), 0);
+  const scheduleSlots = points.reduce((s, p) => s + (p.scheduleSlots ?? 0), 0);
+  const busySlots = points.reduce((s, p) => s + (p.busySlots ?? 0), 0);
   return {
     label,
     title,
@@ -118,6 +127,8 @@ function toBucket(label: string, title: string, points: Point[]): LoadBucket {
     scheduleMinutes,
     busyMinutes,
     outsideMinutes,
+    scheduleSlots,
+    busySlots,
     utilization: loadPct(busyMinutes + outsideMinutes, scheduleMinutes),
   };
 }
@@ -186,4 +197,46 @@ export function employeeMeta(row: EmployeeLoad, countLabel: string): string {
   if (row.attendanceUtilizationPct != null) parts.push(`СКУД ${row.attendanceUtilizationPct}%`);
   if (row.outsideMinutes > 0) parts.push(`+${outsideShare(row.outsideMinutes, row.scheduleMinutes)} вне графика`);
   return parts.join(" · ");
+}
+
+/** «2 из 2 слотов», «1 из 1 слота», «5 из 21 слота». */
+export function slotsLabel(busy: number, total: number): string {
+  const mod10 = total % 10;
+  const mod100 = total % 100;
+  const word = mod10 === 1 && mod100 !== 11 ? "слота" : "слотов";
+  return `${busy} из ${total} ${word}`;
+}
+
+/** Минуты от полуночи → «09:30»; 1440 → «24:00». */
+export function formatClock(minute: number): string {
+  return `${pad(Math.floor(minute / 60))}:${pad(minute % 60)}`;
+}
+
+export interface ScheduleBand {
+  x1: string;
+  x2: string;
+  label: string;
+}
+
+/**
+ * Полоса смены на почасовом графике: от часа начала до часа конца (часы —
+ * подписи оси), подпись с точным временем. null — смен нет или их часы вне
+ * окна графика.
+ */
+export function scheduleBand(
+  span: { startMinute: number; endMinute: number } | null | undefined,
+  buckets: LoadBucket[],
+): ScheduleBand | null {
+  if (!span || buckets.length === 0) return null;
+  const hours = buckets.map((b) => Number(b.label.slice(0, 2)));
+  const first = hours[0];
+  const last = hours[hours.length - 1];
+  const startHour = Math.max(first, Math.floor(span.startMinute / 60));
+  const endHour = Math.min(last, Math.ceil(span.endMinute / 60));
+  if (startHour >= endHour) return null;
+  return {
+    x1: `${pad(startHour)}:00`,
+    x2: `${pad(endHour)}:00`,
+    label: `График ${formatClock(span.startMinute)}–${formatClock(span.endMinute)}`,
+  };
 }

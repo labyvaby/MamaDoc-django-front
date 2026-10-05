@@ -9,19 +9,22 @@ import {
   Tooltip,
   CartesianGrid,
   ReferenceLine,
+  ReferenceArea,
 } from "recharts";
 
 import { useT } from "../../../i18n/VerticalProvider";
-import { formatHours, type LoadBucket, type LoadMetric } from "./loadBuckets";
+import { formatHours, scheduleBand, slotsLabel, type LoadBucket, type LoadMetric } from "./loadBuckets";
 
 interface Props {
   metric: LoadMetric;
   buckets: LoadBucket[];
+  /** Начало первой и конец последней смены — полоса на почасовом графике. */
+  scheduleSpan?: { startMinute: number; endMinute: number } | null;
 }
 
 type ChartPoint = LoadBucket & { value: number | null };
 
-export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
+export const LoadChart: React.FC<Props> = ({ metric, buckets, scheduleSpan }) => {
   const { t } = useT("load");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -45,6 +48,8 @@ export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
     { length: utilizationTop / utilizationStep + 1 },
     (_, i) => i * utilizationStep,
   );
+
+  const band = useMemo(() => scheduleBand(scheduleSpan, buckets), [scheduleSpan, buckets]);
 
   const primaryColor = theme.palette.primary.main;
   const peakColor = theme.palette.error.main;
@@ -70,11 +75,13 @@ export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
   const formatValue = (value: unknown, point: ChartPoint | undefined): [string | number, string] => {
     if (!isUtilization) return [typeof value === "number" ? value : 0, t("chartTooltipLabel")];
     if (value == null || !point) return ["нет смен", "Загрузка"];
-    const outside = point.outsideMinutes > 0 ? ` (+${formatHours(point.outsideMinutes)} ч вне графика)` : "";
-    return [
-      `${value}% · ${formatHours(point.busyMinutes)} из ${formatHours(point.scheduleMinutes)} ч${outside}`,
-      "Загрузка",
-    ];
+    const outside = point.outsideMinutes > 0 ? ` · +${formatHours(point.outsideMinutes)} ч вне графика` : "";
+    // Занятость — в слотах, как в «Окнах»; старый бэк без слотов — в часах.
+    const taken =
+      point.scheduleSlots > 0
+        ? slotsLabel(point.busySlots, point.scheduleSlots)
+        : `${formatHours(point.busyMinutes)} из ${formatHours(point.scheduleMinutes)} ч`;
+    return [`${value}% · ${taken}${outside}`, "Загрузка"];
   };
 
   return (
@@ -90,6 +97,19 @@ export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
+        {band && (
+          <ReferenceArea
+            x1={band.x1}
+            x2={band.x2}
+            fill={primaryColor}
+            fillOpacity={0.08}
+            stroke={primaryColor}
+            strokeOpacity={0.35}
+            strokeDasharray="4 4"
+            ifOverflow="extendDomain"
+            label={{ value: band.label, position: "insideTop", fill: theme.palette.text.secondary, fontSize: 11 }}
+          />
+        )}
         <XAxis
           dataKey="label"
           minTickGap={isMobile ? 24 : 16}
@@ -114,6 +134,7 @@ export const LoadChart: React.FC<Props> = ({ metric, buckets }) => {
           />
         )}
         <Tooltip
+          separator=": "
           contentStyle={{
             borderRadius: 10,
             border: `1px solid ${theme.palette.divider}`,

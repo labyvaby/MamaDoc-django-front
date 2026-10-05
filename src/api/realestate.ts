@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 
 import { tt } from "../i18n/t";
-import { apiRequest } from "./client";
+import { ApiError, apiRequest } from "./client";
 import * as mock from "./realestate.mocks";
 import { mockDelay } from "./mockUtils";
 import { getAllDjangoEmployees } from "./staff";
@@ -34,8 +34,9 @@ import { getAllDjangoEmployees } from "./staff";
  * - `sections` — объекты по порядку слева направо, дом = название секции;
  *   квартира ссылается на секцию `unit.sectionId` (`withProjectSections`);
  * - `slot` — сквозная позиция по этажу (ось); место внутри секции считаем сами;
- * - суперпользователю нужен `organizationId`, иначе 400 — все функции
- *   принимают его (в компонентах — `useApiOrgId()`);
+ * - организация — заголовком `X-Organization-Id` на каждом запросе (с 02.10.2026,
+ *   было `?organizationId=`); все функции принимают `RealtyScope`
+ *   (в компонентах — `useRealtyScope()`), запросы — только при `orgReady`;
  * - чтение — `realty.view`, любая команда — `realty.manage`.
  *
  * С 30.09.2026 (AIVIO `a5010da`, проверено на test2): у ЖК `sellerInfo` и
@@ -81,6 +82,15 @@ export interface Project {
   sellerInfo?: string | null;
   /** Предоплата брони по умолчанию, сом; null — у ЖК не задана (бэк подставит свою). */
   defaultPrepayment?: number | null;
+  /** Счётчики квартир из `/projects/`; null — бэк их не отдал, считаем по квартирам. */
+  stats?: ProjectStats | null;
+}
+
+export interface ProjectStats {
+  total: number;
+  free: number;
+  reserved: number;
+  sold: number;
 }
 
 export interface ProjectSection {
@@ -301,6 +311,11 @@ export interface ContractInput {
   payment: ContractPayment;
   /** SMS-подписание на бэке не включено — код проверяют только моки. */
   signCode: string;
+  /**
+   * Квартира забронирована на другого покупателя: бэк отвечает 409
+   * `INVALID_STATE`, после подтверждения повторяем с этим флагом.
+   */
+  allowOtherBuyer?: boolean;
 }
 
 // ─── Ответ бэка (/api/v2/realty) ───────────────────────────────────────────
@@ -322,6 +337,11 @@ export interface RawProject {
   manager: string | null;
   sellerInfo?: string | null;
   defaultReservationAmount?: Decimal | null;
+  /** Счётчики квартир ЖК — бэк считает сам, в скоупе филиала. */
+  total?: number;
+  free?: number;
+  reserved?: number;
+  sold?: number;
 }
 
 export interface RawSection {
@@ -373,8 +393,14 @@ export interface RawUnit {
   slot: number;
   section: string;
   sectionId?: number | null;
-  /** Совпадает с `id` в `/layouts/`. */
-  layoutId?: string;
+  /**
+   * До 01.10.2026 — строка = `id` в `/layouts/`; с 01.10 (AIVIO `a4ed83d`) —
+   * число, FK нового справочника планировок ЖК (пока пуст → null), а прежняя
+   * строка переехала в `layoutCode`.
+   */
+  layoutId?: string | number | null;
+  /** Ключ группы `/layouts/` («1-2-40-s-v0»), не код планировки. */
+  layoutCode?: string;
   rooms: number;
   area: number;
   insideArea: number;
@@ -463,6 +489,10 @@ export function fromRawProject(raw: RawProject): Project {
     })),
     sellerInfo: raw.sellerInfo || null,
     defaultPrepayment: raw.defaultReservationAmount == null ? null : toMoney(raw.defaultReservationAmount),
+    stats:
+      raw.total == null
+        ? null
+        : { total: raw.total, free: raw.free ?? 0, reserved: raw.reserved ?? 0, sold: raw.sold ?? 0 },
   };
 }
 
@@ -576,25 +606,41 @@ export function fromRawUnitDetails(raw: RawUnitDetails, layoutCode = ""): UnitDe
   };
 }
 
-/** Суперпользователю бэк не выводит организацию сам — без `organizationId` 400. */
-function withOrg(path: string, organizationId?: number): string {
-  if (organizationId == null) return path;
-  return `${path}${path.includes("?") ? "&" : "?"}organizationId=${organizationId}`;
+/**
+ * Скоуп запроса: организация уходит заголовком `X-Organization-Id` (правило
+ * AIVIO с 02.10.2026 — права, модуль и филиал бэк считает в организации из
+ * заголовка), филиал бэк берёт из сессии. `branchId` в запрос не кладём — он
+ * нужен только ключам кэша, чтобы смена филиала не показала чужие данные.
+ */
+export interface RealtyScope {
+  organizationId?: number;
+  branchId?: number;
+  /** false — организация ещё не известна, запросы не отправляем. */
+  orgReady?: boolean;
+}
+
+/** Заголовок организации; пустой скоуп — бэк берёт организацию активного членства. */
+export function realtyHeaders(scope?: RealtyScope): Record<string, string> {
+  return scope?.organizationId != null ? { "X-Organization-Id": String(scope.organizationId) } : {};
+}
+
+function realty<T>(scope: RealtyScope | undefined, path: string, options: Parameters<typeof apiRequest>[1] = {}): Promise<T> {
+  return apiRequest<T>(path, { ...options, headers: { ...realtyHeaders(scope), ...(options.headers as Record<string, string> | undefined) } });
 }
 
 // ─── API ───────────────────────────────────────────────────────────────────
 
-export async function getRealEstateProjects(organizationId?: number): Promise<Project[]> {
+export async function getRealEstateProjects(scope?: RealtyScope): Promise<Project[]> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.listProjects());
-  const raw = await apiRequest<RawProject[]>(withOrg(`${REALTY_API}/projects/`, organizationId));
+  const raw = await realty<RawProject[]>(scope, `${REALTY_API}/projects/`);
   return raw.map(fromRawProject);
 }
 
 /** Код планировки квартиры: по `unit.layoutId`, у старого ответа — по `unitIds` планировки. */
 type LayoutCodes = (unit: RawUnit) => string | undefined;
 
-async function getLayoutCodes(organizationId?: number, projectId?: string): Promise<LayoutCodes> {
-  const layouts = await apiRequest<RawLayout[]>(withOrg(`${REALTY_API}/layouts/`, organizationId));
+async function getLayoutCodes(scope?: RealtyScope, projectId?: string): Promise<LayoutCodes> {
+  const layouts = await realty<RawLayout[]>(scope, `${REALTY_API}/layouts/`);
   const byLayout = new Map<string, string>();
   const byUnit = new Map<number, string>();
   for (const layout of layouts) {
@@ -602,24 +648,27 @@ async function getLayoutCodes(organizationId?: number, projectId?: string): Prom
     byLayout.set(layout.id, layout.code);
     for (const unitId of layout.unitIds) byUnit.set(unitId, layout.code);
   }
-  return (unit) => (unit.layoutId && byLayout.get(unit.layoutId)) || byUnit.get(unit.id);
+  return (unit) => {
+    const key = typeof unit.layoutId === "string" ? unit.layoutId : unit.layoutCode;
+    return (key && byLayout.get(key)) || byUnit.get(unit.id);
+  };
 }
 
 /** Все квартиры корпуса целиком: шахматке нужны и отфильтрованные ячейки. */
-export async function getProjectUnits(projectId: string, organizationId?: number): Promise<Unit[]> {
+export async function getProjectUnits(projectId: string, scope?: RealtyScope): Promise<Unit[]> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.listUnits(projectId));
   const [raw, codes] = await Promise.all([
-    apiRequest<RawUnit[]>(withOrg(`${REALTY_API}/units/?projectId=${encodeURIComponent(projectId)}`, organizationId)),
-    getLayoutCodes(organizationId, projectId),
+    realty<RawUnit[]>(scope, `${REALTY_API}/units/?projectId=${encodeURIComponent(projectId)}`),
+    getLayoutCodes(scope, projectId),
   ]);
   return withSectionPositions(raw.map((unit) => fromRawUnit(unit, codes(unit))));
 }
 
-export async function getUnit(unitId: string, organizationId?: number): Promise<UnitDetails> {
+export async function getUnit(unitId: string, scope?: RealtyScope): Promise<UnitDetails> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.getUnitDetails(unitId));
   const [raw, codes] = await Promise.all([
-    apiRequest<RawUnitDetails>(withOrg(`${REALTY_API}/units/${unitId}/`, organizationId)),
-    getLayoutCodes(organizationId),
+    realty<RawUnitDetails>(scope, `${REALTY_API}/units/${unitId}/`),
+    getLayoutCodes(scope),
   ]);
   return fromRawUnitDetails(raw, codes(raw));
 }
@@ -630,10 +679,10 @@ export async function getUnit(unitId: string, organizationId?: number): Promise<
  * список режется по активному филиалу. Без права на справочник сотрудников —
  * пустой список, и ответственный вводится текстом.
  */
-export async function getSalesManagers(organizationId?: number): Promise<SalesManager[]> {
+export async function getSalesManagers(scope?: RealtyScope): Promise<SalesManager[]> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.managers.map((name) => ({ id: "", name })));
   try {
-    const employees = await getAllDjangoEmployees({ status: "active", allBranches: true, organizationId });
+    const employees = await getAllDjangoEmployees({ status: "active", allBranches: true, organizationId: scope?.organizationId });
     return employees.map((employee) => ({ id: String(employee.id), name: employee.fullName }));
   } catch {
     return [];
@@ -644,10 +693,10 @@ export async function getSalesManagers(organizationId?: number): Promise<SalesMa
  * Минимальная ставка ипотеки среди активных банков организации, % годовых.
  * null — банков нет или справочник недоступен: тогда строку ипотеки не показываем.
  */
-export async function getMortgageRateFrom(organizationId?: number): Promise<number | null> {
+export async function getMortgageRateFrom(scope?: RealtyScope): Promise<number | null> {
   if (REALESTATE_USE_MOCKS) return mockDelay(14);
   try {
-    const banks = await apiRequest<{ mortgageRate: number; isActive: boolean }[]>(withOrg(`${REALTY_API}/banks/?active=true`, organizationId));
+    const banks = await realty<{ mortgageRate: number; isActive: boolean }[]>(scope, `${REALTY_API}/banks/?active=true`);
     const rates = banks.filter((bank) => bank.isActive && bank.mortgageRate > 0).map((bank) => bank.mortgageRate);
     return rates.length ? Math.min(...rates) : null;
   } catch {
@@ -656,12 +705,12 @@ export async function getMortgageRateFrom(organizationId?: number): Promise<numb
 }
 
 /** Команда над квартирой. reserve/sell отвечают бронью или договором — карточку перечитываем. */
-async function postUnitCommand(unitId: string, action: string, body: object, organizationId?: number): Promise<UnitDetails> {
-  await apiRequest<unknown>(withOrg(`${REALTY_API}/units/${unitId}/${action}/`, organizationId), { method: "POST", body });
-  return getUnit(unitId, organizationId);
+async function postUnitCommand(unitId: string, action: string, body: object, scope?: RealtyScope): Promise<UnitDetails> {
+  await realty<unknown>(scope, `${REALTY_API}/units/${unitId}/${action}/`, { method: "POST", body });
+  return getUnit(unitId, scope);
 }
 
-export async function reserveUnit(unitId: string, input: ReserveUnitInput, organizationId?: number): Promise<UnitDetails> {
+export async function reserveUnit(unitId: string, input: ReserveUnitInput, scope?: RealtyScope): Promise<UnitDetails> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.reserve(unitId, input));
   return postUnitCommand(
     unitId,
@@ -675,23 +724,34 @@ export async function reserveUnit(unitId: string, input: ReserveUnitInput, organ
       meeting: input.meetingAt !== null,
       meetingAt: input.meetingAt,
     },
-    organizationId,
+    scope,
   );
 }
 
 /** Предоплата подтверждается по брони (`reservation.id`), а не по квартире. */
-export async function confirmUnitPrepayment(unit: UnitDetails, organizationId?: number): Promise<UnitDetails> {
+export async function confirmUnitPrepayment(unit: UnitDetails, scope?: RealtyScope): Promise<UnitDetails> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.confirmPrepayment(unit.id));
   if (!unit.reservation) throw new Error(tt("realestate:errors.noReservation"));
-  await apiRequest<unknown>(withOrg(`${REALTY_API}/reservations/${unit.reservation.id}/confirm-payment/`, organizationId), {
+  await realty<unknown>(scope, `${REALTY_API}/reservations/${unit.reservation.id}/confirm-payment/`, {
     method: "POST",
   });
-  return getUnit(unit.id, organizationId);
+  return getUnit(unit.id, scope);
 }
 
-export async function scheduleUnitMeeting(unitId: string, input: MeetingInput, organizationId?: number): Promise<UnitDetails> {
+/** Продление брони на `hours` часов (бэк принимает 1–720). Продлевается бронь, а не квартира. */
+export async function extendUnitReservation(unit: UnitDetails, hours: ReservationTerm, scope?: RealtyScope): Promise<UnitDetails> {
+  if (REALESTATE_USE_MOCKS) return mockDelay(mock.extendReservation(unit.id, hours));
+  if (!unit.reservation) throw new Error(tt("realestate:errors.noReservation"));
+  await realty<unknown>(scope, `${REALTY_API}/reservations/${unit.reservation.id}/extend/`, {
+    method: "POST",
+    body: { hours },
+  });
+  return getUnit(unit.id, scope);
+}
+
+export async function scheduleUnitMeeting(unitId: string, input: MeetingInput, scope?: RealtyScope): Promise<UnitDetails> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.scheduleMeeting(unitId, input));
-  return postUnitCommand(unitId, "meetings", input, organizationId);
+  return postUnitCommand(unitId, "meetings", input, scope);
 }
 
 /** Отправленное КП: свежая карточка и ссылка WhatsApp с текстом, который бэк сохранил в истории. */
@@ -701,23 +761,23 @@ export interface SentProposal {
   whatsappUrl: string | null;
 }
 
-export async function sendUnitProposal(unitId: string, input: ProposalInput, organizationId?: number): Promise<SentProposal> {
+export async function sendUnitProposal(unitId: string, input: ProposalInput, scope?: RealtyScope): Promise<SentProposal> {
   if (REALESTATE_USE_MOCKS) return mockDelay({ unit: mock.sendProposal(unitId, input), whatsappUrl: null });
-  const proposal = await apiRequest<{ whatsappUrl: string }>(withOrg(`${REALTY_API}/units/${unitId}/proposals/`, organizationId), {
+  const proposal = await realty<{ whatsappUrl: string }>(scope, `${REALTY_API}/units/${unitId}/proposals/`, {
     method: "POST",
     body: input,
   });
-  return { unit: await getUnit(unitId, organizationId), whatsappUrl: proposal.whatsappUrl || null };
+  return { unit: await getUnit(unitId, scope), whatsappUrl: proposal.whatsappUrl || null };
 }
 
 /**
  * Операция отвечает свежими карточками `{unit, target}`; для обмена возвращаем
  * карточку квартиры, на которую перенесена сделка.
  */
-export async function runUnitOperation(unitId: string, input: OperationInput, organizationId?: number): Promise<UnitDetails> {
+export async function runUnitOperation(unitId: string, input: OperationInput, scope?: RealtyScope): Promise<UnitDetails> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.runOperation(unitId, input));
   const [result, codes] = await Promise.all([
-    apiRequest<{ unit: RawUnitDetails; target: RawUnitDetails | null }>(withOrg(`${REALTY_API}/units/${unitId}/operations/`, organizationId), {
+    realty<{ unit: RawUnitDetails; target: RawUnitDetails | null }>(scope, `${REALTY_API}/units/${unitId}/operations/`, {
       method: "POST",
       body: {
         operation: input.operation,
@@ -728,31 +788,132 @@ export async function runUnitOperation(unitId: string, input: OperationInput, or
         targetUnitId: input.targetUnitId ? Number(input.targetUnitId) : null,
       },
     }),
-    getLayoutCodes(organizationId),
+    getLayoutCodes(scope),
   ]);
   const card = result.target ?? result.unit;
   return fromRawUnitDetails(card, codes(card));
 }
 
-export async function signUnitContract(unitId: string, input: ContractInput, organizationId?: number): Promise<UnitDetails> {
+export async function signUnitContract(unitId: string, input: ContractInput, scope?: RealtyScope): Promise<UnitDetails> {
   if (REALESTATE_USE_MOCKS) return mockDelay(mock.signContract(unitId, input));
   // Код подписи бэк пока не проверяет (SMS-подписания нет) — шлём пустую строку.
-  return postUnitCommand(unitId, "sell", { ...input, signCode: "" }, organizationId);
+  return postUnitCommand(unitId, "sell", { ...input, signCode: "" }, scope);
+}
+
+// ─── Каталог: заведение ЖК ─────────────────────────────────────────────────
+
+/** Тело `POST /projects/` мастера «Новый ЖК». */
+export interface NewProjectInput {
+  name: string;
+  address: string;
+  deadline: string | null;
+  pricePerSqm: string;
+  startFloor: number;
+  floors: number;
+  sections: { name: string; startFloor: number; floors: number; deadline: string | null }[];
+}
+
+/** Квартира в `POST /units/bulk/`. */
+export interface NewUnitInput {
+  number: number;
+  floor: number;
+  slot: number;
+  section: string;
+  sectionId: number | null;
+  rooms: number;
+  area: string;
+  price: string;
+  pricePerSqm: string;
+}
+
+/** Ошибка строки bulk: `index` — номер квартиры в теле запроса. */
+export interface BulkRowError {
+  index: number;
+  field: string;
+  code: string;
+  message: string;
+}
+
+/** Квартиры не создались — ЖК удалён (или удалить не удалось: `projectLeft`). */
+export class ProjectCreateError extends Error {
+  constructor(
+    message: string,
+    readonly rows: BulkRowError[],
+    /** id ЖК, который остался пустым: откат не прошёл. */
+    readonly projectLeft: string | null,
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = "ProjectCreateError";
+  }
 }
 
 /**
- * Ключи react-query модуля: команды инвалидируют всё дерево `realestate`.
- * Организация — в ключе: при смене контекста страница пересоздаётся, а кэш
- * остаётся, и без неё суперпользователь увидел бы ЖК прошлой организации.
+ * Ошибки строк bulk. Бэк кладёт их в `{bulk: [{index, field, code, message}]}`,
+ * но где окажется этот ключ в конверте ошибки, живым ответом не проверено —
+ * ищем массив строк в любом месте ответа.
  */
-type OrgKey = number | undefined;
+export function findBulkRowErrors(payload: unknown, depth = 0): BulkRowError[] {
+  if (depth > 5 || payload == null || typeof payload !== "object") return [];
+  if (Array.isArray(payload)) {
+    const rows = payload.filter(
+      (item): item is BulkRowError => typeof item === "object" && item != null && typeof (item as BulkRowError).index === "number",
+    );
+    if (rows.length) return rows;
+    return payload.flatMap((item) => findBulkRowErrors(item, depth + 1));
+  }
+  return Object.values(payload).flatMap((value) => findBulkRowErrors(value, depth + 1));
+}
+
+/**
+ * Создаёт ЖК с секциями, затем все квартиры одним `POST /units/bulk/` (всё или
+ * ничего). Квартиры ссылаются на секции по id из ответа на создание ЖК, поэтому
+ * их тело строится после него (`unitsFor`). Если квартиры не создались —
+ * удаляем пустой ЖК, чтобы повторная попытка не плодила дубли.
+ */
+export async function createProjectWithUnits(
+  project: NewProjectInput,
+  unitsFor: (sectionIds: ReadonlyMap<string, number>) => NewUnitInput[],
+  scope?: RealtyScope,
+): Promise<{ projectId: string; created: number }> {
+  if (REALESTATE_USE_MOCKS) return mockDelay(mock.createProject(project, unitsFor));
+  const created = await realty<RawProject>(scope, `${REALTY_API}/projects/`, { method: "POST", body: project });
+  const sectionIds = new Map(created.sections.map((s) => [sectionKey(s.name), s.id]));
+  try {
+    const result = await realty<{ created: number; unitIds: number[] }>(scope, `${REALTY_API}/units/bulk/`, {
+      method: "POST",
+      body: { projectId: created.id, units: unitsFor(sectionIds) },
+    });
+    return { projectId: String(created.id), created: result.created };
+  } catch (error) {
+    const rows = error instanceof ApiError ? findBulkRowErrors(error.payload) : [];
+    let projectLeft: string | null = null;
+    try {
+      await realty<unknown>(scope, `${REALTY_API}/projects/${created.id}/`, { method: "DELETE" });
+    } catch {
+      projectLeft = String(created.id);
+    }
+    throw new ProjectCreateError(error instanceof Error ? error.message : String(error), rows, projectLeft, error);
+  }
+}
+
+/** Ключ секции по названию: без регистра и лишних пробелов — как сверяет бэк. */
+export const sectionKey = (name: string) => name.trim().toLocaleLowerCase("ru").replace(/\s+/g, " ");
+
+/**
+ * Ключи react-query модуля: команды инвалидируют всё дерево `realestate`.
+ * Организация и филиал — в ключе: при смене контекста страница пересоздаётся,
+ * а кэш остаётся, и без них показались бы ЖК прошлой организации или офиса.
+ */
+type ScopeKey = RealtyScope | undefined;
+const scopeKey = (scope: ScopeKey) => [scope?.organizationId ?? "session", scope?.branchId ?? "all"] as const;
 
 export const realEstateKeys = {
-  all: ["realestate"] as const,
-  org: (org: OrgKey) => [...realEstateKeys.all, org ?? "session"] as const,
-  projects: (org: OrgKey) => [...realEstateKeys.org(org), "projects"] as const,
-  units: (org: OrgKey, projectId: string) => [...realEstateKeys.org(org), "units", projectId] as const,
-  unit: (org: OrgKey, unitId: string) => [...realEstateKeys.org(org), "unit", unitId] as const,
-  managers: (org: OrgKey) => [...realEstateKeys.org(org), "managers"] as const,
-  mortgageRate: (org: OrgKey) => [...realEstateKeys.org(org), "mortgage-rate"] as const,
+  all: ["django", "realestate"] as const,
+  org: (scope: ScopeKey) => [...realEstateKeys.all, ...scopeKey(scope)] as const,
+  projects: (scope: ScopeKey) => [...realEstateKeys.org(scope), "projects"] as const,
+  units: (scope: ScopeKey, projectId: string) => [...realEstateKeys.org(scope), "units", projectId] as const,
+  unit: (scope: ScopeKey, unitId: string) => [...realEstateKeys.org(scope), "unit", unitId] as const,
+  managers: (scope: ScopeKey) => [...realEstateKeys.org(scope), "managers"] as const,
+  mortgageRate: (scope: ScopeKey) => [...realEstateKeys.org(scope), "mortgage-rate"] as const,
 };
