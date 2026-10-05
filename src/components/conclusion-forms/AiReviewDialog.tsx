@@ -19,7 +19,7 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import AutoAwesomeOutlined from "@mui/icons-material/AutoAwesomeOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
@@ -30,7 +30,8 @@ import RadioButtonUncheckedOutlined from "@mui/icons-material/RadioButtonUncheck
 
 import { useT } from "../../i18n/VerticalProvider";
 import { subtleBg } from "../../theme/uiHelpers";
-import { diffStats, diffWords, sameText, type DiffPart } from "./textDiff";
+import { AiDiffText } from "./AiDiffText";
+import { diffStats, diffWords, sameText } from "./textDiff";
 import type { AiAssistKey } from "./useAiAssist";
 
 /** Поле, куда ложится правка, — живое: текст и setter с текущего рендера. */
@@ -243,41 +244,6 @@ export const AiReviewDialog: React.FC<{
     </Stack>
   );
 
-  const diffNode = (parts: DiffPart[]) => (
-    <Typography component="div" variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.8 }}>
-      {parts.map((part, i) => {
-        // Пробелы и переводы строк без подсветки: пустая цветная плашка
-        // на месте пробела читается как ошибка вёрстки.
-        if (part.kind === "same" || part.text.trim() === "") {
-          return <React.Fragment key={i}>{part.text}</React.Fragment>;
-        }
-        // Пробел в хвосте удалённого и в голове добавленного — один и тот
-        // же (textDiff кладёт его в обе стороны), на экране он лишний.
-        const nextPart = parts[i + 1];
-        const text =
-          part.kind === "removed" && nextPart?.kind === "added" && /^\s/.test(nextPart.text)
-            ? part.text.replace(/\s+$/, "")
-            : part.text;
-        return (
-          <Box
-            key={i}
-            component={part.kind === "added" ? "ins" : "del"}
-            sx={{
-              textDecoration: part.kind === "removed" ? "line-through" : "none",
-              color: part.kind === "removed" ? "text.secondary" : "text.primary",
-              bgcolor: (th) =>
-                alpha(part.kind === "added" ? th.palette.success.main : th.palette.error.main, 0.14),
-              borderRadius: 0.5,
-              px: 0.25,
-            }}
-          >
-            {text}
-          </Box>
-        );
-      })}
-    </Typography>
-  );
-
   const main =
     done || !entry || !target || !shown ? (
       <Stack spacing={1.5} alignItems="flex-start" sx={{ p: 3 }}>
@@ -346,7 +312,7 @@ export const AiReviewDialog: React.FC<{
             }}
           >
             {view === "diff" && !shown.wasEmpty ? (
-              diffNode(shown.parts)
+              <AiDiffText parts={shown.parts} />
             ) : (
               <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.8 }}>
                 {shown.after}

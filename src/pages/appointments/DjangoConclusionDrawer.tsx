@@ -84,7 +84,17 @@ import {
   AiAssistHeaderButton,
   AiAssistPendingStrip,
   AiAssistSuggestion,
+  AiSuggestionBeside,
 } from "../../components/conclusion-forms/AiAssistControls";
+import {
+  AiSuggestionGutter,
+  AI_GUTTER_WIDTH,
+  type AiGutterUndo,
+  type AiSuggestionGutterHandle,
+} from "../../components/conclusion-forms/AiSuggestionGutter";
+import { useAiFieldMarks } from "../../components/conclusion-forms/aiFieldMarks";
+import { AiThinkingOverlay, AiThinkingStrip } from "../../components/conclusion-forms/AiThinkingStrip";
+import { aiFieldGlow, reducedMotion } from "../../components/ai/aiMotion";
 import {
   AiReviewDialog,
   type AiReviewEntry,
@@ -239,6 +249,10 @@ const EMPTY_VALUES: Record<string, string> = {};
 
 /** Колонка формы, когда справа от неё стоит лист, — прежняя ширина дровера. */
 const FORM_COLUMN_WIDTH = 560;
+/** Ширина дровера без листа на ноутбуке и шире (md). */
+const DRAWER_WIDTH_MD = 560;
+/** Предел ширины дровера с листом рядом. */
+const SHEET_DRAWER_MAX_WIDTH = 1200;
 
 // ── лист рядом с формой: выбор врача помним в браузере ─────────────────────────
 // По умолчанию лист скрыт (30.09.2026): форма важнее. Кто его открыл —
@@ -417,6 +431,15 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   // Лист есть и в просмотре: там это и есть документ, каким его напечатают.
   const showSheetSide = sheetSide && sheetPinned;
   const showSheetTab = !sheetSide && sheetTab;
+  // Подсказки AI — слева от дровера, напротив полей; дровер не расширяется.
+  // Нужно место под колонку слева от него; иначе — плашки у своих полей.
+  const aiGutterRoom = useMediaQuery(
+    `(min-width: ${DRAWER_WIDTH_MD + AI_GUTTER_WIDTH + 48}px)`,
+  );
+  const aiGutterRoomWithSheet = useMediaQuery(
+    `(min-width: ${SHEET_DRAWER_MAX_WIDTH + AI_GUTTER_WIDTH + 48}px)`,
+  );
+  const aiGutterFits = !inline && (showSheetSide ? aiGutterRoomWithSheet : aiGutterRoom);
   const toggleSheet = () => {
     if (sheetSide) {
       setSheetPinned((prev) => {
@@ -468,9 +491,18 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   // дровера старый ответ модели не должен всплыть над другим заключением.
   /** Очередь режима проверки, замороженная при открытии; null — окно закрыто. */
   const [aiReview, setAiReview] = React.useState<AiReviewEntry[] | null>(null);
+  /** Последнее решение по подсказке — «Вернуть» у поля и ⌘Z, 12 секунд. */
+  const [aiUndo, setAiUndo] = React.useState<AiGutterUndo | null>(null);
+  React.useEffect(() => {
+    if (!aiUndo) return;
+    const timer = window.setTimeout(() => setAiUndo(null), 12000);
+    return () => window.clearTimeout(timer);
+  }, [aiUndo]);
+  const aiGutterRef = React.useRef<AiSuggestionGutterHandle | null>(null);
   React.useEffect(() => {
     ai.reset();
     setAiReview(null);
+    setAiUndo(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, draftId]);
 
@@ -1093,6 +1125,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
       spacing={0.5}
       ref={diagnosisAnchorRef}
       data-conclusion-row={rowId}
+      data-ai-key="diagnosis"
       sx={{ minWidth: 0 }}
     >
       {fieldLabel(
@@ -1118,58 +1151,62 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
           </Tooltip>
         ),
       )}
-      <Autocomplete
-        multiple
-        freeSolo
-        disableCloseOnSelect
-        options={catalog}
-        value={selectedDiagnoses}
-        loading={catalogLoading}
-        disabled={readOnly}
-        filterOptions={(opts) => opts}
-        onInputChange={(_, val, reason) => {
-          if (reason === "input") setDiagInput(val);
-        }}
-        noOptionsText={
-          diagInput.trim() ? t("conclusion.nothingFound") : t("conclusion.startTypingCode")
-        }
-        getOptionLabel={(o) =>
-          typeof o === "string" ? o : [o.code, o.title].filter(Boolean).join(" — ")
-        }
-        isOptionEqualToValue={(o, v) => o.id === v.id || (o.code === v.code && o.code !== "")}
-        onChange={(_, value) =>
-          setSelectedDiagnoses(
-            value
-              .map((item) =>
-                typeof item === "string"
-                  ? { id: -1, code: "", title: item.trim(), displayName: "", isActive: true, sortOrder: 0 }
-                  : item,
-              )
-              .filter((item) => item.title !== ""),
-          )
-        }
-        filterSelectedOptions
-        size="small"
-        slotProps={{
-          // С открытой клавиатурой список переворачивается вверх, а не прячется
-          // под неё: padding снизу — её высота.
-          popper: popperPadding
-            ? {
-                modifiers: [
-                  { name: "flip", options: { padding: popperPadding } },
-                  { name: "preventOverflow", options: { padding: popperPadding } },
-                ],
-              }
-            : undefined,
-          listbox: listboxMaxHeight ? { sx: { maxHeight: listboxMaxHeight } } : undefined,
-        }}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            placeholder={readOnly ? "—" : t("conclusion.diagnosisPlaceholder")}
-          />
-        )}
-      />
+      <AiSuggestionBeside
+        suggestion={aiSuggestionNode("diagnosis")}
+      >
+        <Autocomplete
+          multiple
+          freeSolo
+          disableCloseOnSelect
+          options={catalog}
+          value={selectedDiagnoses}
+          loading={catalogLoading}
+          disabled={readOnly}
+          filterOptions={(opts) => opts}
+          onInputChange={(_, val, reason) => {
+            if (reason === "input") setDiagInput(val);
+          }}
+          noOptionsText={
+            diagInput.trim() ? t("conclusion.nothingFound") : t("conclusion.startTypingCode")
+          }
+          getOptionLabel={(o) =>
+            typeof o === "string" ? o : [o.code, o.title].filter(Boolean).join(" — ")
+          }
+          isOptionEqualToValue={(o, v) => o.id === v.id || (o.code === v.code && o.code !== "")}
+          onChange={(_, value) =>
+            setSelectedDiagnoses(
+              value
+                .map((item) =>
+                  typeof item === "string"
+                    ? { id: -1, code: "", title: item.trim(), displayName: "", isActive: true, sortOrder: 0 }
+                    : item,
+                )
+                .filter((item) => item.title !== ""),
+            )
+          }
+          filterSelectedOptions
+          size="small"
+          slotProps={{
+            // С открытой клавиатурой список переворачивается вверх, а не прячется
+            // под неё: padding снизу — её высота.
+            popper: popperPadding
+              ? {
+                  modifiers: [
+                    { name: "flip", options: { padding: popperPadding } },
+                    { name: "preventOverflow", options: { padding: popperPadding } },
+                  ],
+                }
+              : undefined,
+            listbox: listboxMaxHeight ? { sx: { maxHeight: listboxMaxHeight } } : undefined,
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              placeholder={readOnly ? "—" : t("conclusion.diagnosisPlaceholder")}
+            />
+          )}
+        />
+      </AiSuggestionBeside>
       {catalogError && (
         <Alert severity="warning" sx={{ py: 0 }}>
           {t("conclusion.catalogLoadFailed")}
@@ -1239,7 +1276,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           )}
         </Stack>
       )}
-      {aiSuggestionNode("diagnosis", (text) => void applyDiagnosisSuggestion(text))}
     </Stack>
   );
 
@@ -1288,7 +1324,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
 
   /**
    * Подпись поля. Кнопки AI у полей больше нет — одна на всю форму, в шапке
-   * (AiAssistHeaderButton); под полем остаётся только плашка предложения.
+   * (AiAssistHeaderButton); у поля остаётся только плашка предложения.
    */
   const fieldLabel = (label: React.ReactNode, action?: React.ReactNode) => (
     <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
@@ -1300,20 +1336,24 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
   );
 
   /**
-   * Плашка с предложением AI под полем. Текст поля не трогает: в него
-   * попадает только то, что врач применил сам (`apply`).
+   * Плашка с предложением AI слева от поля (AiSuggestionBeside). Текст поля
+   * не трогает: в него попадает только то, что врач применил сам (`apply`).
+   * Без предложения — null, чтобы поле не делило ширину с пустотой.
+   * При колонке подсказок (aiGutterFits) у полей плашек нет — они в ней.
    */
-  const aiSuggestionNode = (aiField: AiAssistKey, apply: (text: string) => void) =>
-    canAiAssist ? (
+  const aiSuggestionNode = (aiField: AiAssistKey) => {
+    if (!canAiAssist || aiGutterFits || !ai.of(aiField).suggestion) return null;
+    const target = aiReviewTargets().find((item) => item.key === aiField);
+    if (!target) return null;
+    return (
       <AiAssistSuggestion
         state={ai.of(aiField)}
-        onApply={() => {
-          const text = ai.take(aiField);
-          if (text != null) apply(text);
-        }}
-        onDismiss={() => ai.dismiss(aiField)}
+        current={target.current}
+        onApply={() => applyAiSuggestion(target)}
+        onDismiss={() => dismissAiSuggestion(target)}
       />
-    ) : null;
+    );
+  };
 
   /** Текстовое поле заключения одним узлом: подпись + поле. */
   const textFieldNode = (
@@ -1336,23 +1376,24 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
   ) => {
     const aiField = options.locked ? undefined : options.aiField;
     return (
-      <Stack spacing={0.5} data-conclusion-row={options.rowId}>
+      <Stack spacing={0.5} data-conclusion-row={options.rowId} data-ai-key={aiField}>
         {fieldLabel(
           <>
             {label} {options.required && !readOnly && "*"}
           </>,
         )}
-        <CollapsibleTextField
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={readOnly || Boolean(options.locked)}
-          minRows={options.minRows ?? 2}
-          fullWidth
-          size="small"
-          placeholder={readOnly ? "—" : t("conclusion.optional")}
-          helperText={options.hint}
-        />
-        {aiField && aiSuggestionNode(aiField, onChange)}
+        <AiSuggestionBeside suggestion={aiField && aiSuggestionNode(aiField)}>
+          <CollapsibleTextField
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={readOnly || Boolean(options.locked)}
+            minRows={options.minRows ?? 2}
+            fullWidth
+            size="small"
+            placeholder={readOnly ? "—" : t("conclusion.optional")}
+            helperText={options.hint}
+          />
+        </AiSuggestionBeside>
       </Stack>
     );
   };
@@ -1728,6 +1769,40 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         source: ai.of(key).source,
       }));
     if (entries.length > 0) setAiReview(entries);
+  };
+
+  /**
+   * Принять подсказку: снимок поля до применения — для «Вернуть» (у
+   * диагноза это набор выбранных диагнозов, из текста он не собирается).
+   */
+  const applyAiSuggestion = (target: AiReviewTarget) => {
+    const restoreField = target.capture();
+    const text = ai.take(target.key);
+    if (text == null) return;
+    target.apply(text);
+    setAiUndo({
+      key: target.key,
+      kind: "applied",
+      onUndo: () => {
+        restoreField();
+        ai.restore(target.key, text);
+        setAiUndo(null);
+      },
+    });
+  };
+
+  const dismissAiSuggestion = (target: AiReviewTarget) => {
+    const text = ai.of(target.key).suggestion;
+    ai.dismiss(target.key);
+    if (text == null) return;
+    setAiUndo({
+      key: target.key,
+      kind: "dismissed",
+      onUndo: () => {
+        ai.restore(target.key, text);
+        setAiUndo(null);
+      },
+    });
   };
 
   const handleAiApplyAll = () => {
@@ -2586,6 +2661,28 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
     />
   );
 
+  /**
+   * Подсказки AI в колонке слева от формы — по порядку формы. Колонка есть,
+   * пока есть неразобранные подсказки и под неё хватает ширины.
+   */
+  const aiGutterItems =
+    canAiAssist && aiGutterFits && ai.suggestedKeys.length > 0
+      ? aiReviewTargets()
+          .filter((target) => ai.of(target.key).suggestion)
+          .map((target) => ({
+            key: target.key,
+            label: target.label,
+            state: ai.of(target.key),
+            current: target.current,
+            onApply: () => applyAiSuggestion(target),
+            onDismiss: () => dismissAiSuggestion(target),
+          }))
+      : [];
+  // «Вернуть» держит колонку и после последней подсказки.
+  const aiGutter = aiGutterItems.length > 0 || (canAiAssist && aiGutterFits && aiUndo != null);
+  // Пока AI думает — рамки полей, которые он читает, мерцают.
+  useAiFieldMarks(formColumnRef.current, ai.loadingKeys, "data-ai-loading");
+
   const content = (
     <>
       {/* ── header ── */}
@@ -2760,12 +2857,22 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         </>
       )}
 
+      {/* ── AI думает: этапы и процент вместо полосы подсказок ── */}
+      {canAiAssist && ai.loading && (
+        <>
+          <AiThinkingStrip fieldCount={ai.loadingCount} onCancel={ai.reset} />
+          <Divider />
+        </>
+      )}
+
       {/* ── подсказки AI: массовые действия, пока есть неразобранные ── */}
-      {canAiAssist && ai.suggestedKeys.length > 0 && (
+      {canAiAssist && !ai.loading && ai.suggestedKeys.length > 0 && (
         <>
           <AiAssistPendingStrip
             pendingCount={ai.suggestedKeys.length}
-            onReview={handleAiReview}
+            // Карточки слева от дровера — разбор прямо по ним, с клавиатуры;
+            // без них — окно проверки.
+            onReview={aiGutter ? () => aiGutterRef.current?.focusFirst() : handleAiReview}
             onApplyAll={handleAiApplyAll}
             onDismissAll={handleAiDismissAll}
           />
@@ -2854,7 +2961,31 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           вместо формы (телефон, колонка приёма); форма при этом не
           размонтируется — только прячется, чтобы не терять фокус и
           раскрытые поля. */}
-      <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
+      <Box sx={{ flex: 1, minHeight: 0, display: "flex", position: "relative" }}>
+      {/* Подсказки AI — за левым краем дровера, по высоте формы. */}
+      {aiGutter && (
+        <AiSuggestionGutter
+          ref={aiGutterRef}
+          scrollEl={formColumnRef.current}
+          items={aiGutterItems}
+          undo={aiUndo}
+        />
+      )}
+      {/* Скан по форме, пока AI думает (по ширине колонки формы). */}
+      {canAiAssist && ai.loading && !showSheetTab && (
+        <Box
+          sx={{
+            position: "absolute",
+            top: 0,
+            bottom: 0,
+            left: 0,
+            width: showSheetSide ? FORM_COLUMN_WIDTH : "100%",
+            pointerEvents: "none",
+          }}
+        >
+          <AiThinkingOverlay />
+        </Box>
+      )}
       <Box
         ref={formColumnRef}
         onFocus={handleFormFocus}
@@ -2869,6 +3000,20 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           borderColor: "divider",
           scrollbarWidth: "none",
           "&::-webkit-scrollbar": { display: "none" },
+          // Поле, на чью подсказку в колонке наведён курсор.
+          "& [data-ai-active]": {
+            outline: "2px solid",
+            outlineColor: "primary.main",
+            outlineOffset: 4,
+            borderRadius: 1,
+          },
+          // Поле, которое AI сейчас читает: рамка мерцает акцентом.
+          "& [data-ai-loading] .MuiOutlinedInput-notchedOutline": {
+            borderColor: "primary.main",
+            borderWidth: 2,
+            animation: `${aiFieldGlow} 1.6s ease-in-out infinite`,
+            ...reducedMotion,
+          },
         }}
       >
         <Stack spacing={3}>
@@ -3113,9 +3258,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                     rowAddon={
                       canAiAssist
                         ? (field) =>
-                            aiSuggestionNode(aiRowKey(field.id), (text) =>
-                              setFormRowValue(field.id, text),
-                            )
+                            aiSuggestionNode(aiRowKey(field.id))
                         : undefined
                     }
                     slotNodes={slotNodes}
@@ -3266,7 +3409,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                   )}
                 </Stack>
               ) : (
-                <Stack spacing={0.5} data-conclusion-row="conclusion">
+                <Stack spacing={0.5} data-conclusion-row="conclusion" data-ai-key="conclusion">
                   <CollapsibleTextField
                     value={conclusionText}
                     onChange={(e) => setConclusionText(e.target.value)}
@@ -3277,7 +3420,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                     placeholder={t("conclusion.text")}
                     {...completion.field("conclusionText", "")}
                   />
-                  {aiSuggestionNode("conclusion", setConclusionText)}
+                  {aiSuggestionNode("conclusion")}
                 </Stack>
               ),
             )}
@@ -3800,14 +3943,15 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           // С листом справа дровер шире ровно на лист: колонка формы остаётся
           // прежней ширины (FORM_COLUMN_WIDTH), лист занимает остальное.
           width: showSheetSide
-            ? "min(1200px, calc(100vw - 48px))"
-            : { xs: "100vw", sm: 520, md: 560 },
+            ? `min(${SHEET_DRAWER_MAX_WIDTH}px, calc(100vw - 48px))`
+            : { xs: "100vw", sm: 520, md: DRAWER_WIDTH_MD },
           transition: (th) =>
             th.transitions.create("width", { duration: th.transitions.duration.shorter }),
           maxWidth: "100vw",
           display: "flex",
           flexDirection: "column",
-          overflow: "hidden",
+          // Подсказки AI висят за левым краем дровера — не обрезаем их.
+          overflow: aiGutter ? "visible" : "hidden",
         },
       }}
     >

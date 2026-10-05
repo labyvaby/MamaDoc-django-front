@@ -162,6 +162,15 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
     [patch],
   );
 
+  /**
+   * Вернуть предложение, которое врач принял или отклонил, — «Вернуть»
+   * у карточки. Поле дровер откатывает сам (снимок до применения).
+   */
+  const restore = React.useCallback(
+    (key: AiAssistKey, suggestion: string) => patch(key, { loading: false, suggestion }),
+    [patch],
+  );
+
   /** Забрать текст предложения; применяет его к полю сам дровер. */
   const take = React.useCallback(
     (key: AiAssistKey): string | null => {
@@ -187,7 +196,8 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
   );
 
   const keys = Object.keys(state) as AiAssistKey[];
-  const loadingCount = keys.filter((k) => state[k]?.loading).length;
+  const loadingKeys = keys.filter((k) => state[k]?.loading);
+  const loadingCount = loadingKeys.length;
   /** Поля с неприменёнными подсказками — для «Применить все». */
   const suggestedKeys = keys.filter((k) => state[k]?.suggestion != null);
 
@@ -196,8 +206,11 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
     requestAll,
     dismiss,
     take,
+    restore,
     reset,
     loading: loadingCount > 0,
+    /** Поля, по которым ждём ответа, — подсветка «AI читает» у полей. */
+    loadingKeys,
     /** Сколько полей ждут ответа — для «AI заполняет 5 полей…». */
     loadingCount,
     suggestedKeys,

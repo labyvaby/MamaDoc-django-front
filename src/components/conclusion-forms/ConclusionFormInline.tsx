@@ -23,6 +23,8 @@ import React from "react";
 import { Alert, Box, Button, CircularProgress, Stack, TextField, Typography } from "@mui/material";
 import UndoOutlined from "@mui/icons-material/UndoOutlined";
 
+import { AiSuggestionBeside } from "./AiAssistControls";
+import { aiRowKey } from "./useAiAssist";
 import { CollapsibleTextField } from "./CollapsibleTextField";
 
 import type {
@@ -45,7 +47,7 @@ type Props = {
   slotNodes: Partial<Record<FormFieldSlot, React.ReactNode>>;
   disabled?: boolean;
   /**
-   * Что показать под свободной строкой бланка — плашку предложения AI.
+   * Что показать слева от свободной строки бланка — плашку предложения AI.
    * Привязанные строки (`slot`) свою плашку несут в `slotNodes`.
    */
   rowAddon?: (field: FormField) => React.ReactNode;
@@ -160,17 +162,23 @@ export const ConclusionFormInline: React.FC<Props> = ({
               </Button>
             ) : null
           ) : null;
-        // Плашка AI встаёт под своей строкой, в той же ячейке сетки.
+        // Плашка AI встаёт слева от строки; половинная строка на это время
+        // занимает всю ширину — две колонки в половине дровера нечитаемы.
+        const addon = rowAddon?.(field);
         return (
           <Stack
             key={field.id}
             data-conclusion-row={field.id}
+            data-ai-key={aiRowKey(field.id)}
             spacing={0.75}
-            sx={{ gridColumn: { xs: "span 1", md: fieldSpan(field) }, minWidth: 0 }}
+            sx={{ gridColumn: { xs: "span 1", md: addon ? "span 2" : fieldSpan(field) }, minWidth: 0 }}
           >
-            {input}
-            {normNote}
-            {rowAddon?.(field)}
+            <AiSuggestionBeside suggestion={addon}>
+              <Stack spacing={0.75}>
+                {input}
+                {normNote}
+              </Stack>
+            </AiSuggestionBeside>
           </Stack>
         );
       })}
