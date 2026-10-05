@@ -469,7 +469,15 @@ const RealEstateSidebarMenu: React.FC = () => {
 
       {docsItems.length > 0 && sectionLabel("Документы")}
       {docsItems.map(([screen, to, label, icon]) => (
-        <SidebarMenuItem key={screen} to={to} icon={icon} label={label} collapsed={siderCollapsed} />
+        <SidebarMenuItem
+          key={screen}
+          to={to}
+          icon={icon}
+          label={label}
+          collapsed={siderCollapsed}
+          // /edo — префикс остальных разделов: «ЭДО» не подсвечиваем на договорах, шаблонах и архиве.
+          excludePaths={screen === "edo" ? ["/edo/contracts", "/edo/templates", "/edo/archive"] : undefined}
+        />
       ))}
 
       {canBilling && sectionLabel("Финансы")}
