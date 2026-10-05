@@ -1,0 +1,51 @@
+import type { Theme } from "@mui/material/styles";
+
+import type { Tone } from "../../api/estateDashboard";
+import { formatKGS } from "../../utility/format";
+
+export const cardSx = { border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" } as const;
+
+/** Тон бэка → цвет палитры. Неизвестный тон — нейтральный. */
+export function toneColor(theme: Theme, tone: Tone | null | undefined): string {
+  switch (tone) {
+    case "red":
+      return theme.palette.error.main;
+    case "amber":
+      return theme.palette.warning.main;
+    case "green":
+      return theme.palette.success.main;
+    case "blue":
+      return theme.palette.info.main;
+    default:
+      return theme.palette.text.disabled;
+  }
+}
+
+/** «162,1 млн» для крупных сумм, иначе сомы целиком. */
+export function compactMoney(value: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (Math.abs(value) >= 1_000_000) {
+    const mln = (value / 1_000_000).toLocaleString("ru-RU", { maximumFractionDigits: 1 });
+    return t("common.millions", { value: mln });
+  }
+  return formatKGS(value);
+}
+
+/**
+ * Экран прототипа → адрес в CRM. Только экраны, которые уже сделаны;
+ * остальное (воронка, стройка, кадры…) — без перехода, пока экрана нет.
+ */
+export function estateHref(view: string, objectId?: number | null): string | null {
+  switch (view) {
+    case "edo":
+    case "contracts":
+      return objectId ? `/edo?doc=${objectId}` : "/edo";
+    case "billing":
+      return objectId ? `/finance/billing?account=${objectId}` : "/finance/billing";
+    case "inventory":
+      return "/realestate/chessboard";
+    case "documents":
+      return "/realestate/documents";
+    default:
+      return null;
+  }
+}

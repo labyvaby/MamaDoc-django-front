@@ -23,6 +23,10 @@ describe("resolveHomeRoute", () => {
   it("застройщик с модулем realty начинает с шахматки, а не с Регистратуры", () => {
     const base = context("superadmin", ["appointments.registry.view"], ["realty"]);
     expect(resolveHomeRoute({ ...base, vertical: "realestate" })).toBe("/realestate/chessboard");
+    // С правом на рабочий стол застройщик начинает с него (как макет AIVIO).
+    const withDesk = context("sales", ["estate_dashboard.view", "realty.view"], ["realty"]);
+    expect(resolveHomeRoute({ ...withDesk, vertical: "realestate" })).toBe("/realestate/dashboard");
+    expect(resolveHomeRoute({ ...withDesk, vertical: "clinic" })).not.toBe("/realestate/dashboard");
     // Без модуля — обычный разбор по правам; клинике шахматка не подставляется.
     expect(resolveHomeRoute({ ...context("superadmin", ["appointments.registry.view"]), vertical: "realestate" })).toBe("/appointments");
     expect(resolveHomeRoute({ ...base, vertical: "clinic" })).toBe("/appointments");

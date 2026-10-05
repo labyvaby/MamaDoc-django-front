@@ -104,6 +104,7 @@ const AnnouncementsSettingsPage = lazy(() => import("./pages/settings/Announceme
 const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
+const EstateDashboardPage = lazy(() => import("./pages/estate-dashboard"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const EdoRegistryPage = lazy(() => import("./pages/edo/EdoRegistryPage"));
 const EdoTemplatesPage = lazy(() => import("./pages/edo/TemplatesPage"));
@@ -1262,6 +1263,17 @@ function App() {
                                     <KnowledgePage />
                                   </Suspense>
                                 </RequireModule>
+                              }
+                            />
+                            {/* Рабочий стол застройщика (AIVIO): раскладка и панели — от бэка под роль. */}
+                            <Route
+                              path="realestate/dashboard"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.estateDashboard}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <EstateDashboardPage />
+                                  </Suspense>
+                                </RequirePermission>
                               }
                             />
                             {/* Квартиры и шахматка застройщика — вертикаль realestate, модуль бэка realty. */}

@@ -1,0 +1,144 @@
+{
+  "page": {
+    "title": "Рабочий стол",
+    "greeting": {
+      "morning": "Доброе утро, {{name}}!",
+      "day": "Добрый день, {{name}}!",
+      "evening": "Добрый вечер, {{name}}!",
+      "noName": "Рабочий стол"
+    },
+    "loadError": "Не удалось загрузить рабочий стол",
+    "moduleOff": "Модуль не подключён",
+    "moduleOffHint": "Рабочий стол не включён у организации. Обратитесь к администратору.",
+    "empty": "Для вашей роли на рабочем столе пока нет виджетов",
+    "rolePreview": "Раскладка",
+    "roleOwn": "Моя роль",
+    "rolePreviewHint": "Предпросмотр: данные и права ваши, меняется только набор виджетов"
+  },
+  "roles": {
+    "ceo": "Руководитель",
+    "sales": "Специалист продаж",
+    "cfo": "Финдиректор",
+    "accountant": "Бухгалтер",
+    "build": "Руководитель стройки",
+    "foreman": "Прораб",
+    "hr": "HR",
+    "lawyer": "Юрист"
+  },
+  "kpi": {
+    "deals": "Сделок в работе",
+    "dealsNew": "+{{count}} за неделю",
+    "freeUnits": "Квартир свободно",
+    "freeUnitsOf": "из {{total}}",
+    "liquid": "Ликвидные средства",
+    "escrow": "+ эскроу {{value}}",
+    "revenueMonth": "Выручка месяца",
+    "approvals": "На согласовании",
+    "signing_one": "{{count}} ожидает подписи",
+    "signing_few": "{{count}} ожидают подписи",
+    "signing_many": "{{count}} ожидают подписи",
+    "tasksToday": "Задач сегодня",
+    "tasksDone": "выполнено {{count}}"
+  },
+  "alerts": {
+    "open": "Уведомления",
+    "title": "Уведомления",
+    "empty": "Новых уведомлений нет"
+  },
+  "common": {
+    "retry": "Повторить",
+    "all": "Все",
+    "none": "Пока пусто",
+    "millions": "{{value}} млн"
+  },
+  "panels": {
+    "health": {
+      "title": "Здоровье проектов",
+      "sold": "Продано {{pct}}%",
+      "readiness": "Готовность {{pct}}%",
+      "budget": "Бюджет {{pct}}%",
+      "units": "{{free}} своб. · {{reserved}} бронь · {{sold}} продано",
+      "deadline": "Сдача: {{label}}"
+    },
+    "approvals": {
+      "title": "Согласования",
+      "mine_one": "{{count}} ждёт вашего решения",
+      "mine_few": "{{count}} ждут вашего решения",
+      "mine_many": "{{count}} ждут вашего решения",
+      "total": "Всего на согласовании: {{count}}",
+      "step": "Шаг: {{name}}"
+    },
+    "cash": {
+      "title": "Деньги",
+      "liquid": "Ликвидные",
+      "escrow": "Эскроу",
+      "gap": "Кассовый разрыв {{date}}: {{sum}}",
+      "noGap": "Кассовых разрывов в прогнозе нет",
+      "forecast": "Прогноз остатка на 30 дней"
+    },
+    "sales": {
+      "title": "Продажи",
+      "summary": "{{count}} сделок · {{sum}}",
+      "hot": "горячих: {{count}}"
+    },
+    "tasks": {
+      "title": "Мой день",
+      "summary": "{{open}} открытых · {{done}} выполнено",
+      "overdue": "просрочено",
+      "done": "Выполнено",
+      "failed": "Не удалось отметить задачу"
+    },
+    "billing": {
+      "title": "Просрочки по рассрочке",
+      "summary_one": "{{count}} покупатель · {{sum}}",
+      "summary_few": "{{count}} покупателя · {{sum}}",
+      "summary_many": "{{count}} покупателей · {{sum}}",
+      "unit": "кв. {{number}}"
+    },
+    "construction": {
+      "title": "Стройка",
+      "late_one": "{{count}} этап отстаёт",
+      "late_few": "{{count}} этапа отстают",
+      "late_many": "{{count}} этапов отстают",
+      "noPlans": "Графики стройки ещё не заведены",
+      "delay": "+{{days}} дн.",
+      "ownForces": "Собственные силы"
+    },
+    "procurement": {
+      "title": "Снабжение",
+      "summary": "Открытых заявок: {{open}} · ниже минимума: {{low}}",
+      "needBy": "до {{date}}",
+      "lowStock": "{{qty}} из {{min}} {{unit}}"
+    },
+    "quality": {
+      "title": "Стройконтроль",
+      "summary": "Открыто {{open}} · критичных {{critical}} · просрочено {{overdue}}",
+      "place": "секция {{section}}, этаж {{floor}}"
+    },
+    "hr": {
+      "title": "Персонал",
+      "employees": "Сотрудников",
+      "departments": "Отделов",
+      "timesheet": "Табель заполнен",
+      "timesheetClosed": "закрыт",
+      "payroll": "Зарплата",
+      "probation": "На испытательном",
+      "absentToday": "Отсутствуют сегодня",
+      "vacancies": "Вакансий"
+    },
+    "audit": {
+      "title": "Последние действия",
+      "today": "Сегодня: {{count}}"
+    },
+    "integrations": {
+      "title": "Интеграции",
+      "summary": "В очереди {{pending}} · ошибок {{errors}}",
+      "neverSynced": "обмена не было"
+    },
+    "handover": {
+      "title": "Приёмка квартир",
+      "summary": "Активных приёмок: {{count}}",
+      "unit": "кв. {{number}}"
+    }
+  }
+}

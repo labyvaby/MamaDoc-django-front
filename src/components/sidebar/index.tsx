@@ -416,6 +416,7 @@ const RealEstateSidebarMenu: React.FC = () => {
   const estateNav = useEstateNav();
   const seen = (screen: string) => estateNav?.(screen) ?? true;
 
+  const canDashboard = can(PAGE_PERMISSIONS.estateDashboard) && seen("dashboard");
   const canChessboard = moduleGate("realty") && seen("inventory");
   const canTasks = can(PAGE_PERMISSIONS.tasks);
   const canChats = can(PAGE_PERMISSIONS.chats);
@@ -459,6 +460,7 @@ const RealEstateSidebarMenu: React.FC = () => {
 
   return (
     <List sx={{ py: 0, mt: 0.5 }}>
+      {canDashboard && <SidebarMenuItem to="/realestate/dashboard" icon={<InsightsOutlined />} label="Рабочий стол" collapsed={siderCollapsed} />}
       {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
       {canTasks && (
         <SidebarMenuItem to="/tasks" icon={<AssignmentOutlined />} label="Задачи" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />

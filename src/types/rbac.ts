@@ -233,6 +233,9 @@ export const PERMISSIONS = {
   REALESTATE_VIEW: 'realty.view',
   REALESTATE_MANAGE: 'realty.manage',
 
+  // Рабочий стол застройщика (AIVIO, 05.10.2026)
+  ESTATE_DASHBOARD_VIEW: 'estate_dashboard.view',
+
   // Финансы застройщика (AIVIO): биллинг рассрочек — treasury.* или realty.* (04.10.2026)
   TREASURY_VIEW: 'treasury.view',
   TREASURY_MANAGE: 'treasury.manage',

@@ -130,6 +130,12 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.KNOWLEDGE_VIEW],
   },
 
+  // Рабочий стол застройщика (AIVIO)
+  {
+    path: '/realestate/dashboard',
+    requiredPermissions: [PERMISSIONS.ESTATE_DASHBOARD_VIEW],
+  },
+
   // Квартиры и шахматка застройщика (модуль бэка realty)
   {
     path: '/realestate/chessboard',
