@@ -27,7 +27,7 @@ import { BOOKING_ORG_SLUG, type OrganizationDetail } from "../../api/publicBooki
 import { formatPhone, monogram, telHref } from "./format";
 import { usePatientSession } from "./PatientSession";
 import { PatientAuthDialog } from "./booking/PatientAuthDialog";
-import { useT } from "../../i18n/VerticalProvider";
+import { useT } from "../../i18n/context";
 
 /**
  * Личный кабинет пациента: вход по SMS, «Мои записи», выбор карты.

@@ -16,7 +16,7 @@ import InstallMobileOutlined from "@mui/icons-material/InstallMobileOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 
-import { useT } from "../i18n/VerticalProvider";
+import { useT } from "../i18n/context";
 import { useInstallPrompt } from "./useInstallPrompt";
 import { detectInAppBrowser, getOpenInSafariUrl } from "./installPrompt";
 import { InstallStepArt, type InstallStepArtKind } from "./installStepArt";

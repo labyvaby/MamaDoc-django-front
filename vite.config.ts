@@ -127,12 +127,18 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           // Разделяем код на оптимальные чанки
-          manualChunks: {
-            // Vendor чанк для библиотек
-            'vendor-react': ['react', 'react-dom', 'react-router'],
-            'vendor-mui': ['@mui/material', '@mui/icons-material', '@mui/x-date-pickers'],
-            'vendor-refine': ['@refinedev/core', '@refinedev/mui', '@refinedev/react-router'],
-            'vendor-utils': ['dayjs', 'lodash'],
+          // Shared dependencies must not be absorbed into the staff-only Refine
+          // chunk: booking also uses dayjs and use-sync-external-store.
+          manualChunks(id) {
+            const path = id.replaceAll("\\", "/");
+            // Include CommonJS proxy modules as well as package entrypoints.
+            if (path.includes("commonjsHelpers")) return "vendor-react";
+            if (!path.includes("/node_modules/")) return;
+            if (/\/node_modules\/(react|react-dom|react-router|scheduler|use-sync-external-store)\//.test(path)) return "vendor-react";
+            if (/\/node_modules\/@mui\/x-date-pickers\//.test(path)) return "vendor-pickers";
+            if (/\/node_modules\/(@mui|@emotion)\//.test(path)) return "vendor-mui";
+            if (/\/node_modules\/(@refinedev|@tanstack)\//.test(path)) return "vendor-refine";
+            if (/\/node_modules\/(dayjs|lodash)\//.test(path)) return "vendor-utils";
           },
 
           // Оптимизация имен файлов для кэширования

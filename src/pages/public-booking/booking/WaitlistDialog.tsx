@@ -12,7 +12,7 @@ import {
 } from "@mui/material";
 
 import { PhoneCountryCodeSelect } from "../../../components/ui";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 import {
   DEFAULT_PHONE_COUNTRY_CODE,
   formatPhoneLocalDisplay,

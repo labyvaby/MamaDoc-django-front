@@ -15,7 +15,7 @@ import {
   TILE_RADIUS,
   accentChip,
 } from "../theme";
-import { useT } from "../../../i18n/VerticalProvider";
+import { useT } from "../../../i18n/context";
 import {
   branchHasSchedule,
   hhmm,

@@ -3,6 +3,8 @@ import React from "react";
 import { getBranchSpecialists, idOrSlugRef, type BranchPreview } from "../../api/publicBooking";
 import { isAbortError } from "../../api/client";
 import { useBookingOrg } from "./useBookingOrg";
+import { useBookingOrgSlug } from "./orgSlug";
+import { loadCatalog } from "./catalogCache";
 
 /**
  * Специализации витрины: экран выбора специализации и панель фильтров в списке
@@ -51,8 +53,11 @@ export function useSpecialties(branchSlug = ""): {
   loading: boolean;
 } {
   const { branches, loaded } = useBookingOrg();
+  const orgSlug = useBookingOrgSlug();
   const [specialties, setSpecialties] = React.useState<SpecialtyGroup[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const scopeKey = JSON.stringify([orgSlug, branchSlug, loaded ? branches.map((b) => b.id) : null]);
+  const [resolvedKey, setResolvedKey] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     // Клиника ещё грузится — ждём: пустой список филиалов пока ничего не значит.
@@ -62,9 +67,10 @@ export function useSpecialties(branchSlug = ""): {
     if (!branches.length) {
       setSpecialties([]);
       setLoading(false);
+      setResolvedKey(scopeKey);
       return;
     }
-    const controller = new AbortController();
+    let alive = true;
     setLoading(true);
     const targets = branchSlug
       ? branches.filter((b: BranchPreview) => String(idOrSlugRef(b)) === branchSlug)
@@ -72,8 +78,8 @@ export function useSpecialties(branchSlug = ""): {
 
     Promise.all(
       targets.map((b) =>
-        getBranchSpecialists(idOrSlugRef(b), controller.signal)
-          .then((r) => r.items)
+        loadCatalog(`specialties:${orgSlug}:${b.id}`, () =>
+          getBranchSpecialists(idOrSlugRef(b)).then((r) => r.items))
           .catch((e) => {
             if (isAbortError(e)) throw e;
             return [];
@@ -81,16 +87,21 @@ export function useSpecialties(branchSlug = ""): {
       ),
     )
       .then((lists) => {
+        if (!alive) return;
         setSpecialties(groupSpecialties(lists));
         setLoading(false);
+        setResolvedKey(scopeKey);
       })
       .catch((e) => {
-        if (isAbortError(e)) return;
+        if (!alive || isAbortError(e)) return;
         setSpecialties([]);
         setLoading(false);
+        setResolvedKey(scopeKey);
       });
-    return () => controller.abort();
-  }, [branches, branchSlug, loaded]);
+    return () => { alive = false; };
+  }, [branches, branchSlug, loaded, orgSlug, scopeKey]);
 
-  return { specialties, loading };
+  return loaded && resolvedKey === scopeKey
+    ? { specialties, loading }
+    : { specialties: [], loading: true };
 }
