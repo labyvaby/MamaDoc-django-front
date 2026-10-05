@@ -23,6 +23,9 @@ export function PnlTable({ report, expanded, onToggle }: Props) {
   const rows = React.useMemo(() => buildRows(report, expanded), [report, expanded]);
   const withYear = new Set(report.months.map((m) => m.key.slice(0, 4))).size > 1;
   const sticky = { position: "sticky" as const, left: 0, zIndex: 2 };
+  // Свободная ширина — в пустую колонку в конце: иначе при одном-двух месяцах
+  // «Статья» растягивается на весь экран и цифры уезжают от названий строк.
+  const filler = { p: 0, borderLeft: 0 };
 
   const rowBg = (row: PnlRow): string | undefined => {
     if (row.code === "200") return alpha(theme.palette.success.main, 0.12);
@@ -37,18 +40,19 @@ export function PnlTable({ report, expanded, onToggle }: Props) {
       <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
-            <TableCell sx={{ ...sticky, zIndex: 3, minWidth: 260, bgcolor: "background.paper" }}>Статья</TableCell>
+            <TableCell sx={{ ...sticky, zIndex: 3, minWidth: 260, whiteSpace: "nowrap", bgcolor: "background.paper" }}>Статья</TableCell>
             <TableCell>Код</TableCell>
             {report.months.map((month) => (
-              <TableCell key={month.key} align="right" sx={{ whiteSpace: "nowrap" }}>
+              <TableCell key={month.key} align="right" sx={{ whiteSpace: "nowrap", minWidth: 110 }}>
                 {monthLabel(month.key, withYear)}
                 {month.open && (
                   <Typography component="div" variant="caption" color="warning.main">не закрыт</Typography>
                 )}
               </TableCell>
             ))}
-            <TableCell align="right">Итого</TableCell>
-            <TableCell align="right">% выр.</TableCell>
+            <TableCell align="right" sx={{ minWidth: 120 }}>Итого</TableCell>
+            <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>% выр.</TableCell>
+            <TableCell data-pnl-filler aria-hidden sx={{ ...filler, width: "100%" }} />
           </TableRow>
         </TableHead>
         <TableBody>
@@ -66,6 +70,7 @@ export function PnlTable({ report, expanded, onToggle }: Props) {
                     fontWeight: strong ? 600 : 400,
                     color: row.kind === "detail" ? "text.secondary" : "text.primary",
                     pl: row.kind === "detail" ? 6 : 1,
+                    whiteSpace: "nowrap",
                   }}
                 >
                   <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -108,6 +113,7 @@ export function PnlTable({ report, expanded, onToggle }: Props) {
                 <TableCell align="right" sx={{ color: "text.secondary", fontSize: 12 }}>
                   {row.sharePct == null ? "" : formatShare(row.sharePct)}
                 </TableCell>
+                <TableCell data-pnl-filler aria-hidden sx={filler} />
               </TableRow>
             );
           })}
