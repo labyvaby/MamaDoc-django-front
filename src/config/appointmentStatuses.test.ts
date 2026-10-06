@@ -82,6 +82,7 @@ describe("канонические коды резолвятся сами в с�
     "free",
     "debt",
     "insurance",
+    "refunded",
   ];
 
   it.each(codes)("%s", (code) => {
@@ -108,6 +109,7 @@ describe("getStatusConfig — цвета", () => {
     // одной иконки внутри чипа регистратуре не хватало.
     ["оплачено безналом", "teal"],
     ["долг", "error"],
+    ["refunded", "warning"],
   ];
 
   it.each(expectedColors)("«%s» → цвет %s", (status, color) => {
@@ -140,6 +142,7 @@ describe("две дорожки: ход визита и деньги", () => {
     "discounted",
     "free",
     "insurance",
+    "refunded",
   ];
 
   it.each(visitCodes)("«%s» — дорожка визита", (code) => {

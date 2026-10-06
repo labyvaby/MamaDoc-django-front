@@ -86,7 +86,12 @@ export function getStatusChipState(
   const { now = Date.now() } = opts;
 
   const methods = appt.paymentMethods ?? [];
-  const hasPaid = Number(appt.paidTotal ?? 0) > 0;
+  // Возврат: paidTotal в списке — сумма ДО возврата (тикет
+  // backend_ticket_appointments_list_refunds.md), поэтому одного «есть оплата»
+  // мало. Без этой ветки чип оплаты брал подпись от статуса визита, и
+  // возвращённый приём показывался как «Ожидаем».
+  const isRefunded = appt.paymentStatus === "refunded";
+  const hasPaid = isRefunded || Number(appt.paidTotal ?? 0) > 0;
 
   /**
    * «Безнал» = оплата только картой, и цвет чипа у него свой (teal против
@@ -100,8 +105,9 @@ export function getStatusChipState(
 
   // Стиль чипа подбираем по коду статуса, а не по метке: метка зависит от
   // вертикали бизнеса и ключом быть не может.
-  const paymentStyleStatus =
-    appt.paymentStatus === "paid" && isCardOnly
+  const paymentStyleStatus = isRefunded
+    ? "refunded"
+    : appt.paymentStatus === "paid" && isCardOnly
       ? "paid_cashless"
       : appt.paymentStatus === "paid"
       ? "paid"
@@ -118,7 +124,9 @@ export function getStatusChipState(
   // красный «Долг 1100 из 1600» у завтрашней записи с предоплатой путал кассу
   // (решение заказчика 05.10.2026). Фазу считает бэк (paymentPhase).
   const debt = Number(appt.debt ?? 0);
-  const partlyPaid = hasPaid && debt > 0;
+  // После возврата «долг» — не недоплата, а возвращённые деньги: чип «Долг»
+  // там ввёл бы кассу в заблуждение.
+  const partlyPaid = hasPaid && !isRefunded && debt > 0;
   const isPrepaidPhase = partlyPaid && knownPaymentPhase(appt, now) === "prepaid";
   const debtAmount = partlyPaid && !isPrepaidPhase ? debt : null;
   const prepaidAmount = isPrepaidPhase ? Number(appt.paidTotal ?? 0) : null;
@@ -142,6 +150,7 @@ export function getStatusChipState(
   const showPayChip = hasPaid && !partlyPaid;
 
   // Закрытый чек: внесена вся сумма либо она полностью погашена скидкой.
+  // Возврат тоже закрывает расчёт — деньги отданы, строка показывает «Возврат».
   // Частичная оплата чек не закрывает — там остаётся долг, и статус визита
   // нужен (пациент ещё в работе). Процент скидки считаем из сумм: без сумм
   // (укороченные формы приёма в дроверах) полноту скидки не утверждаем.
@@ -201,6 +210,7 @@ export function getStatusChipState(
  * Возвращает:
  *   • canceled / no_show — всегда, даже по закрытому чеку (деньги к возврату);
  *   • "paid" — чек закрыт оплатой (нал, безнал, смешанная);
+ *   • "refunded" — деньги по приёму возвращены;
  *   • "discounted" — чек закрыт скидкой на всю сумму без внесённых денег;
  *   • иначе код статуса визита; null — статус неизвестен.
  */
@@ -214,5 +224,6 @@ export function resolveAppointmentDisplayState(
   // Чек не закрыт (или статус неизвестен) — состояние приёма и есть статус
   // визита, ровно тот чип, который виден в строке.
   if (showStatusChip) return code;
+  if (appt.paymentStatus === "refunded") return "refunded";
   return showPayChip ? "paid" : "discounted";
 }

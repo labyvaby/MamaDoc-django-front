@@ -14,6 +14,7 @@ import {
   HealthAndSafetyOutlined as HealthAndSafetyIcon,
   PieChartOutlined as PieChartIcon,
   CardGiftcardOutlined as CardGiftcardIcon,
+  CurrencyExchangeOutlined as CurrencyExchangeIcon,
 } from "@mui/icons-material";
 import type { SxProps, Theme } from "@mui/material";
 import { alpha } from "@mui/material/styles";
@@ -100,7 +101,9 @@ export type StatusCode =
   /** Остаток к оплате — чип «Долг N из M». */
   | "debt"
   /** Визит (со)оплачен страховой компанией. */
-  | "insurance";
+  | "insurance"
+  /** Деньги по приёму возвращены (paymentStatus «refunded»). */
+  | "refunded";
 
 /**
  * Всё, что может прийти в статусе, → канонический код.
@@ -127,6 +130,7 @@ const STATUS_CODE_BY_ALIAS: Record<string, StatusCode> = {
   free: "free",
   debt: "debt",
   insurance: "insurance",
+  refunded: "refunded",
   // Старые русские значения, которые могут приходить из исторических данных.
   "ожидаем": "scheduled",
   "подтверждён": "confirmed",
@@ -151,6 +155,7 @@ const STATUS_CODE_BY_ALIAS: Record<string, StatusCode> = {
   "бесплатно": "free",
   "долг": "debt",
   "страховка": "insurance",
+  "возврат": "refunded",
 };
 
 /**
@@ -202,6 +207,10 @@ const STATUS_VISUAL: Record<
   free: { color: "secondary", icon: <CardGiftcardIcon fontSize="small" />, track: "money" },
   // Платит страховая: синий свободен в дорожке денег (у визита он контурный).
   insurance: { color: "info", icon: <HealthAndSafetyIcon fontSize="small" />, track: "money" },
+  // Деньги вернули: не долг (красный занят им) и не оплата. Янтарный в дорожке
+  // денег свободен; с контурным «На приёме» в одной строке не встречается —
+  // по возврату статус визита скрыт (кроме отмены/неявки, они красные).
+  refunded: { color: "warning", icon: <CurrencyExchangeIcon fontSize="small" />, track: "money" },
 };
 
 const ALL_STATUS_CODES = Object.keys(STATUS_VISUAL) as StatusCode[];
