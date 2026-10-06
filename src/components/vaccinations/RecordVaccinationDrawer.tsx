@@ -39,6 +39,8 @@ import {
   getVaccines,
   parseDuplicateDoseConflict,
   type CreateRecordPayload,
+  type GeneralReaction,
+  type LocalReaction,
 } from "../../api/vaccinations";
 import { getAppointment } from "../../api/appointments";
 import { getPatient, searchPatients, updatePatient, type DjangoPatient } from "../../api/patients";
@@ -50,6 +52,8 @@ import VaccinationPatientFields from "./VaccinationPatientFields";
 import { missingFromError } from "./administerPayload";
 import { changedPatientFields, patientGaps, type PatientDraft } from "./patientGaps";
 import { MISSING_FIELD_LABELS } from "../../pages/vaccinations/meta";
+import { DoseReactionFields } from "./DoseReactionFields";
+import { parseDoseMl } from "./reactionMeta";
 
 type Scenario = "ours" | "external";
 
@@ -105,6 +109,10 @@ type RecordDraft = {
   expiresAtManual: string | null;
   appointmentId: string;
   notes: string;
+  // Книжка ребёнка, этап 2в; в старых черновиках полей нет.
+  doseMl?: string;
+  localReaction?: LocalReaction | "";
+  generalReaction?: GeneralReaction | "";
 };
 
 function readRecordDraft(): RecordDraft | null {
@@ -175,6 +183,9 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
   /** Строка товара приёма, к которой привязать дозу (при нескольких одинаковых). */
   const [productLineId, setProductLineId] = React.useState<number | "">("");
   const [notes, setNotes] = React.useState("");
+  const [doseMl, setDoseMl] = React.useState("");
+  const [localReaction, setLocalReaction] = React.useState<LocalReaction | "">("");
+  const [generalReaction, setGeneralReaction] = React.useState<GeneralReaction | "">("");
   const [draftRestored, setDraftRestored] = React.useState(false);
 
   // Есть предзаполнение из внешнего контекста (карточка пациента, приём,
@@ -204,6 +215,9 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     setAppointmentId(initialAppointmentId != null ? String(initialAppointmentId) : "");
     setProductLineId("");
     setNotes("");
+    setDoseMl("");
+    setLocalReaction("");
+    setGeneralReaction("");
     setError(null);
     setDraftRestored(false);
   }, [
@@ -249,6 +263,9 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     setExpiresAtManual(draft.expiresAtManual ? dayjs(draft.expiresAtManual) : null);
     setAppointmentId(draft.appointmentId);
     setNotes(draft.notes);
+    setDoseMl(draft.doseMl ?? "");
+    setLocalReaction(draft.localReaction ?? "");
+    setGeneralReaction(draft.generalReaction ?? "");
     setDraftRestored(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, hasPrefillContext]);
@@ -274,6 +291,9 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
       expiresAtManual: expiresAtManual ? expiresAtManual.format("YYYY-MM-DD") : null,
       appointmentId,
       notes,
+      doseMl,
+      localReaction,
+      generalReaction,
     };
     if (isDraftEmpty(draft)) {
       clearRecordDraft();
@@ -302,6 +322,9 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     expiresAtManual,
     appointmentId,
     notes,
+    doseMl,
+    localReaction,
+    generalReaction,
   ]);
 
   const handleClose = () => {
@@ -503,6 +526,9 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
         administeredById: administeredById === "" ? undefined : (administeredById as number),
         appointmentId: appointmentId.trim() === "" ? undefined : Number(appointmentId),
         notes: notes.trim() || undefined,
+        doseMl: parseDoseMl(doseMl).value ?? undefined,
+        localReaction: localReaction || undefined,
+        generalReaction: generalReaction || undefined,
       };
       if (scenario === "ours") {
         payload.batchId = batchId === "" ? undefined : (batchId as number);
@@ -556,6 +582,11 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
     // Филиал не поле формы — без него ввод недоступен, предупреждение уже сверху.
     if (branchId == null || mutation.isPending) return;
     if (!form.validate()) return;
+    const doseError = parseDoseMl(doseMl).error;
+    if (doseError) {
+      setError(`Доза, мл: ${doseError}`);
+      return;
+    }
     const gaps = patientGaps(patientDraft);
     if (patient && gaps.length > 0 && skipPatientWarning == null) {
       setHighlight(gaps.map((g) => `patient.${g}`));
@@ -846,6 +877,15 @@ const RecordVaccinationDrawer: React.FC<RecordVaccinationDrawerProps> = ({
                   </MenuItem>
                 ))}
               </TextField>
+
+              <DoseReactionFields
+                doseMl={doseMl}
+                onDoseMl={setDoseMl}
+                localReaction={localReaction}
+                onLocalReaction={setLocalReaction}
+                generalReaction={generalReaction}
+                onGeneralReaction={setGeneralReaction}
+              />
 
               <TextField
                 select

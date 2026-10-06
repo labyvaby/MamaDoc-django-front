@@ -29,6 +29,13 @@ import {
   type UpdateVaccinePayload,
   type Vaccine,
 } from "../../api/vaccinations";
+import { FollowupChecksEditor } from "./FollowupChecksEditor";
+import {
+  followupRowsError,
+  fromFollowupRows,
+  toFollowupRows,
+  type FollowupRow,
+} from "./reactionMeta";
 
 type VaccineDialogProps = {
   open: boolean;
@@ -61,6 +68,8 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
   const [funding, setFunding] = React.useState<VaccineFunding>("commercial");
   /** dose → код строки формы 5 ("" — не сопоставлено). */
   const [rowByDose, setRowByDose] = React.useState<Record<number, string>>({});
+  /** Сетка осмотра места прививки (БЦЖ). */
+  const [followupRows, setFollowupRows] = React.useState<FollowupRow[]>([]);
 
   const form5RowsQuery = useQuery({
     queryKey: djangoQueryKeys.vaccinations.form5Rows(orgId),
@@ -85,6 +94,7 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
     setRowByDose(
       Object.fromEntries((vaccine?.form5Rows ?? []).map((r) => [r.dose, r.row])),
     );
+    setFollowupRows(toFollowupRows(vaccine?.followupChecks));
     setError(null);
   }, [open, vaccine]);
 
@@ -110,6 +120,7 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
         notes: text(notes),
         funding,
         form5Rows,
+        followupChecks: fromFollowupRows(followupRows),
       };
       if (vaccine) {
         const payload: UpdateVaccinePayload = { ...base, isActive };
@@ -255,6 +266,7 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
               )}
             </Stack>
           )}
+          <FollowupChecksEditor rows={followupRows} onChange={setFollowupRows} />
           {vaccine && (
             <FormControlLabel
               control={<Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />}
@@ -267,7 +279,11 @@ const VaccineDialog: React.FC<VaccineDialogProps> = ({ open, onClose, vaccine })
         <AppButton variant="outlined" onClick={onClose} disabled={mutation.isPending}>
           Отмена
         </AppButton>
-        <AppButton variant="contained" onClick={() => { if (form.validate()) mutation.mutate(); }} disabled={mutation.isPending}>
+        <AppButton
+          variant="contained"
+          onClick={() => { if (form.validate()) mutation.mutate(); }}
+          disabled={mutation.isPending || followupRowsError(followupRows) != null}
+        >
           Сохранить
         </AppButton>
       </Stack>
