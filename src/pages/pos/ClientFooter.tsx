@@ -80,7 +80,7 @@ const FooterButton: React.FC<{
       onClick={onClick}
       disabled={disabled}
       sx={{
-        height: 38,
+        height: { xs: 44, md: 38 },
         px: "12px",
         gap: "6px",
         flexShrink: 0,
@@ -124,6 +124,7 @@ const ClientOption: React.FC<{ client: PosClientSearchResult; onClick: () => voi
       sx={{
         px: "10px",
         py: "7px",
+        minHeight: { xs: 48, md: 0 },
         gap: "10px",
         justifyContent: "flex-start",
         textAlign: "left",
@@ -215,7 +216,7 @@ export const PosClientFooter: React.FC<Props> = ({
           sx={{
             flex: 1,
             minWidth: 0,
-            height: 38,
+            height: { xs: 44, md: 38 },
             pl: "10px",
             pr: "4px",
             display: "flex",
@@ -263,7 +264,7 @@ export const PosClientFooter: React.FC<Props> = ({
             {canRegister && onCreateClient && (
               <ButtonBase
                 onClick={() => onCreateClient(trimmed)}
-                sx={{ fontSize: 13, fontWeight: 700, color: c.accentText, textDecoration: "underline", textUnderlineOffset: 3 }}
+                sx={{ minHeight: { xs: 44, md: 0 }, fontSize: 13, fontWeight: 700, color: c.accentText, textDecoration: "underline", textUnderlineOffset: 3 }}
               >
                 Создать клиента
               </ButtonBase>

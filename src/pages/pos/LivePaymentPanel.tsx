@@ -75,6 +75,7 @@ const ApplyButton: React.FC<{
       disabled={disabled}
       sx={{
         width,
+        minHeight: { xs: 44, md: 0 },
         px: "14px",
         py: "4px",
         gap: "6px",
@@ -199,8 +200,8 @@ const DiscountField: React.FC<{
         flex: 1,
         minWidth: 0,
         // Тема задаёт InputBase minHeight 40, поэтому одной height мало.
-        height: 32,
-        minHeight: 32,
+        height: { xs: 44, md: 32 },
+        minHeight: { xs: 44, md: 32 },
         px: "12px",
         bgcolor: c.page,
         border: `1px solid ${active ? c.accent : c.hairline}`,
@@ -215,10 +216,7 @@ const DiscountField: React.FC<{
   );
 };
 
-/** Что известно о введённом коде до расчёта чека: остаток сертификата или причина отказа. */
-export type CodeInfo = { tone: "ok" | "error"; text: string };
-
-/** Поле-«таблетка» с кнопкой «Применить»: промокод, сертификат. */
+/** Поле-«таблетка» с кнопкой «Применить»: промокод. */
 const CodeField: React.FC<{
   label: string;
   placeholder: string;
@@ -226,12 +224,7 @@ const CodeField: React.FC<{
   disabled?: boolean;
   error: string | null;
   onApply: (value: string) => void;
-  /** Строка под применённым кодом — остаток сертификата или почему он не принят. */
-  info?: CodeInfo | null;
-  infoLoading?: boolean;
-  /** Метка поля для сканера кассы: код со сканера при фокусе здесь идёт в это поле. */
-  scanTarget?: string;
-}> = ({ label, placeholder, applied, disabled, error, onApply, info, infoLoading, scanTarget }) => {
+}> = ({ label, placeholder, applied, disabled, error, onApply }) => {
   const c = posColors(useTheme());
   const [input, setInput] = React.useState(applied);
   React.useEffect(() => {
@@ -239,19 +232,10 @@ const CodeField: React.FC<{
   }, [applied]);
   const submit = () => onApply(input.trim());
   return (
-    <Stack gap="6px" data-pos-scan-target={scanTarget}>
+    <Stack gap="6px">
       <Typography sx={{ fontSize: 12, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim }}>{label}</Typography>
       {applied && !error ? (
-        <Stack gap="5px">
-          <AppliedChip label={applied} disabled={disabled} onClear={() => onApply("")} />
-          {infoLoading ? (
-            <Typography sx={{ fontSize: 12, lineHeight: 1.3, color: c.textDim }}>Проверяем сертификат…</Typography>
-          ) : info?.tone === "error" ? (
-            <FieldError text={info.text} />
-          ) : info ? (
-            <Typography sx={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3, color: c.positive }}>{info.text}</Typography>
-          ) : null}
-        </Stack>
+        <AppliedChip label={applied} disabled={disabled} onClear={() => onApply("")} />
       ) : (
         <Stack gap="5px">
           <Stack direction="row" gap="5px">
@@ -263,10 +247,12 @@ const CodeField: React.FC<{
               }}
               placeholder={placeholder}
               disabled={disabled}
+              inputProps={{ "aria-label": label, autoComplete: "off" }}
               sx={{
                 flex: 1,
                 minWidth: 0,
-                height: 40,
+                height: { xs: 44, md: 40 },
+                minHeight: { xs: 44, md: 40 },
                 boxSizing: "border-box",
                 px: "14px",
                 display: "flex",
@@ -284,7 +270,7 @@ const CodeField: React.FC<{
               onClick={submit}
               disabled={disabled}
               sx={{
-                height: 40,
+                height: { xs: 44, md: 40 },
                 boxSizing: "border-box",
                 px: "14px",
                 flexShrink: 0,
@@ -341,8 +327,9 @@ export function LivePaymentPanel({
   maxPercent = 100,
   lineDiscounts = [],
   lineDiscountIgnored = false,
-  certificateInfo = null,
-  certificateInfoLoading = false,
+  certificatesTotal = 0,
+  hidePayButton = false,
+  payDisabledReason = null,
 }: {
   actions: Record<string, boolean>;
   /**
@@ -369,9 +356,12 @@ export function LivePaymentPanel({
   lineDiscounts?: Array<{ id: string; name: string; label: string; amount: number }>;
   /** Сервер вернул итог без скидок на позиции (старый бэкенд) — предупреждаем. */
   lineDiscountIgnored?: boolean;
-  /** Остаток применённого сертификата (lookup/) или причина, почему он не принят. */
-  certificateInfo?: CodeInfo | null;
-  certificateInfoLoading?: boolean;
+  /** Сумма продаваемых в этом чеке сертификатов (входит в «ИТОГО»). */
+  certificatesTotal?: number;
+  /** Телефон: кнопку оплаты держит липкая панель внизу страницы. */
+  hidePayButton?: boolean;
+  /** Почему оплатить нельзя (например, бэкенд не поддерживает сертификаты в чеке). */
+  payDisabledReason?: string | null;
 }) {
   const c = posColors(useTheme());
   const [kindsOpen, setKindsOpen] = React.useState(false);
@@ -422,18 +412,19 @@ export function LivePaymentPanel({
   return (
     <Box
       sx={{
-        width: { xs: "100%", lg: POS_LAYOUT.paymentPanelWidth },
+        // Планшет — две колонки с панелью поуже, десктоп — макет 340.
+        width: { xs: "100%", md: 300, lg: POS_LAYOUT.paymentPanelWidth },
         flexShrink: 0,
         minHeight: 0,
-        px: "10px",
+        px: { xs: "12px", md: "10px" },
         py: "16px",
         bgcolor: c.page,
-        borderLeft: `1px solid ${c.outline}`,
+        borderLeft: { xs: "none", md: `1px solid ${c.outline}` },
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
         gap: "16px",
-        overflowY: { xs: "visible", lg: "auto" },
+        overflowY: { xs: "visible", md: "auto" },
       }}
     >
       <Stack gap="12px">
@@ -477,6 +468,7 @@ export function LivePaymentPanel({
                     sx={{
                       px: "12px",
                       py: "6px",
+                      minHeight: { xs: 44, md: 0 },
                       justifyContent: "space-between",
                       borderRadius: `${POS_RADIUS.card}px`,
                       bgcolor: selectedKind ? c.accentBg : c.page,
@@ -508,6 +500,7 @@ export function LivePaymentPanel({
                             sx={{
                               px: "8px",
                               py: "6px",
+                              minHeight: { xs: 44, md: 0 },
                               gap: "10px",
                               justifyContent: "flex-start",
                               borderRadius: `${POS_RADIUS.tile}px`,
@@ -577,7 +570,7 @@ export function LivePaymentPanel({
                           aria-pressed={selected}
                           sx={{
                             flex: 1,
-                            height: 26,
+                            height: { xs: 44, md: 26 },
                             borderRadius: `${POS_RADIUS.pill}px`,
                             bgcolor: selected ? c.accent : c.page,
                             border: `1px solid ${selected ? c.accent : c.hairline}`,
@@ -641,18 +634,37 @@ export function LivePaymentPanel({
           />
         )}
 
-        {actions.certificate && (
-          <CodeField
-            label="Сертификат"
-            placeholder="Введите сертификат"
-            applied={benefits.certificateCode}
-            disabled={locked}
-            error={certificateError}
-            onApply={(certificateCode) => patch({ certificateCode })}
-            info={certificateInfo}
-            infoLoading={certificateInfoLoading}
-            scanTarget="certificate"
-          />
+        {/* Сертификат выбирают способом оплаты «Сертификат» в окне оплаты; здесь — только снять. */}
+        {benefits.certificateCode && (
+          <Stack gap="6px" sx={{ ...cardSx, borderColor: certificateError ? c.danger : c.accent, bgcolor: c.accentBg }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap="8px">
+              <Stack gap="2px" sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text }}>Оплата сертификатом</Typography>
+                <Typography noWrap sx={{ fontSize: 13, lineHeight: 1.3, color: c.textDim, fontFamily: "monospace", letterSpacing: ".08em" }}>
+                  {benefits.certificateCode}
+                </Typography>
+              </Stack>
+              <ButtonBase
+                onClick={() => patch({ certificateCode: "" })}
+                disabled={locked}
+                sx={{
+                  minHeight: { xs: 44, md: 30 },
+                  px: "14px",
+                  flexShrink: 0,
+                  borderRadius: `${POS_RADIUS.pill}px`,
+                  border: `1px solid ${c.hairline}`,
+                  bgcolor: c.card,
+                  color: c.textSoft,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  "&.Mui-disabled": { opacity: 0.45 },
+                }}
+              >
+                Снять
+              </ButtonBase>
+            </Stack>
+            {certificateError ? <FieldError text={certificateError} /> : null}
+          </Stack>
         )}
       </Stack>
 
@@ -680,6 +692,9 @@ export function LivePaymentPanel({
           {summary.map((line) => (
             <SummaryLine key={line.label} label={line.label} value={<PosAmount value={line.value} negative />} tone={line.tone} />
           ))}
+          {certificatesTotal > 0 && (
+            <SummaryLine label="Подарочные сертификаты" value={<>+<PosAmount value={certificatesTotal} /></>} />
+          )}
           {lineDiscountIgnored && (
             <Typography sx={{ mt: "4px", p: "8px", borderRadius: `${POS_RADIUS.tile}px`, bgcolor: c.dangerBg, color: c.danger, fontSize: 12, lineHeight: 1.35 }}>
               Сервер не применил скидку на товар — итог посчитан без неё. Уберите скидку с позиции или обновите бэкенд кассы.
@@ -695,11 +710,17 @@ export function LivePaymentPanel({
             </Typography>
           </Stack>
 
-          {actions.sell && (
+          {payDisabledReason ? (
+            <Typography sx={{ p: "8px", borderRadius: `${POS_RADIUS.tile}px`, bgcolor: c.dangerBg, color: c.danger, fontSize: 12, lineHeight: 1.35 }}>
+              {payDisabledReason}
+            </Typography>
+          ) : null}
+
+          {actions.sell && !hidePayButton && (
             <ButtonBase
               onClick={onCheckout}
               // Не даём пробить чек дороже, чем показано в строках.
-              disabled={busy || !quote || lineDiscountIgnored}
+              disabled={busy || !quote || lineDiscountIgnored || Boolean(payDisabledReason)}
               sx={{
                 px: "20px",
                 py: "16px",
