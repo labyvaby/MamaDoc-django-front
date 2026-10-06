@@ -129,7 +129,7 @@ export function CallDrawer({ callId, onClose }: { callId: number | null; onClose
         </IconButton>
       </Box>
 
-      <Box sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gap: 2, alignContent: "start" }}>
+      <Box sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2, alignContent: "start" }}>
         {call.isError && <Alert severity="error">{call.error instanceof Error ? call.error.message : t("calls.loadError")}</Alert>}
         {!data && !call.isError && [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={56} />)}
         {data && (

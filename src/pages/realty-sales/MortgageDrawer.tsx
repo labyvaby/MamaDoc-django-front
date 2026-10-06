@@ -153,7 +153,7 @@ export function MortgageDrawer({ applicationId, onClose }: { applicationId: numb
           </IconButton>
         </Box>
 
-        <Box sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gap: 2.25, alignContent: "start" }}>
+        <Box sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2.25, alignContent: "start" }}>
           {application.isError && <Alert severity="error">{application.error instanceof Error ? application.error.message : t("mortgage.loadError")}</Alert>}
           {!data && !application.isError && [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={56} />)}
           {data && (
@@ -182,7 +182,11 @@ export function MortgageDrawer({ applicationId, onClose }: { applicationId: numb
                   <Box key={bank.bankId} sx={{ py: 0.9, display: "flex", alignItems: "center", gap: 1, borderTop: 1, borderColor: "divider", flexWrap: "wrap" }}>
                     <Box sx={{ flex: "1 1 200px", minWidth: 0 }}>
                       <BankDecisionChip bank={bank} />
-                      {bank.comment && <Typography sx={{ mt: 0.25, fontSize: "0.75rem", color: "text.secondary" }}>{bank.comment}</Typography>}
+                      {(bank.comment || (bank.status === "approved" && bank.monthly != null && bank.monthly > 0)) && (
+                        <Typography sx={{ mt: 0.25, fontSize: "0.75rem", color: "text.secondary" }}>
+                          {[bank.status === "approved" && bank.monthly != null && bank.monthly > 0 && t("mortgage.card.monthly", { value: formatKGS(bank.monthly) }), bank.comment].filter(Boolean).join(" · ")}
+                        </Typography>
+                      )}
                     </Box>
                     {data.bankChosen === bank.bankId ? (
                       <Typography sx={{ fontSize: "0.8125rem", fontWeight: 700, color: "success.main" }}>{t("mortgage.card.chosen")}</Typography>

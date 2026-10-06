@@ -297,7 +297,7 @@ function PartnerCard({ partner, onOpen }: { partner: Partner; onOpen: () => void
   const { t } = useT("realtySales");
   const paused = partner.status === "paused";
   return (
-    <ButtonBase onClick={onOpen} sx={{ ...cardSx, p: 2, display: "grid", gap: 1.25, textAlign: "left", alignContent: "start", minWidth: 0, opacity: paused ? 0.7 : 1 }}>
+    <ButtonBase onClick={onOpen} sx={{ ...cardSx, p: 2, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", justifyContent: "stretch", alignItems: "stretch", gap: 1.25, textAlign: "left", alignContent: "start", minWidth: 0, opacity: paused ? 0.7 : 1 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0 }}>
         <Box
           aria-hidden

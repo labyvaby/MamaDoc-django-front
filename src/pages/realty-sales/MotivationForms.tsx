@@ -52,7 +52,7 @@ function Shell({
           e.preventDefault();
           onSubmit();
         }}
-        sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gap: 2, alignContent: "start" }}
+        sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2, alignContent: "start" }}
       >
         {children}
         {Boolean(error) && <Alert severity="error">{error instanceof Error && error.message ? error.message : t("common.failed")}</Alert>}

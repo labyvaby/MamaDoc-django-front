@@ -49,8 +49,8 @@ export function BankDecisionChip({ bank, compact = false }: { bank: ApplicationB
   const known = ["review", "approved", "rejected", "sent"].includes(bank.status);
   const label = bank.statusLabel || (known ? t(`mortgage.decision.${bank.status}`) : bank.status);
   return (
-    <Pill color={statusTone(bank.status)} title={[bank.name, label, bank.rate != null && `${bank.rate}%`].filter(Boolean).join(" · ")}>
-      {compact ? `${bank.name} ${mark}` : `${bank.name} · ${label}${bank.rate != null && bank.status === "approved" ? ` · ${bank.rate}%` : ""}`}
+    <Pill color={statusTone(bank.status)} title={[bank.name, label, bank.rate != null && `${bank.rate.toLocaleString("ru-RU")}%`].filter(Boolean).join(" · ")}>
+      {compact ? `${bank.name} ${mark}` : `${bank.name} · ${label}${bank.rate != null && bank.status === "approved" ? ` · ${bank.rate.toLocaleString("ru-RU")}%` : ""}`}
     </Pill>
   );
 }

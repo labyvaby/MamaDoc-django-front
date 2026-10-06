@@ -169,7 +169,7 @@ export function LeadDrawer({ leadId, onClose }: { leadId: number | null; onClose
           </IconButton>
         </Box>
 
-        <Box sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gap: 2.25, alignContent: "start" }}>
+        <Box sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2.25, alignContent: "start" }}>
           {lead.isError && <Alert severity="error">{lead.error instanceof Error ? lead.error.message : t("common.loadError")}</Alert>}
           {!data && !lead.isError && [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={48} />)}
           {data && (

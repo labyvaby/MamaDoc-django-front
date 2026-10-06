@@ -384,7 +384,7 @@ function CampaignDrawer({ editing, onClose }: { editing: { campaign: Campaign | 
           <CloseOutlined />
         </IconButton>
       </Box>
-      <Box component="form" id="campaign-form" noValidate onSubmit={handleSubmit((form) => save.mutate(form))} sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gap: 2, alignContent: "start" }}>
+      <Box component="form" id="campaign-form" noValidate onSubmit={handleSubmit((form) => save.mutate(form))} sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2, alignContent: "start" }}>
         <Controller
           control={control}
           name="name"

@@ -88,7 +88,7 @@ export function PartnerDrawer({ partnerId, onClose }: { partnerId: number | null
           </IconButton>
         </Box>
 
-        <Box sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gap: 2.25, alignContent: "start" }}>
+        <Box sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2.25, alignContent: "start" }}>
           {partner.isError && <Alert severity="error">{partner.error instanceof Error ? partner.error.message : t("partners.loadError")}</Alert>}
           {!data && !partner.isError && [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={56} />)}
           {data && (

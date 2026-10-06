@@ -62,6 +62,8 @@ export interface ApplicationBank {
   statusLabel: string;
   rate: number | null;
   comment: string;
+  /** Ежемесячный платёж по ставке банка; `null` — решения ещё нет. */
+  monthly: number | null;
 }
 
 export interface ApplicationDoc {
@@ -170,6 +172,7 @@ const fromRawApplicationBank = (raw: any): ApplicationBank => ({
   statusLabel: raw.statusLabel ?? "",
   rate: numOrNull(raw.rate),
   comment: raw.comment ?? "",
+  monthly: numOrNull(raw.monthly),
 });
 
 export const fromRawApplication = (raw: any): MortgageApplication => ({

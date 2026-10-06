@@ -137,7 +137,7 @@ export function NewMortgageDrawer({
         id="new-mortgage"
         noValidate
         onSubmit={handleSubmit((form) => create.mutate(form))}
-        sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gap: 2, alignContent: "start" }}
+        sx={{ flex: 1, overflowY: "auto", p: 2.5, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 2, alignContent: "start" }}
       >
         <Controller
           control={control}
