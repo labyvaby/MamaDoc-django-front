@@ -13,6 +13,10 @@ import {
     MenuItem,
     Button,
     Tooltip,
+    Menu,
+    ListItemIcon,
+    ListItemText,
+    LinearProgress,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/CloseOutlined";
@@ -22,6 +26,9 @@ import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import RemoveShoppingCartOutlined from "@mui/icons-material/RemoveShoppingCartOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import RemoveCircleOutline from "@mui/icons-material/RemoveCircleOutline";
+import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import { useNotification } from "@refinedev/core";
 
 import { PageHeader } from "../../../components/ui";
@@ -59,6 +66,9 @@ import { DjangoTransferDrawer } from "../../../components/storage/django/DjangoT
 import { DjangoWarehouseList } from "../../../components/storage/django/DjangoWarehouseList";
 import { DjangoAddWarehouseDrawer } from "../../../components/storage/django/DjangoAddWarehouseDrawer";
 import { DjangoWarehouseDocumentsDrawer } from "../../../components/storage/django/DjangoWarehouseDocumentsDrawer";
+import { describeFailures, runBulk } from "../../../utility/bulkSelection";
+import { StockBulkDialog, type StockBulkSubmit } from "./StockBulkDialog";
+import { exportStockXlsx } from "./exportStockXlsx";
 
 /**
  * Страница «Остатки» — объединяет бывшие «Склад» и «Движение товара»:
@@ -112,6 +122,12 @@ const DjangoWarehousesPage: React.FC = () => {
     const [documentsOpen, setDocumentsOpen] = React.useState(false);
     // Перемещение между складами
     const [transferOpen, setTransferOpen] = React.useState(false);
+
+    // Массовый выбор позиций склада (productId) — как в галерее, см. DjangoStockList.
+    const [checkedIds, setCheckedIds] = React.useState<Set<number>>(() => new Set());
+    const [bulkMenuAnchor, setBulkMenuAnchor] = React.useState<HTMLElement | null>(null);
+    const [bulkDialog, setBulkDialog] = React.useState<"transfer" | "writeoff" | null>(null);
+    const [bulkProgress, setBulkProgress] = React.useState<{ label: string; done: number; total: number } | null>(null);
 
     // All Products for Selector (for adding new items)
     const [availableProducts, setAvailableProducts] = React.useState<MovementProductOption[]>([]);
@@ -186,6 +202,11 @@ const DjangoWarehousesPage: React.FC = () => {
     React.useEffect(() => {
         fetchStock();
     }, [fetchStock]);
+
+    // Выбор относится к одному складу: сменили склад — выбор сброшен.
+    React.useEffect(() => {
+        setCheckedIds(new Set());
+    }, [selectedWarehouseId]);
 
     useFocusRefetch(() => {
         if (!permLoading && orgReady && canView) {
@@ -457,6 +478,176 @@ const DjangoWarehousesPage: React.FC = () => {
         );
     }, [stock, searchQuery]);
 
+    // ── Массовые действия над выбранными позициями ──
+    const checkedItems = React.useMemo(() => {
+        const visible = filteredStock.filter((i) => checkedIds.has(i.productId));
+        const shown = new Set(visible.map((i) => i.productId));
+        return [...visible, ...stock.filter((i) => checkedIds.has(i.productId) && !shown.has(i.productId))];
+    }, [filteredStock, stock, checkedIds]);
+    const checkedValue = React.useMemo(
+        () => checkedItems.reduce((sum, i) => sum + Math.max(0, i.quantity) * (productPrices.get(i.productId) ?? 0), 0),
+        [checkedItems, productPrices],
+    );
+    const bulkBusy = bulkProgress !== null;
+    const transferTargets = React.useMemo(
+        () => warehouseOptions.filter((w) => w.id !== selectedWarehouseId).map((w) => ({ id: w.id, label: w.label })),
+        [warehouseOptions, selectedWarehouseId],
+    );
+
+    /** Прогоняет действие по позициям, сообщает итог; выбранными остаются только сбойные. */
+    const runStockBulk = async (
+        label: string,
+        moves: Map<number, number>,
+        action: (productId: number, qty: number) => Promise<unknown>,
+        successMessage: (count: number) => string,
+    ) => {
+        const ids = [...moves.keys()];
+        setBulkProgress({ label, done: 0, total: ids.length });
+        const result = await runBulk(ids, (id) => action(id, moves.get(id) ?? 0), {
+            onProgress: (done) => setBulkProgress({ label, done, total: ids.length }),
+        });
+        setBulkProgress(null);
+        await fetchStock();
+        if (result.failed.length === 0) {
+            notify?.({ type: "success", message: successMessage(result.done.length) });
+            setCheckedIds(new Set());
+        } else {
+            setCheckedIds(new Set(result.failed.map((f) => f.id)));
+            const nameOf = (id: number) => stock.find((i) => i.productId === id)?.productName ?? `#${id}`;
+            notify?.({
+                type: "error",
+                message: `Готово ${result.done.length} из ${ids.length}. Не получилось: ${describeFailures(result.failed, nameOf)}`,
+            });
+        }
+    };
+
+    const handleBulkSubmit = (data: StockBulkSubmit) => {
+        const kind = bulkDialog;
+        setBulkDialog(null);
+        const fromWarehouseId = selectedWarehouseId;
+        if (!fromWarehouseId) return;
+        if (kind === "transfer" && data.toWarehouseId) {
+            const to = data.toWarehouseId;
+            const toName = warehouses.find((w) => w.id === to)?.name ?? "";
+            void runStockBulk(
+                "Перемещаю",
+                data.moves,
+                (productId, quantity) =>
+                    createTransfer({
+                        productId,
+                        fromWarehouseId,
+                        toWarehouseId: to,
+                        quantity,
+                        comment: data.comment || undefined,
+                    }),
+                (n) => `Перемещено позиций: ${n}${toName ? ` → «${toName}»` : ""}`,
+            );
+        } else if (kind === "writeoff") {
+            void runStockBulk(
+                "Списываю",
+                data.moves,
+                (productId, quantity) =>
+                    createStockMovement({
+                        warehouseId: fromWarehouseId,
+                        productId,
+                        quantity,
+                        moveType: "consumption",
+                        comment: data.comment || undefined,
+                    }),
+                (n) => `Списано позиций: ${n}`,
+            );
+        }
+    };
+
+    const handleBulkExport = async () => {
+        setBulkMenuAnchor(null);
+        try {
+            const name = warehouses.find((w) => w.id === selectedWarehouseId)?.name ?? "склад";
+            await exportStockXlsx(checkedItems, productPrices, name);
+        } catch (e) {
+            console.error("Export failed:", e);
+            notify?.({ type: "error", message: "Не удалось выгрузить файл" });
+        }
+    };
+
+    const selectionBar = (
+        <>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                    Выбрано: {checkedIds.size}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" noWrap display="block">
+                    {bulkProgress
+                        ? `${bulkProgress.label}… ${bulkProgress.done} из ${bulkProgress.total}`
+                        : `Остаток на ${Math.round(checkedValue).toLocaleString()} сом`}
+                </Typography>
+            </Box>
+            <Button
+                size="small"
+                variant="contained"
+                endIcon={<MoreHorizIcon fontSize="small" />}
+                disabled={bulkBusy}
+                onClick={(e) => setBulkMenuAnchor(e.currentTarget)}
+                sx={{ textTransform: "none", flexShrink: 0 }}
+            >
+                Действия
+            </Button>
+            <Tooltip title="Снять выбор">
+                <span>
+                    <IconButton
+                        size="small"
+                        disabled={bulkBusy}
+                        onClick={() => setCheckedIds(new Set())}
+                        aria-label="Снять выбор"
+                    >
+                        <CloseIcon fontSize="small" />
+                    </IconButton>
+                </span>
+            </Tooltip>
+            {bulkProgress && (
+                <LinearProgress
+                    variant="determinate"
+                    value={(bulkProgress.done / bulkProgress.total) * 100}
+                    sx={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 3 }}
+                />
+            )}
+            <Menu
+                anchorEl={bulkMenuAnchor}
+                open={Boolean(bulkMenuAnchor)}
+                onClose={() => setBulkMenuAnchor(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                transformOrigin={{ vertical: "top", horizontal: "right" }}
+            >
+                {canManage && transferTargets.length > 0 && (
+                    <MenuItem
+                        onClick={() => {
+                            setBulkMenuAnchor(null);
+                            setBulkDialog("transfer");
+                        }}
+                    >
+                        <ListItemIcon><SwapHorizOutlined fontSize="small" /></ListItemIcon>
+                        <ListItemText>Переместить на склад</ListItemText>
+                    </MenuItem>
+                )}
+                {canManage && (
+                    <MenuItem
+                        onClick={() => {
+                            setBulkMenuAnchor(null);
+                            setBulkDialog("writeoff");
+                        }}
+                    >
+                        <ListItemIcon><RemoveCircleOutline fontSize="small" /></ListItemIcon>
+                        <ListItemText>Списать</ListItemText>
+                    </MenuItem>
+                )}
+                <MenuItem onClick={() => void handleBulkExport()}>
+                    <ListItemIcon><FileDownloadOutlined fontSize="small" /></ListItemIcon>
+                    <ListItemText>Выгрузить в Excel</ListItemText>
+                </MenuItem>
+            </Menu>
+        </>
+    );
+
     if (!permLoading && !canView) return <AccessDenied />;
 
     const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId);
@@ -660,6 +851,10 @@ const DjangoWarehousesPage: React.FC = () => {
                             warehouseName={selectedWarehouse?.name}
                             warehouseAddress={selectedWarehouse?.address}
                             onAdd={canManage ? handleGlobalAddStock : undefined}
+                            checkedIds={checkedIds}
+                            onCheckedChange={setCheckedIds}
+                            selectionDisabled={bulkBusy}
+                            selectionBar={selectionBar}
                         />
                     </Grid2>
 
@@ -763,6 +958,15 @@ const DjangoWarehousesPage: React.FC = () => {
                 item={selectedItem}
                 warehouses={warehouseOptions}
                 onConfirm={handleConfirmTransfer}
+            />
+
+            <StockBulkDialog
+                open={bulkDialog !== null}
+                kind={bulkDialog ?? "transfer"}
+                items={checkedItems}
+                targets={transferTargets}
+                onClose={() => setBulkDialog(null)}
+                onSubmit={handleBulkSubmit}
             />
 
             {/* Stock Details Drawer (Mobile only) */}

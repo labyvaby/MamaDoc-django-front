@@ -34,7 +34,6 @@ import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import CloseIcon from "@mui/icons-material/Close";
-import CheckIcon from "@mui/icons-material/Check";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
@@ -42,7 +41,7 @@ import SellOutlined from "@mui/icons-material/SellOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import dayjs from "dayjs";
 
-import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState, InfoTile } from "../../../components/ui";
+import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState, InfoTile, SelectionMark } from "../../../components/ui";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
@@ -74,10 +73,10 @@ import { formatKGS } from "../../../utility/format";
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
 import { DjangoProductImageSlider } from "../../../components/products/django/DjangoProductImageSlider";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
-import { describeFailures, runBulk, toggleSelection, type BulkResult } from "./bulk";
+import { describeFailures, runBulk, toggleSelection, type BulkResult } from "../../../utility/bulkSelection";
 import { BulkCategoryDialog, BulkPriceDialog, type CategoryChoice } from "./BulkProductDialogs";
 import { exportProductsXlsx } from "./exportProductsXlsx";
-import { useLongPress } from "./useLongPress";
+import { useLongPress } from "../../../hooks/useLongPress";
 import { hapticTap } from "../../../utility/haptics";
 
 /**
@@ -964,39 +963,7 @@ const DjangoProductsPage: React.FC = () => {
                             >
                               {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
                             </Avatar>
-                            {hasChecked && (
-                              <Box
-                                aria-hidden
-                                sx={(theme) => ({
-                                  position: "absolute",
-                                  inset: 0,
-                                  borderRadius: "14px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  bgcolor: isChecked
-                                    ? "primary.main"
-                                    : alpha(theme.palette.background.paper, 0.55),
-                                  color: "primary.contrastText",
-                                  transition: "background-color .15s ease",
-                                })}
-                              >
-                                {isChecked ? (
-                                  <CheckIcon />
-                                ) : (
-                                  <Box
-                                    sx={(theme) => ({
-                                      width: 22,
-                                      height: 22,
-                                      borderRadius: "50%",
-                                      border: 2,
-                                      borderColor: alpha(theme.palette.text.primary, 0.45),
-                                      bgcolor: alpha(theme.palette.background.paper, 0.8),
-                                    })}
-                                  />
-                                )}
-                              </Box>
-                            )}
+                            {hasChecked && <SelectionMark checked={isChecked} />}
                           </Box>
                           <Box sx={{ flex: 1, minWidth: 0, opacity: stockState.out ? 0.55 : 1 }}>
                             <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
