@@ -70,6 +70,15 @@ afterEach(async () => {
 });
 
 describe("appointment synchronization", () => {
+  it("delivers a branch hint to both branch and all-branches reception", async () => {
+    const allBranchesChanged = vi.fn<() => void>();
+    await mount();
+    await mount(options({ branchId: undefined, onChange: allBranchesChanged }));
+    hint();
+    await advance(200);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(allBranchesChanged).toHaveBeenCalledTimes(1);
+  });
   it("detects a colleague's change without refreshing the initial baseline", async () => {
     await mount();
     expect(changed).not.toHaveBeenCalled();

@@ -25,9 +25,8 @@ const WS_EVENT_DEBOUNCE_MS = 300;
  * Обёртка над useChangesSocket: фильтрует события по `entity`, склеивает
  * бурсты и не дёргает refetch в скрытой вкладке — событие буферизуется и
  * выстреливает один раз при возврате на вкладку (не теряется, как если бы
- * его просто проигнорировали). Филиал берётся из активного контекста; без
- * филиала realtime недоступен по контракту — страница живёт как раньше
- * (свои focus-refetch / polling-механизмы остаются страховкой).
+ * его просто проигнорировали). В режиме «Все филиалы» сервер подписывает
+ * сокет на доступные пользователю филиалы активной организации.
  *
  * @returns true, пока сокет жив (можно использовать для индикации).
  */
@@ -53,7 +52,7 @@ export function useRealtimeRefetch({ entities, onEvent, enabled = true }: Option
   const connected = useChangesSocket({
     branchId: activeBranch?.id,
     organizationId: activeOrganization?.id,
-    enabled: enabled && activeBranch != null,
+    enabled: enabled && (activeBranch != null || activeOrganization != null),
     onMessage: (msg: ChangeMessage) => {
       if (!entitiesRef.current.includes(msg.entity)) return;
       if (document.hidden) {

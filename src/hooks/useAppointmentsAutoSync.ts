@@ -45,7 +45,7 @@ export function useAppointmentsAutoSync({
   const wsConnected = useChangesSocket({
     branchId,
     organizationId,
-    enabled: enabled && branchId != null,
+    enabled,
     onMessage: (msg) => {
       if (msg.entity === "appointment" || msg.entity === "conclusion") {
         pendingRef.current = true;
