@@ -249,6 +249,9 @@ export const PERMISSIONS = {
   SUPPLY_VIEW: 'supply.view',
   SUPPLY_MANAGE: 'supply.manage',
   SUPPLY_APPROVE: 'supply.approve',
+  // Кадры застройщика (AIVIO): сотрудники и табель — personnel.*, ведомость — salary.*.
+  PERSONNEL_VIEW: 'personnel.view',
+  PERSONNEL_MANAGE: 'personnel.manage',
 
   // ЭДО и документы застройщика (AIVIO, 04.10.2026)
   EDO_VIEW: 'edo.view',

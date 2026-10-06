@@ -124,6 +124,9 @@ const ConstructionQualityPage = lazy(() => import("./pages/construction/QualityP
 const SupplyEstimatesPage = lazy(() => import("./pages/construction/EstimatesPage"));
 const SupplyProcurementPage = lazy(() => import("./pages/construction/ProcurementPage"));
 const SupplyWarehousePage = lazy(() => import("./pages/construction/WarehousePage"));
+const PersonnelStaffPage = lazy(() => import("./pages/personnel/StaffPage"));
+const PersonnelTimesheetPage = lazy(() => import("./pages/personnel/TimesheetPage"));
+const PersonnelPayrollPage = lazy(() => import("./pages/personnel/PayrollPage"));
 const PaycalPage = lazy(() => import("./pages/realty-finance/PaycalPage"));
 const BudgetPage = lazy(() => import("./pages/realty-finance/BudgetPage"));
 const ReceivablesPage = lazy(() => import("./pages/realty-finance/ReceivablesPage"));
@@ -1416,6 +1419,26 @@ function App() {
                                 path={path}
                                 element={
                                   <RequirePermission permission={PAGE_PERMISSIONS.supply}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
+                            {/* Персонал застройщика (AIVIO): сотрудники и табель — /api/v2/personnel/, зарплата — /api/v2/salary/runs/. */}
+                            {(
+                              [
+                                ["personnel/staff", PersonnelStaffPage, PAGE_PERMISSIONS.personnel],
+                                ["personnel/timesheet", PersonnelTimesheetPage, PAGE_PERMISSIONS.personnel],
+                                ["personnel/payroll", PersonnelPayrollPage, PAGE_PERMISSIONS.estatePayroll],
+                              ] as const
+                            ).map(([path, Page, permission]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={permission}>
                                     <Suspense fallback={<LinearProgress />}>
                                       <Page />
                                     </Suspense>

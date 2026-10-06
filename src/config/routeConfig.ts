@@ -212,6 +212,20 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.CONSTRUCTION_VIEW],
   },
 
+  // Персонал застройщика: сотрудники и табель (personnel), зарплата (salary)
+  {
+    path: '/personnel/staff',
+    requiredPermissions: [PERMISSIONS.PERSONNEL_VIEW],
+  },
+  {
+    path: '/personnel/timesheet',
+    requiredPermissions: [PERMISSIONS.PERSONNEL_VIEW],
+  },
+  {
+    path: '/personnel/payroll',
+    requiredPermissions: [PERMISSIONS.SALARY_VIEW],
+  },
+
   // Сметы, снабжение, склад застройщика (supply)
   {
     path: '/supply/estimates',

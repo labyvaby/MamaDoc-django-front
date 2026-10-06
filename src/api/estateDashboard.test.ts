@@ -41,7 +41,8 @@ describe("estateHref", () => {
     expect(estateHref("quality", 14)).toBe("/construction/quality?defect=14");
     expect(estateHref("construction")).toBe("/construction/schedule");
     expect(estateHref("cashbank")).toBe("/finance/cashbank");
-    // Экрана кадров ещё нет — без перехода.
-    expect(estateHref("staff")).toBeNull();
+    expect(estateHref("staff", 30)).toBe("/personnel/staff?employee=30");
+    // Экранов эксплуатации ещё нет — без перехода.
+    expect(estateHref("handover")).toBeNull();
   });
 });

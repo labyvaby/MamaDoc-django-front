@@ -67,6 +67,10 @@ export const PAGE_PERMISSIONS = {
   construction: "construction.view",
   // Сметы, снабжение, склад — /api/v2/supply/, кнопки — supply.manage / supply.approve.
   supply: "supply.view",
+  // Кадры застройщика: сотрудники и табель — /api/v2/personnel/, кнопки — personnel.manage (+ staff.update).
+  personnel: "personnel.view",
+  // Ведомость зарплаты застройщика — /api/v2/salary/runs/, кнопки — salary.manage + уровень payroll в матрице.
+  estatePayroll: "salary.view",
   // Рабочий стол застройщика: экран и его панели — estate_dashboard.view,
   // остальные панели бэк режет правами своих модулей сам.
   estateDashboard: "estate_dashboard.view",

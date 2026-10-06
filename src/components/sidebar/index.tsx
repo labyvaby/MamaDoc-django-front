@@ -59,6 +59,7 @@ import ViewTimelineOutlined from "@mui/icons-material/ViewTimelineOutlined";
 import EngineeringOutlined from "@mui/icons-material/EngineeringOutlined";
 import ReportProblemOutlined from "@mui/icons-material/ReportProblemOutlined";
 import CalculateOutlined from "@mui/icons-material/CalculateOutlined";
+import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
 import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
@@ -97,6 +98,7 @@ import { getRealtyTasks, realtyTaskKeys } from "../../api/realtyTasks";
 import { getCashForecast, getDebtSummary, treasuryKeys } from "../../api/treasury";
 import { constructionKeys, getActsSummary, getDefectsSummary, getStages } from "../../api/construction";
 import { getStockSummary, getSupplySummary, supplyKeys } from "../../api/supply";
+import { hasPendingPayroll, payrollKeys } from "../../api/salaryPayroll";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -470,6 +472,10 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canSmeta = canSupply && seen("smeta");
   const canProcurement = canSupply && seen("procurement");
   const canWarehouse = canSupply && seen("warehouse");
+  // «Персонал» AIVIO (гайд frontend-hr-ops §0): кадры — personnel.view, ведомость — salary.view.
+  const canStaff = can(PAGE_PERMISSIONS.personnel) && seen("staff");
+  const canTimesheet = can(PAGE_PERMISSIONS.personnel) && seen("timesheet");
+  const canPayroll = can(PAGE_PERMISSIONS.estatePayroll) && seen("payroll");
   const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
@@ -548,6 +554,14 @@ const RealEstateSidebarMenu: React.FC = () => {
     staleTime: 5 * 60_000,
     retry: false,
   }).data?.lowCount;
+  // «!» у «Зарплаты» — есть рассчитанная или утверждённая, но не выплаченная ведомость (гайд §3).
+  const payrollPending = useQuery({
+    queryKey: payrollKeys.pending(realtyScope),
+    queryFn: ({ signal }) => hasPendingPayroll(realtyScope, signal),
+    enabled: canPayroll && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data;
   const tasksBadgeColor: "error" | "primary" = todayTasks?.some((task) => task.overdue && !task.done) ? "error" : "primary";
 
   const sectionLabel = (text: string) =>
@@ -621,8 +635,15 @@ const RealEstateSidebarMenu: React.FC = () => {
       )}
       {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
 
-      {(canEmployees || canMotivation) && sectionLabel("Персонал")}
-      {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />}
+      {(canStaff || canTimesheet || canPayroll || canEmployees || canMotivation) && sectionLabel("Персонал")}
+      {canStaff ? (
+        <SidebarMenuItem to="/personnel/staff" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
+      ) : (
+        // Без кадров AIVIO (personnel.view) — прежний экран MamaDoc, чтобы пункт не пропал.
+        canEmployees && !can(PAGE_PERMISSIONS.personnel) && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
+      )}
+      {canTimesheet && <SidebarMenuItem to="/personnel/timesheet" icon={<EventNoteOutlined />} label="Табель" collapsed={siderCollapsed} />}
+      {canPayroll && <SidebarMenuItem to="/personnel/payroll" icon={<PaidOutlined />} label="Зарплата" collapsed={siderCollapsed} badgeText={payrollPending ? "!" : undefined} badgeColor="warning" />}
       {canMotivation && <SidebarMenuItem to="/realestate/motivation" icon={<EmojiEventsOutlined />} label="Планы и мотивация" collapsed={siderCollapsed} />}
 
       {canSettings && sectionLabel("Компания")}
