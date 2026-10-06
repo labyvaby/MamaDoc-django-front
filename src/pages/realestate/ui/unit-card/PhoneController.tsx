@@ -8,13 +8,14 @@ import { composePhone, isPhoneLocalComplete, parsePhone, type PhoneCountryCode }
 /**
  * Телефон покупателя в формах карточки — через общий `PhoneNumberField`
  * (код страны, маска, вставка номера с кодом). В форме хранится полный номер
- * E.164 («+996700000104»), как его принимает и отдаёт бэк.
+ * E.164 («+996700000104»), как его принимает и отдаёт бэк. Без
+ * `requiredMessage` поле необязательное (телефон лида), но неполный номер — ошибка.
  */
 export function PhoneController<T extends FieldValues>({ control, name, label, requiredMessage }: {
   control: Control<T>;
   name: Path<T>;
   label: string;
-  requiredMessage: string;
+  requiredMessage?: string;
 }) {
   return (
     <Controller
@@ -22,7 +23,7 @@ export function PhoneController<T extends FieldValues>({ control, name, label, r
       name={name}
       rules={{
         validate: (value: string) => {
-          if (!value) return requiredMessage;
+          if (!value) return requiredMessage ?? true;
           const { countryCode, local } = parsePhone(value);
           return isPhoneLocalComplete(countryCode, local) || tt("realestate:form.phoneInvalid");
         },

@@ -61,6 +61,21 @@ export const PAGE_PERMISSIONS = {
   pos: "pos.view",
   // Застройщик (AIVIO): бэк пускает в биллинг по treasury.view или realty.view.
   billing: ["treasury.view", "realty.view"],
+  // Финансы застройщика (касса, календарь, бюджеты, долги) — /api/v2/treasury/, действия — treasury.manage.
+  realtyFinance: "treasury.view",
+  // Стройка застройщика: графики, подрядчики, стройконтроль — /api/v2/construction/, кнопки — construction.manage.
+  construction: "construction.view",
+  // Сметы, снабжение, склад — /api/v2/supply/, кнопки — supply.manage / supply.approve.
+  supply: "supply.view",
+  // Рабочий стол застройщика: экран и его панели — estate_dashboard.view,
+  // остальные панели бэк режет правами своих модулей сам.
+  estateDashboard: "estate_dashboard.view",
+  // «Мой день» застройщика — задачи CRM `/api/v2/realty/tasks/`, менять — realty.manage.
+  realtyToday: "realty.view",
+  // Воронка и лиды застройщика — /api/v2/realty/leads/, менять — realty.manage.
+  realtySales: "realty.view",
+  // «Планы и мотивация» застройщика — /api/v2/salary/motivation/, менять — salary.manage.
+  realtyMotivation: "salary.view",
   // ЭДО застройщика: реестр, договоры, шаблоны, архив — edo.view (менять — edo.manage).
   edo: "edo.view",
   // «Документы (CRM)» — файлы сделок модуля продаж.

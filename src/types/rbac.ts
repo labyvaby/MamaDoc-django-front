@@ -233,9 +233,22 @@ export const PERMISSIONS = {
   REALESTATE_VIEW: 'realty.view',
   REALESTATE_MANAGE: 'realty.manage',
 
+  // Рабочий стол застройщика (AIVIO, 05.10.2026)
+  ESTATE_DASHBOARD_VIEW: 'estate_dashboard.view',
+  // «Планы и мотивация» застройщика (AIVIO): /api/v2/salary/motivation/.
+  SALARY_VIEW: 'salary.view',
+
   // Финансы застройщика (AIVIO): биллинг рассрочек — treasury.* или realty.* (04.10.2026)
   TREASURY_VIEW: 'treasury.view',
   TREASURY_MANAGE: 'treasury.manage',
+
+  // Стройка застройщика (AIVIO, 06.10.2026): графики, подрядчики, стройконтроль — construction.*;
+  // сметы, снабжение, склад — supply.* (согласование заявок и выбор победителя тендера — supply.approve).
+  CONSTRUCTION_VIEW: 'construction.view',
+  CONSTRUCTION_MANAGE: 'construction.manage',
+  SUPPLY_VIEW: 'supply.view',
+  SUPPLY_MANAGE: 'supply.manage',
+  SUPPLY_APPROVE: 'supply.approve',
 
   // ЭДО и документы застройщика (AIVIO, 04.10.2026)
   EDO_VIEW: 'edo.view',

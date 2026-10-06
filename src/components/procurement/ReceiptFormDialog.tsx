@@ -22,6 +22,7 @@ import {
 } from "@mui/material";
 import { createFilterOptions } from "@mui/material/Autocomplete";
 import { alpha, keyframes, useTheme } from "@mui/material/styles";
+import { aiProgressPercentAt, aiPulse, aiScanLine, aiShimmer, aiStageAt } from "../ai/aiMotion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNotification } from "@refinedev/core";
 import dayjs, { type Dayjs } from "dayjs";
@@ -206,37 +207,18 @@ const RECOGNITION_STAGES: Array<{ label: string; from: number }> = [
 ];
 
 /** Этап по прошедшему времени: последний, чей порог уже пройден. */
-const recognitionStageAt = (seconds: number): number =>
-  RECOGNITION_STAGES.reduce((stage, item, index) => (seconds >= item.from ? index : stage), 0);
+const recognitionStageAt = (seconds: number): number => aiStageAt(RECOGNITION_STAGES, seconds);
 
 /** Потолок процента, пока сервер не ответил: 100% — только когда ответ уже есть. */
 const RECOGNITION_PERCENT_CAP = 97;
 
-/**
- * Процент по прошедшему времени: быстро в начале и всё медленнее к концу —
- * 30 с ≈ 65%, 60 с ≈ 88%, дальше подползает к потолку, но не достигает
- * его. Точным он не бывает (сервер не сообщает прогресс), зато не стоит на
- * месте и не показывает «готово» раньше времени.
- */
+/** Процент по прошедшему времени — общая кривая AI-экранов (aiMotion). */
 const recognitionPercentAt = (seconds: number): number =>
-  Math.min(RECOGNITION_PERCENT_CAP, Math.floor(RECOGNITION_PERCENT_CAP * (1 - Math.exp(-seconds / 28))));
+  aiProgressPercentAt(seconds, RECOGNITION_PERCENT_CAP);
 
-const scanLine = keyframes`
-  0% { top: 0%; opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { top: 100%; opacity: 0; }
-`;
-const shimmer = keyframes`
-  0% { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
-  20% { opacity: .8; }
-  80% { opacity: .8; }
-  100% { transform: translateX(420%) skewX(-18deg); opacity: 0; }
-`;
-const pulse = keyframes`
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.06); }
-`;
+const scanLine = aiScanLine;
+const shimmer = aiShimmer;
+const pulse = aiPulse;
 const floatY = keyframes`
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-6px); }

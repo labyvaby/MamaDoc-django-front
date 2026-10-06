@@ -254,6 +254,8 @@ export interface ReserveUnitInput {
   offerId: string;
   /** null — без задачи «Встреча». */
   meetingAt: string | null;
+  /** Заявка CRM: бэк передвинет её на «Бронирование». */
+  leadId?: number | null;
 }
 
 export interface MeetingInput {
@@ -316,6 +318,8 @@ export interface ContractInput {
    * `INVALID_STATE`, после подтверждения повторяем с этим флагом.
    */
   allowOtherBuyer?: boolean;
+  /** Заявка CRM: бэк передвинет её на «Договор / оплата». */
+  leadId?: number | null;
 }
 
 // ─── Ответ бэка (/api/v2/realty) ───────────────────────────────────────────
@@ -723,6 +727,7 @@ export async function reserveUnit(unitId: string, input: ReserveUnitInput, scope
       offerId: input.offerId,
       meeting: input.meetingAt !== null,
       meetingAt: input.meetingAt,
+      ...(input.leadId != null ? { leadId: input.leadId } : {}),
     },
     scope,
   );

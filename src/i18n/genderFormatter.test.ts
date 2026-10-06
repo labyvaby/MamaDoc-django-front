@@ -242,6 +242,7 @@ const REVIEWED_SINGULAR_VISIT_WITHOUT_GENDER = [
   "appointments:bankConfirmation.noneFound",
   "appointments:cashDateDialog.appointmentDate",
   "appointments:chips.overdue",
+  "appointments:conclusion.aiAssist.thinking.stages.read",
   "appointments:conclusion.aiAssist.tooltip",
   "appointments:confirm.deleteTitle",
   "appointments:details.deleteTitle",

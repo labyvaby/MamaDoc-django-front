@@ -37,6 +37,7 @@ export interface SummaryTile {
 
 interface Props {
   tiles: SummaryTile[];
+  /** Пустой — карточки пульса нет (период в один день), плитки во всю ширину. */
   pulse: PulseBucket[];
   /**
    * Активна ли плитка и что делает клик — решает журнал: ключ может быть
@@ -50,6 +51,8 @@ interface Props {
   canViewFinance: boolean;
   /** Подпись пульса: «Пульс месяца» / «Пульс года». */
   pulseTitle: string;
+  /** Цифры от прошлого периода, новый ещё грузится — приглушаем и не даём кликать. */
+  stale?: boolean;
 }
 
 export const RegistrySummaryBar: React.FC<Props> = ({
@@ -61,6 +64,7 @@ export const RegistrySummaryBar: React.FC<Props> = ({
   onSelectBucket,
   canViewFinance,
   pulseTitle,
+  stale = false,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -88,10 +92,14 @@ export const RegistrySummaryBar: React.FC<Props> = ({
         display: "grid",
         gridTemplateColumns: {
           xs: "minmax(0, 1fr)",
-          lg: "minmax(0, 1.05fr) minmax(0, 1fr)",
+          lg: pulse.length > 0 ? "minmax(0, 1.05fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
         },
         gap: 1.5,
+        opacity: stale ? 0.45 : 1,
+        pointerEvents: stale ? "none" : undefined,
+        transition: "opacity .15s ease",
       }}
+      aria-busy={stale || undefined}
     >
       {/* Карточки в одной сетке равны по высоте: плитки тянем на всю высоту,
           иначе под ними оставалась пустая полоса под карточку пульса. */}
@@ -196,142 +204,144 @@ export const RegistrySummaryBar: React.FC<Props> = ({
         </Box>
       </Paper>
 
-      <Paper elevation={0} variant="outlined" sx={{ px: 1.75, py: 1.25 }}>
-        <Stack direction="row" alignItems="center" gap={1.5} sx={{ mb: 1 }}>
-          <Typography variant="caption" color="text.secondary">
-            {pulseTitle}
-          </Typography>
-          {canViewFinance && (
-            <Stack direction="row" gap={1.5} sx={{ ml: "auto" }}>
-              <Stack direction="row" alignItems="center" gap={0.5}>
-                <Box sx={{ width: 8, height: 8, borderRadius: "2px", bgcolor: alpha(theme.palette.primary.main, 0.85) }} />
-                <Typography variant="caption" color="text.disabled">
-                  {t("journal.pulse.paid")}
-                </Typography>
+      {pulse.length > 0 && (
+        <Paper elevation={0} variant="outlined" sx={{ px: 1.75, py: 1.25 }}>
+          <Stack direction="row" alignItems="center" gap={1.5} sx={{ mb: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              {pulseTitle}
+            </Typography>
+            {canViewFinance && (
+              <Stack direction="row" gap={1.5} sx={{ ml: "auto" }}>
+                <Stack direction="row" alignItems="center" gap={0.5}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: "2px", bgcolor: alpha(theme.palette.primary.main, 0.85) }} />
+                  <Typography variant="caption" color="text.disabled">
+                    {t("journal.pulse.paid")}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" alignItems="center" gap={0.5}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: "2px", bgcolor: debtAccent.main }} />
+                  <Typography variant="caption" color="text.disabled">
+                    {t("journal.pulse.debt")}
+                  </Typography>
+                </Stack>
               </Stack>
-              <Stack direction="row" alignItems="center" gap={0.5}>
-                <Box sx={{ width: 8, height: 8, borderRadius: "2px", bgcolor: debtAccent.main }} />
-                <Typography variant="caption" color="text.disabled">
-                  {t("journal.pulse.debt")}
-                </Typography>
-              </Stack>
-            </Stack>
-          )}
-        </Stack>
+            )}
+          </Stack>
 
-        <Box
-          sx={{
-            display: "grid",
-            gridAutoFlow: "column",
-            gridAutoColumns: "1fr",
-            gap: { xs: "2px", md: "3px" },
-            alignItems: "end",
-            height: { xs: 68, md: 78 },
-          }}
-        >
-          {pulse.map((bucket, index) => {
-            const total = canViewFinance ? bucket.paid + bucket.debt : bucket.visits;
-            const height = Math.round((total / pulseMax) * 100);
-            const active = selectedBucket === bucket.key;
-            const tooltip = canViewFinance
-              ? t("journal.pulse.tooltipMoney", {
-                  date: bucket.fullLabel,
-                  count: bucket.visits,
-                  amount: formatAmount(bucket.paid + bucket.debt),
-                })
-              : t("journal.pulse.tooltipVisits", {
-                  date: bucket.fullLabel,
-                  count: bucket.visits,
-                });
-            return (
-              <Tooltip key={bucket.key} title={tooltip} enterDelay={200}>
-                <Box
-                  component="button"
-                  type="button"
-                  aria-pressed={active}
-                  aria-label={tooltip}
-                  onClick={() => onSelectBucket(active ? null : bucket.key)}
-                  sx={{
-                    position: "relative",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "flex-end",
-                    // ⚠ У <button> свои UA-стили: align-items и padding 1px 6px.
-                    // На узком экране столбик шириной 12px этот padding съедал
-                    // целиком, и шкала оставалась пустой — гасим оба.
-                    alignItems: "stretch",
-                    height: "100%",
-                    p: 0,
-                    pb: "15px",
-                    border: 0,
-                    borderRadius: "4px",
-                    bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
-                    cursor: "pointer",
-                    transition: "background-color .12s ease",
-                    "&:hover": { bgcolor: active ? alpha(theme.palette.primary.main, 0.14) : subtleBg(theme, true) },
-                  }}
-                >
+          <Box
+            sx={{
+              display: "grid",
+              gridAutoFlow: "column",
+              gridAutoColumns: "1fr",
+              gap: { xs: "2px", md: "3px" },
+              alignItems: "end",
+              height: { xs: 68, md: 78 },
+            }}
+          >
+            {pulse.map((bucket, index) => {
+              const total = canViewFinance ? bucket.paid + bucket.debt : bucket.visits;
+              const height = Math.round((total / pulseMax) * 100);
+              const active = selectedBucket === bucket.key;
+              const tooltip = canViewFinance
+                ? t("journal.pulse.tooltipMoney", {
+                    date: bucket.fullLabel,
+                    count: bucket.visits,
+                    amount: formatAmount(bucket.paid + bucket.debt),
+                  })
+                : t("journal.pulse.tooltipVisits", {
+                    date: bucket.fullLabel,
+                    count: bucket.visits,
+                  });
+              return (
+                <Tooltip key={bucket.key} title={tooltip} enterDelay={200}>
                   <Box
+                    component="button"
+                    type="button"
+                    aria-pressed={active}
+                    aria-label={tooltip}
+                    onClick={() => onSelectBucket(active ? null : bucket.key)}
                     sx={{
+                      position: "relative",
                       display: "flex",
                       flexDirection: "column",
                       justifyContent: "flex-end",
-                      width: "100%",
-                      height: `${Math.max(total > 0 ? 3 : 1, height)}%`,
-                      borderRadius: "3px",
-                      overflow: "hidden",
-                      bgcolor: total > 0 ? "transparent" : "divider",
+                      // ⚠ У <button> свои UA-стили: align-items и padding 1px 6px.
+                      // На узком экране столбик шириной 12px этот padding съедал
+                      // целиком, и шкала оставалась пустой — гасим оба.
+                      alignItems: "stretch",
+                      height: "100%",
+                      p: 0,
+                      pb: "15px",
+                      border: 0,
+                      borderRadius: "4px",
+                      bgcolor: active ? alpha(theme.palette.primary.main, 0.1) : "transparent",
+                      cursor: "pointer",
+                      transition: "background-color .12s ease",
+                      "&:hover": { bgcolor: active ? alpha(theme.palette.primary.main, 0.14) : subtleBg(theme, true) },
                     }}
                   >
-                    {canViewFinance ? (
-                      <>
-                        {bucket.debt > 0 && (
-                          <Box sx={{ flex: bucket.debt, bgcolor: debtAccent.main, minHeight: 2 }} />
-                        )}
-                        {bucket.paid > 0 && (
-                          <Box
-                            sx={{
-                              flex: bucket.paid,
-                              bgcolor: alpha(theme.palette.primary.main, 0.85),
-                              minHeight: 2,
-                            }}
-                          />
-                        )}
-                      </>
-                    ) : (
-                      bucket.visits > 0 && (
-                        <Box sx={{ flex: 1, bgcolor: alpha(theme.palette.primary.main, 0.85) }} />
-                      )
-                    )}
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "flex-end",
+                        width: "100%",
+                        height: `${Math.max(total > 0 ? 3 : 1, height)}%`,
+                        borderRadius: "3px",
+                        overflow: "hidden",
+                        bgcolor: total > 0 ? "transparent" : "divider",
+                      }}
+                    >
+                      {canViewFinance ? (
+                        <>
+                          {bucket.debt > 0 && (
+                            <Box sx={{ flex: bucket.debt, bgcolor: debtAccent.main, minHeight: 2 }} />
+                          )}
+                          {bucket.paid > 0 && (
+                            <Box
+                              sx={{
+                                flex: bucket.paid,
+                                bgcolor: alpha(theme.palette.primary.main, 0.85),
+                                minHeight: 2,
+                              }}
+                            />
+                          )}
+                        </>
+                      ) : (
+                        bucket.visits > 0 && (
+                          <Box sx={{ flex: 1, bgcolor: alpha(theme.palette.primary.main, 0.85) }} />
+                        )
+                      )}
+                    </Box>
+                    {/* На телефоне 31 подпись сливается в кашу: печатаем каждую
+                        пятую и выбранный столбик, шкала остаётся читаемой. */}
+                    <Typography
+                      component="span"
+                      sx={{
+                        position: "absolute",
+                        bottom: 1,
+                        left: 0,
+                        right: 0,
+                        textAlign: "center",
+                        fontSize: "0.6rem",
+                        fontVariantNumeric: "tabular-nums",
+                        color: active ? "primary.onSurface" : bucket.muted ? "text.disabled" : "text.secondary",
+                        fontWeight: active ? 600 : 400,
+                        display: {
+                          xs: dense && !active && index % 5 !== 0 ? "none" : "block",
+                          md: "block",
+                        },
+                      }}
+                    >
+                      {bucket.label}
+                    </Typography>
                   </Box>
-                  {/* На телефоне 31 подпись сливается в кашу: печатаем каждую
-                      пятую и выбранный столбик, шкала остаётся читаемой. */}
-                  <Typography
-                    component="span"
-                    sx={{
-                      position: "absolute",
-                      bottom: 1,
-                      left: 0,
-                      right: 0,
-                      textAlign: "center",
-                      fontSize: "0.6rem",
-                      fontVariantNumeric: "tabular-nums",
-                      color: active ? "primary.onSurface" : bucket.muted ? "text.disabled" : "text.secondary",
-                      fontWeight: active ? 600 : 400,
-                      display: {
-                        xs: dense && !active && index % 5 !== 0 ? "none" : "block",
-                        md: "block",
-                      },
-                    }}
-                  >
-                    {bucket.label}
-                  </Typography>
-                </Box>
-              </Tooltip>
-            );
-          })}
-        </Box>
-      </Paper>
+                </Tooltip>
+              );
+            })}
+          </Box>
+        </Paper>
+      )}
     </Box>
   );
 };

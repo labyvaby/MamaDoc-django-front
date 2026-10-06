@@ -33,6 +33,12 @@ import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import PaidOutlined from "@mui/icons-material/PaidOutlined";
 import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
+import PlaceOutlined from "@mui/icons-material/PlaceOutlined";
+import CurrencyExchangeOutlined from "@mui/icons-material/CurrencyExchangeOutlined";
+import HomeWorkOutlined from "@mui/icons-material/HomeWorkOutlined";
+import CampaignOutlined from "@mui/icons-material/CampaignOutlined";
+import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import LocalHospitalOutlined from "@mui/icons-material/LocalHospitalOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
@@ -47,6 +53,13 @@ import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
 import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import QueryStatsOutlined from "@mui/icons-material/QueryStatsOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
+import DonutSmallOutlined from "@mui/icons-material/DonutSmallOutlined";
+import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
+import ViewTimelineOutlined from "@mui/icons-material/ViewTimelineOutlined";
+import EngineeringOutlined from "@mui/icons-material/EngineeringOutlined";
+import ReportProblemOutlined from "@mui/icons-material/ReportProblemOutlined";
+import CalculateOutlined from "@mui/icons-material/CalculateOutlined";
+import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
@@ -79,6 +92,11 @@ import { getBookings } from "../../api/bookings";
 import { getDraftCount } from "../../api/vaccinations";
 import { useModuleGate } from "../../hooks/useModuleGate";
 import { useEstateNav } from "../../hooks/useEstateNav";
+import { useRealtyScope } from "../../hooks/useRealtyScope";
+import { getRealtyTasks, realtyTaskKeys } from "../../api/realtyTasks";
+import { getCashForecast, getDebtSummary, treasuryKeys } from "../../api/treasury";
+import { constructionKeys, getActsSummary, getDefectsSummary, getStages } from "../../api/construction";
+import { getStockSummary, getSupplySummary, supplyKeys } from "../../api/supply";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -395,33 +413,63 @@ const SidebarMenuSkeleton: React.FC = () => {
 
 /**
  * Застройщик: одно плоское меню без клиничных групп «Моя работа /
- * Организация» — отдел продаж работает в шахматке, воронке и задачах, а
- * справочное (сотрудники, настройки) — отдельной секцией «Компания».
- * Каждый пункт — своим правом или модулем: выключенный у организации модуль
- * прячет пункт сам.
+ * Организация» — отдел продаж работает в шахматке и задачах, а справочное
+ * (сотрудники, настройки) — отдельной секцией «Компания». Каждый пункт —
+ * своим правом или модулем: выключенный у организации модуль прячет пункт сам.
+ *
+ * Воронки (`/deals`), покупателей (`/patients`) и расходов (`/expenses`)
+ * MamaDoc здесь нет (решение 06.10.2026): у застройщика лиды и деньги живут в
+ * `/api/v2/realty` и `/api/v2/treasury`, и записи из экранов MamaDoc в AIVIO
+ * не попали бы (гайды бэка frontend-sales/-finance). Права на них есть у
+ * бухгалтера и управляющего — пункты были видны. «Задачи» и «Сотрудники»
+ * MamaDoc оставлены, пока нет их экранов AIVIO (realty tasks, personnel).
  */
 const RealEstateSidebarMenu: React.FC = () => {
-  const { t } = useT("sidebar");
   const { siderCollapsed } = useThemedLayoutContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { can } = useCanChecker();
   const { moduleGate } = useModuleGate();
   const canSettings = useHasVisibleSettingsTab();
-  const orgId = useApiOrgId();
   // Экраны AIVIO — ещё и по матрице ролей бэка: у юриста шахматки в меню нет, хотя realty.view есть.
   const estateNav = useEstateNav();
   const seen = (screen: string) => estateNav?.(screen) ?? true;
 
+  const canDashboard = can(PAGE_PERMISSIONS.estateDashboard) && seen("dashboard");
   const canChessboard = moduleGate("realty") && seen("inventory");
-  const canDeals = DEALS_MODULE_ENABLED && can(PAGE_PERMISSIONS.deals);
-  const canTasks = can(PAGE_PERMISSIONS.tasks);
-  const canBuyers = can(PAGE_PERMISSIONS.patients);
+  const canFunnel = can(PAGE_PERMISSIONS.realtySales) && seen("funnel");
+  const canLeads = can(PAGE_PERMISSIONS.realtySales) && seen("leads");
+  const canCalls = can(PAGE_PERMISSIONS.realtySales) && seen("calls");
+  const canShows = can(PAGE_PERMISSIONS.realtySales) && seen("measurements");
+  const canDeals = can(PAGE_PERMISSIONS.realtySales) && seen("estimates");
+  const canCatalog = can(PAGE_PERMISSIONS.realtySales) && seen("objects");
+  const canMortgage = can(PAGE_PERMISSIONS.realtySales) && seen("mortgage");
+  // «Риелторы и партнёры» и «Маркетинг» в матрице есть только у руководителя (гайд §1) — по ссылке открываются всем с realty.view.
+  const canPartners = can(PAGE_PERMISSIONS.realtySales) && seen("partners");
+  const canMarketing = can(PAGE_PERMISSIONS.realtySales) && seen("marketing");
+  const canMotivation = can(PAGE_PERMISSIONS.realtyMotivation) && seen("motivation");
+  // «Мой день» — задачи CRM застройщика; внутренние заявки MamaDoc («Задачи»)
+  // застройщику не нужны: его звонки и показы живут в /api/v2/realty/tasks/.
+  const canToday = can(PAGE_PERMISSIONS.realtyToday) && seen("today");
   const canChats = can(PAGE_PERMISSIONS.chats);
   const canKnowledge = moduleGate("knowledge");
   const canEmployees = can(PAGE_PERMISSIONS.employees);
-  const canExpenses = can(PAGE_PERMISSIONS.expenses);
   const canBilling = can(PAGE_PERMISSIONS.billing) && seen("billing");
+  // «Финансы» AIVIO (гайд frontend-finance §1): все четыре экрана — treasury.view, пункты — по матрице.
+  const canFinance = can(PAGE_PERMISSIONS.realtyFinance);
+  const canCashbank = canFinance && seen("cashbank");
+  const canPaycal = canFinance && seen("paycal");
+  const canBudget = canFinance && seen("budget");
+  const canReceivables = canFinance && seen("receivables");
+  // «Стройка» AIVIO (гайд frontend-construction §1): construction.view / supply.view, пункты — по матрице.
+  const canConstruction = can(PAGE_PERMISSIONS.construction);
+  const canSchedule = canConstruction && seen("construction");
+  const canContractors = canConstruction && seen("contractors");
+  const canQuality = canConstruction && seen("quality");
+  const canSupply = can(PAGE_PERMISSIONS.supply);
+  const canSmeta = canSupply && seen("smeta");
+  const canProcurement = canSupply && seen("procurement");
+  const canWarehouse = canSupply && seen("warehouse");
   const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
@@ -433,18 +481,74 @@ const RealEstateSidebarMenu: React.FC = () => {
       ] as const).filter(([screen]) => seen(screen))
     : [];
 
-  // Бейдж «Задачи» — тот же запрос и ключ, что в клиничном меню (кэш общий):
-  // открытые задачи филиала, красный — если есть просроченные.
-  const tasksSummary = useQuery({
-    queryKey: djangoQueryKeys.tasks.summary(orgId),
-    queryFn: ({ signal }) => getTasksSummary(orgId, signal),
-    enabled: canTasks,
+  // Бейдж «Мой день» — открытые задачи CRM на сегодня, красный — если есть
+  // просроченные. Ключ тот же, что у экрана без фильтров: кэш общий.
+  const realtyScope = useRealtyScope();
+  const todayParams = React.useMemo(() => ({ date: dayjs().format("YYYY-MM-DD"), managerId: null }), []);
+  const todayTasks = useQuery({
+    queryKey: realtyTaskKeys.list(realtyScope, todayParams),
+    queryFn: ({ signal }) => getRealtyTasks(todayParams, realtyScope, signal),
+    enabled: canToday && realtyScope.orgReady !== false,
     staleTime: DJANGO_LIST_STALE_TIME_MS,
     refetchInterval: DJANGO_POLL_INTERVAL_MS,
     refetchOnWindowFocus: true,
   }).data;
-  const tasksBadgeCount = (tasksSummary?.new ?? 0) + (tasksSummary?.inProgress ?? 0) + (tasksSummary?.awaitingApproval ?? 0);
-  const tasksBadgeColor: "error" | "primary" = (tasksSummary?.overdue ?? 0) > 0 ? "error" : "primary";
+  const tasksBadgeCount = todayTasks?.filter((task) => !task.done).length ?? 0;
+  // «!» у календаря — кассовый разрыв в ближайшие 30 дней; у долгов — просроченная кредиторка (гайд §3, §5).
+  const gap = useQuery({
+    queryKey: treasuryKeys.forecast(realtyScope, 30, false),
+    queryFn: ({ signal }) => getCashForecast(30, realtyScope, signal, false),
+    enabled: canPaycal && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.hasGap;
+  const payableOverdue = useQuery({
+    queryKey: treasuryKeys.debtSummary(realtyScope, "payable"),
+    queryFn: ({ signal }) => getDebtSummary("payable", realtyScope, signal),
+    enabled: canReceivables && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.overdueCount;
+  // Бейдж «Проекты и графики» — этапы с отставанием (гайд §3: `/stages/?delayed=true` → длина).
+  const delayedStages = useQuery({
+    queryKey: constructionKeys.stages(realtyScope, null, true),
+    queryFn: ({ signal }) => getStages({ delayed: true }, realtyScope, signal),
+    enabled: canSchedule && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.length;
+  // Бейдж «Подрядчики и акты» — акты на проверке (гайд §4: `acts/summary` → checkCount).
+  const actsToCheck = useQuery({
+    queryKey: constructionKeys.actsSummary(realtyScope),
+    queryFn: ({ signal }) => getActsSummary(realtyScope, signal),
+    enabled: canContractors && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.checkCount;
+  // Бейдж «Стройконтроль» — критичные дефекты (гайд §5: `defects/summary` → criticalCount).
+  const criticalDefects = useQuery({
+    queryKey: constructionKeys.defectsSummary(realtyScope, null),
+    queryFn: ({ signal }) => getDefectsSummary(null, realtyScope, signal),
+    enabled: canQuality && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.criticalCount;
+  // Бейджи «Снабжение» — новые заявки, «Склад» — позиции ниже минимума (гайд §7, §8).
+  const newRequests = useQuery({
+    queryKey: supplyKeys.summary(realtyScope),
+    queryFn: ({ signal }) => getSupplySummary(realtyScope, signal),
+    enabled: canProcurement && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.newRequests;
+  const lowStock = useQuery({
+    queryKey: supplyKeys.stockSummary(realtyScope),
+    queryFn: ({ signal }) => getStockSummary(realtyScope, signal),
+    enabled: canWarehouse && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.lowCount;
+  const tasksBadgeColor: "error" | "primary" = todayTasks?.some((task) => task.overdue && !task.done) ? "error" : "primary";
 
   const sectionLabel = (text: string) =>
     siderCollapsed && !isMobile ? (
@@ -459,27 +563,69 @@ const RealEstateSidebarMenu: React.FC = () => {
 
   return (
     <List sx={{ py: 0, mt: 0.5 }}>
-      {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
-      {canSalesDocs && <SidebarMenuItem to="/realestate/documents" icon={<FolderOutlined />} label="Документы CRM" collapsed={siderCollapsed} />}
-      {canDeals && <SidebarMenuItem to="/deals" icon={<FilterAltOutlined />} label="Воронка продаж" collapsed={siderCollapsed} />}
-      {canTasks && (
-        <SidebarMenuItem to="/tasks" icon={<AssignmentOutlined />} label="Задачи" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
+      {canDashboard && <SidebarMenuItem to="/realestate/dashboard" icon={<InsightsOutlined />} label="Рабочий стол" collapsed={siderCollapsed} />}
+      {canToday && (
+        <SidebarMenuItem to="/realestate/today" icon={<AssignmentOutlined />} label="Мой день" collapsed={siderCollapsed} badgeCount={tasksBadgeCount} badgeColor={tasksBadgeColor} />
       )}
-      {canBuyers && <SidebarMenuItem to="/patients" icon={<SearchOutlined />} label={t("allPatients")} collapsed={siderCollapsed} />}
       {canChats && <SidebarMenuItem to="/chats" icon={<ForumOutlined />} label="Чаты" collapsed={siderCollapsed} />}
       {canKnowledge && <SidebarMenuItem to="/knowledge" icon={<MenuBookOutlined />} label="База знаний" collapsed={siderCollapsed} />}
 
-      {docsItems.length > 0 && sectionLabel("Документы")}
-      {docsItems.map(([screen, to, label, icon]) => (
-        <SidebarMenuItem key={screen} to={to} icon={icon} label={label} collapsed={siderCollapsed} />
-      ))}
+      {(canFunnel || canLeads || canCalls || canShows || canChessboard || canDeals || canCatalog || canMortgage || canPartners || canMarketing) && sectionLabel("Продажи")}
+      {canFunnel && <SidebarMenuItem to="/realestate/funnel" icon={<FilterAltOutlined />} label="CRM · воронка" collapsed={siderCollapsed} />}
+      {canLeads && <SidebarMenuItem to="/realestate/leads" icon={<SearchOutlined />} label="Лиды и клиенты" collapsed={siderCollapsed} />}
+      {canCalls && <SidebarMenuItem to="/realestate/calls" icon={<PhoneInTalkOutlined />} label="Звонки и записи" collapsed={siderCollapsed} />}
+      {canShows && <SidebarMenuItem to="/realestate/shows" icon={<PlaceOutlined />} label="Показы" collapsed={siderCollapsed} />}
+      {canChessboard && <SidebarMenuItem to="/realestate/chessboard" icon={<ApartmentOutlined />} label="Квартиры / шахматка" collapsed={siderCollapsed} />}
+      {canDeals && <SidebarMenuItem to="/realestate/deals" icon={<CurrencyExchangeOutlined />} label="Брони и оплаты" collapsed={siderCollapsed} />}
+      {canCatalog && <SidebarMenuItem to="/realestate/catalog" icon={<HomeWorkOutlined />} label="Каталог объектов" collapsed={siderCollapsed} />}
+      {canMortgage && <SidebarMenuItem to="/realestate/mortgage" icon={<AccountBalanceOutlined />} label="Ипотека и банки" collapsed={siderCollapsed} />}
+      {canPartners && <SidebarMenuItem to="/realestate/partners" icon={<HandshakeOutlined />} label="Риелторы и партнёры" collapsed={siderCollapsed} />}
+      {canMarketing && <SidebarMenuItem to="/realestate/marketing" icon={<CampaignOutlined />} label="Маркетинг и ROI" collapsed={siderCollapsed} />}
 
-      {canBilling && sectionLabel("Финансы")}
+      {(canSchedule || canContractors || canQuality || canSmeta || canProcurement || canWarehouse) && sectionLabel("Стройка")}
+      {canSchedule && (
+        <SidebarMenuItem to="/construction/schedule" icon={<ViewTimelineOutlined />} label="Проекты и графики" collapsed={siderCollapsed} badgeCount={delayedStages ?? 0} badgeColor="error" />
+      )}
+      {canContractors && (
+        <SidebarMenuItem to="/construction/contractors" icon={<EngineeringOutlined />} label="Подрядчики и акты" collapsed={siderCollapsed} badgeCount={actsToCheck ?? 0} badgeColor="warning" />
+      )}
+      {canQuality && (
+        <SidebarMenuItem to="/construction/quality" icon={<ReportProblemOutlined />} label="Стройконтроль" collapsed={siderCollapsed} badgeCount={criticalDefects ?? 0} badgeColor="error" />
+      )}
+      {canSmeta && <SidebarMenuItem to="/supply/estimates" icon={<CalculateOutlined />} label="Сметы" collapsed={siderCollapsed} />}
+      {canProcurement && (
+        <SidebarMenuItem to="/supply/procurement" icon={<LocalShippingOutlined />} label="Снабжение" collapsed={siderCollapsed} badgeCount={newRequests ?? 0} badgeColor="warning" />
+      )}
+      {canWarehouse && <SidebarMenuItem to="/supply/warehouse" icon={<WarehouseOutlined />} label="Склад" collapsed={siderCollapsed} badgeCount={lowStock ?? 0} badgeColor="warning" />}
+
+      {(docsItems.length > 0 || canSalesDocs) && sectionLabel("Документы")}
+      {docsItems.map(([screen, to, label, icon]) => (
+        <SidebarMenuItem
+          key={screen}
+          to={to}
+          icon={icon}
+          label={label}
+          collapsed={siderCollapsed}
+          // /edo — префикс остальных разделов: «ЭДО» не подсвечиваем на договорах, шаблонах и архиве.
+          excludePaths={screen === "edo" ? ["/edo/contracts", "/edo/templates", "/edo/archive"] : undefined}
+        />
+      ))}
+      {canSalesDocs && <SidebarMenuItem to="/realestate/documents" icon={<FolderOutlined />} label="Документы CRM" collapsed={siderCollapsed} />}
+
+      {(canCashbank || canPaycal || canBudget || canReceivables || canBilling) && sectionLabel("Финансы")}
+      {canCashbank && <SidebarMenuItem to="/finance/cashbank" icon={<PaymentsOutlined />} label="Касса и банк" collapsed={siderCollapsed} />}
+      {canPaycal && <SidebarMenuItem to="/finance/paycal" icon={<CalendarMonthOutlined />} label="Платёжный календарь" collapsed={siderCollapsed} badgeText={gap ? "!" : undefined} badgeColor="error" />}
+      {canBudget && <SidebarMenuItem to="/finance/budget" icon={<DonutSmallOutlined />} label="Бюджеты проектов" collapsed={siderCollapsed} />}
+      {canReceivables && (
+        <SidebarMenuItem to="/finance/receivables" icon={<RequestQuoteOutlined />} label="Дебиторка / кредиторка" collapsed={siderCollapsed} badgeCount={payableOverdue ?? 0} badgeColor="warning" />
+      )}
       {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
 
-      {(canEmployees || canExpenses || canSettings) && sectionLabel("Компания")}
+      {(canEmployees || canMotivation) && sectionLabel("Персонал")}
       {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />}
-      {canExpenses && <SidebarMenuItem to="/expenses" icon={<PaymentsOutlined />} label="Расходы" collapsed={siderCollapsed} />}
+      {canMotivation && <SidebarMenuItem to="/realestate/motivation" icon={<EmojiEventsOutlined />} label="Планы и мотивация" collapsed={siderCollapsed} />}
+
+      {canSettings && sectionLabel("Компания")}
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
       )}
@@ -1157,6 +1303,8 @@ type SidebarMenuItemProps = {
   badgeCount?: number;
   /** Цвет бейджа: срочность (error — просрочено, primary — новые). */
   badgeColor?: "error" | "primary" | "warning";
+  /** Знак вместо числа («!» — кассовый разрыв); показывается и без badgeCount. */
+  badgeText?: string;
   /**
    * Child paths that belong to a *different* menu item and must not light
    * this one up. Used by a parent route (e.g. "/settings") so it stays
@@ -1174,14 +1322,15 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
   collapsed,
   badgeCount = 0,
   badgeColor = "error",
+  badgeText,
   excludePaths,
 }) => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const collapsedFinal = (collapsed ?? false) && !isMobile;
-  const hasBadge = badgeCount > 0;
-  const badgeLabel = badgeCount > 99 ? "99+" : String(badgeCount);
+  const hasBadge = badgeCount > 0 || Boolean(badgeText);
+  const badgeLabel = badgeText ?? (badgeCount > 99 ? "99+" : String(badgeCount));
   const matchesSelf =
     location.pathname === to || location.pathname.startsWith(to + "/");
   const matchesExcluded = (excludePaths ?? []).some(
@@ -1205,7 +1354,12 @@ const SidebarMenuItem: React.FC<SidebarMenuItemProps> = ({
         gap: 1,
       }}
     >
-      <ListItemText primary={label} sx={{ my: 0 }} />
+      {/* Длинная подпись с бейджем («Дебиторка / кредиторка») — многоточие, полный текст в title. */}
+      <ListItemText
+        primary={label}
+        primaryTypographyProps={{ noWrap: true, title: typeof label === "string" ? label : undefined }}
+        sx={{ my: 0, minWidth: 0 }}
+      />
       {/* Standalone Badge позиционируется absolute (translate 50%) и вылезает за
           границы — его срезал бы overflow:hidden. Поэтому в развёрнутом сайдбаре
           рисуем счётчик обычной пилюлей в потоке; цвет = срочность. */}

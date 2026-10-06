@@ -19,7 +19,7 @@ import type {
 } from "../../../../api/appointments";
 import type { PaymentStatus } from "../../../../api/payments";
 import { isCancelledStatus } from "../slotAvailability";
-import { discountFactor, hasDiscount, paidShare, serviceLineTotal } from "../listFilters";
+import { discountFactor, hasDiscount, paidShare, payableTotal, serviceLineTotal } from "../listFilters";
 
 /** Строки приёма, попадающие в срез (для процедур — только медсестринские). */
 export type LinesOf = (appt: DjangoAppointment) => AppointmentServiceLine[];
@@ -31,9 +31,44 @@ export interface RegistryMoney {
   paid: number;
   /** Незакрытый остаток — только там, где деньги реально ждут (см. isDebtBearing). */
   debt: number;
+  /** Сколько по строкам среза приняли и вернули (полный возврат). */
+  refunded: number;
 }
 
-const ZERO_MONEY: RegistryMoney = { accrued: 0, paid: 0, debt: 0 };
+const ZERO_MONEY: RegistryMoney = { accrued: 0, paid: 0, debt: 0, refunded: 0 };
+
+/** Пустой счётчик денег — новый объект на каждый вызов (addMoney его мутирует). */
+const emptyMoney = (): RegistryMoney => ({ accrued: 0, paid: 0, debt: 0, refunded: 0 });
+
+/**
+ * Сколько по приёму вернули.
+ *
+ * ⚠ Список /appointments/ после возврата отдаёт `paidTotal` ДО возврата
+ * (проверено на test 05.10.2026: paidTotal 100 при refundedTotal 100), а своего
+ * `refundedTotal` в списке нет. Журнал подставляет его из ленты кассы
+ * (useRegistryRefunds); без кассы (нет права, ошибка) знаем только полный
+ * возврат — по статусу `refunded`, тогда вернули всё оплаченное.
+ */
+export function refundedAmount(appt: DjangoAppointment): number {
+  const known = parseFloat(appt.refundedTotal ?? "");
+  if (Number.isFinite(known) && known > 0) return known;
+  return appt.paymentStatus === "refunded" ? parseFloat(appt.paidTotal ?? "") || 0 : 0;
+}
+
+/** Был ли по приёму возврат — полный или частичный. */
+export const hasRefund = (appt: DjangoAppointment): boolean =>
+  appt.paymentStatus === "refunded" || refundedAmount(appt) > 0;
+
+/**
+ * Вернули всё, что приняли: от приёма в выручке ничего не осталось. Такие
+ * приёмы журнал без режима «С возвратами» не показывает; частичный возврат
+ * остаётся в ленте с выручкой за вычетом возврата.
+ */
+export function isFullyRefunded(appt: DjangoAppointment): boolean {
+  if (appt.paymentStatus === "refunded") return true;
+  const refunded = refundedAmount(appt);
+  return refunded > 0 && refunded >= (parseFloat(appt.paidTotal ?? "") || 0) - 0.005;
+}
 
 /**
  * Ждут ли по этому приёму денег.
@@ -60,24 +95,70 @@ export function isDebtBearing(appt: DjangoAppointment, now: dayjs.Dayjs = dayjs(
   return finishedAt.isValid() && finishedAt.isBefore(now);
 }
 
-/** Деньги по строкам среза одного приёма. */
-export function moneyOf(appt: DjangoAppointment, lines: AppointmentServiceLine[]): RegistryMoney {
-  if (isCancelledStatus(appt.status)) return ZERO_MONEY;
+/**
+ * Сумма товаров, проданных в приёме. Отменённые строки товара в деньги не идут.
+ * ⚠ Товары привязаны к приёму, а не к строке услуги, поэтому в срез процедур
+ * их не добавляем — иначе медсестре засчитывались бы товары врача.
+ */
+export function productsTotal(appt: DjangoAppointment): number {
+  let total = 0;
+  for (const line of appt.productLines ?? []) {
+    if (line.status === "canceled") continue;
+    const amount = parseFloat(String(line.lineTotal ?? ""));
+    if (Number.isFinite(amount) && amount > 0) total += amount;
+  }
+  return total;
+}
 
-  const lineSum = lines.reduce((sum, line) => sum + serviceLineTotal(line), 0);
+/**
+ * Деньги по строкам среза одного приёма.
+ *
+ * По умолчанию — только услуги: журнал отвечает «сколько принесли приёмы», а
+ * товар, проданный в приёме, — продажа склада (решение заказчика 05.10.2026).
+ * `withProducts` прибавляет товары по галочке «С товарами».
+ */
+export function moneyOf(
+  appt: DjangoAppointment,
+  lines: AppointmentServiceLine[],
+  withProducts = false,
+): RegistryMoney {
+  const cancelled = isCancelledStatus(appt.status);
+  const refundTotal = refundedAmount(appt);
+  const full = isFullyRefunded(appt);
+  if (cancelled && refundTotal <= 0) return ZERO_MONEY;
+
+  const lineSum =
+    lines.reduce((sum, line) => sum + serviceLineTotal(line), 0) +
+    (withProducts ? productsTotal(appt) : 0);
   if (lineSum <= 0) return ZERO_MONEY;
 
-  const accrued = lineSum * discountFactor(appt);
-  const paid = accrued * paidShare(appt);
-  const rest = accrued - paid;
+  const gross = lineSum * discountFactor(appt);
+  // Возврат разносим по строкам так же, как оплату, — долей от чека.
+  const payable = payableTotal(appt);
+  const refundShare = payable > 0 ? Math.min(1, refundTotal / payable) : 0;
+  const refunded = gross * refundShare;
 
-  return { accrued, paid, debt: isDebtBearing(appt) && rest > 0 ? rest : 0 };
+  // Полный возврат и возврат по отмене: деньги приняли и отдали — в выручку,
+  // начисления и долг не идут ни в каком режиме, видна только сумма возврата.
+  if (full || cancelled) return { ...ZERO_MONEY, refunded };
+
+  // Частичный возврат: выручка — за вычетом возврата, а долгом возврат не
+  // становится (остаток считаем от принятого, а не от оставшегося).
+  const paidGross = gross * paidShare(appt);
+  const rest = gross - paidGross;
+  return {
+    accrued: gross,
+    paid: Math.max(0, paidGross - refunded),
+    debt: isDebtBearing(appt) && rest > 0 ? rest : 0,
+    refunded,
+  };
 }
 
 function addMoney(target: RegistryMoney, add: RegistryMoney): void {
   target.accrued += add.accrued;
   target.paid += add.paid;
   target.debt += add.debt;
+  target.refunded += add.refunded;
 }
 
 // ── Сводка периода ───────────────────────────────────────────────────────────
@@ -93,24 +174,35 @@ export interface RegistrySummary extends RegistryMoney {
   discounted: number;
   /** Оплаченных полностью (paid + discounted). */
   closed: number;
+  /** Записей с возвратом. */
+  refunds: number;
 }
 
-export function summarize(items: DjangoAppointment[], linesOf: LinesOf): RegistrySummary {
+export function summarize(
+  items: DjangoAppointment[],
+  linesOf: LinesOf,
+  withProducts = false,
+): RegistrySummary {
   const total: RegistrySummary = {
-    accrued: 0,
-    paid: 0,
-    debt: 0,
-    visits: items.length,
+    ...emptyMoney(),
+    // Отменённые в счётчик приёмов не идут, даже когда видны (возврат по
+    // отмене в режиме «С возвратами»).
+    visits: 0,
     debtors: 0,
     averageCheck: 0,
     discounted: 0,
     closed: 0,
+    refunds: 0,
   };
 
   let paidVisits = 0;
   for (const appt of items) {
-    const money = moneyOf(appt, linesOf(appt));
+    const money = moneyOf(appt, linesOf(appt), withProducts);
     addMoney(total, money);
+    // Счётчик приёмов одинаков в обоих режимах возвратов: приём, по которому
+    // вернули всё, в нём не считается, даже когда виден в ленте.
+    if (!isCancelledStatus(appt.status) && !isFullyRefunded(appt)) total.visits += 1;
+    if (hasRefund(appt)) total.refunds += 1;
     if (money.debt > 0) total.debtors += 1;
     if (money.paid > 0) paidVisits += 1;
     // Скидку считаем по сумме на чеке, а не по статусу `discounted`: статус
@@ -151,48 +243,66 @@ const emptyBucket = (key: string, label: string, fullLabel: string, muted = fals
   muted,
 });
 
-function fill(buckets: Map<string, PulseBucket>, items: DjangoAppointment[], linesOf: LinesOf, keyOf: (at: dayjs.Dayjs) => string): void {
+function fill(
+  buckets: Map<string, PulseBucket>,
+  items: DjangoAppointment[],
+  linesOf: LinesOf,
+  keyOf: (at: dayjs.Dayjs) => string,
+  withProducts: boolean,
+): void {
   for (const appt of items) {
     const at = dayjs(appt.scheduledAt);
     if (!at.isValid()) continue;
     const bucket = buckets.get(keyOf(at));
     if (!bucket) continue;
-    const money = moneyOf(appt, linesOf(appt));
-    bucket.visits += 1;
+    const money = moneyOf(appt, linesOf(appt), withProducts);
+    if (!isCancelledStatus(appt.status) && !isFullyRefunded(appt)) bucket.visits += 1;
     bucket.paid += money.paid;
     bucket.debt += money.debt;
   }
 }
 
-/** Столбики по дням выбранного месяца — включая дни без записей. */
+/**
+ * Столбики по дням периода [from, to] — включая дни без записей. Месяц —
+ * частный случай; свой период длиннее двух месяцев рисуется по месяцам
+ * (pulseByMonth), иначе 300 столбиков не читаются.
+ */
 export function pulseByDay(
   items: DjangoAppointment[],
   linesOf: LinesOf,
-  monthStart: dayjs.Dayjs,
+  from: dayjs.Dayjs,
+  to: dayjs.Dayjs = from.endOf("month"),
+  withProducts = false,
 ): PulseBucket[] {
   const buckets = new Map<string, PulseBucket>();
-  for (let d = 1; d <= monthStart.daysInMonth(); d += 1) {
-    const date = monthStart.date(d);
+  const sameMonth = from.isSame(to, "month");
+  for (let date = from.startOf("day"); !date.isAfter(to, "day"); date = date.add(1, "day")) {
     const key = date.format("YYYY-MM-DD");
-    buckets.set(key, emptyBucket(key, String(d), date.format("D MMMM"), date.day() === 0));
+    // В пределах месяца подписываем числом, через границу месяца первый день
+    // каждого месяца — «1 сен», чтобы было видно, где он начался.
+    const label = sameMonth || date.date() !== 1 ? String(date.date()) : date.format("D MMM");
+    buckets.set(key, emptyBucket(key, label, date.format("D MMMM"), date.day() === 0));
   }
-  fill(buckets, items, linesOf, (at) => at.format("YYYY-MM-DD"));
+  fill(buckets, items, linesOf, (at) => at.format("YYYY-MM-DD"), withProducts);
   return Array.from(buckets.values());
 }
 
-/** Столбики по месяцам года — режим «весь год». */
+/** Столбики по месяцам [from, to] — режим «весь год» и длинный свой период. */
 export function pulseByMonth(
   items: DjangoAppointment[],
   linesOf: LinesOf,
-  year: number,
+  from: dayjs.Dayjs,
+  to: dayjs.Dayjs = from.endOf("year"),
+  withProducts = false,
 ): PulseBucket[] {
   const buckets = new Map<string, PulseBucket>();
-  for (let m = 0; m < 12; m += 1) {
-    const date = dayjs().year(year).month(m).date(1);
+  const sameYear = from.isSame(to, "year");
+  for (let date = from.startOf("month"); !date.isAfter(to, "month"); date = date.add(1, "month")) {
     const key = date.format("YYYY-MM");
-    buckets.set(key, emptyBucket(key, date.format("MMM"), date.format("MMMM YYYY")));
+    const label = sameYear ? date.format("MMM") : date.format("MMM YY");
+    buckets.set(key, emptyBucket(key, label, date.format("MMMM YYYY")));
   }
-  fill(buckets, items, linesOf, (at) => at.format("YYYY-MM"));
+  fill(buckets, items, linesOf, (at) => at.format("YYYY-MM"), withProducts);
   return Array.from(buckets.values());
 }
 
@@ -205,7 +315,11 @@ export interface DayGroup {
 }
 
 /** Записи по дням, новые сверху; внутри дня — по времени приёма. */
-export function groupByDay(items: DjangoAppointment[], linesOf: LinesOf): DayGroup[] {
+export function groupByDay(
+  items: DjangoAppointment[],
+  linesOf: LinesOf,
+  withProducts = false,
+): DayGroup[] {
   const map = new Map<string, DjangoAppointment[]>();
   for (const appt of items) {
     const iso = dayjs(appt.scheduledAt).format("YYYY-MM-DD");
@@ -218,8 +332,8 @@ export function groupByDay(items: DjangoAppointment[], linesOf: LinesOf): DayGro
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([iso, dayItems]) => {
       const sorted = [...dayItems].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
-      const money: RegistryMoney = { accrued: 0, paid: 0, debt: 0 };
-      for (const appt of sorted) addMoney(money, moneyOf(appt, linesOf(appt)));
+      const money = emptyMoney();
+      for (const appt of sorted) addMoney(money, moneyOf(appt, linesOf(appt), withProducts));
       return { iso, items: sorted, money };
     });
 }
@@ -298,7 +412,7 @@ export function groupByPatient(items: DjangoAppointment[], linesOf: LinesOf): Pa
         visits: 0,
         firstIso: iso,
         lastIso: iso,
-        money: { accrued: 0, paid: 0, debt: 0 },
+        money: emptyMoney(),
         courses: [],
       };
       groups.set(key, group);
@@ -319,7 +433,7 @@ export function groupByPatient(items: DjangoAppointment[], linesOf: LinesOf): Pa
           count: 0,
           firstIso: iso,
           lastIso: iso,
-          money: { accrued: 0, paid: 0, debt: 0 },
+          money: emptyMoney(),
           items: [],
         };
         group.courses.push(course);
@@ -383,8 +497,10 @@ export function sliceRegistry(items: DjangoAppointment[], linesOf: LinesOf): Reg
 
   for (const appt of items) {
     const lines = linesOf(appt);
-    const factor = isCancelledStatus(appt.status) ? 0 : discountFactor(appt);
-    const share = paidShare(appt);
+    // Разрезы — по выручке за вычетом возвратов, как плитки сводки.
+    const factor = isCancelledStatus(appt.status) || isFullyRefunded(appt) ? 0 : discountFactor(appt);
+    const payable = payableTotal(appt);
+    const share = Math.max(0, paidShare(appt) - (payable > 0 ? refundedAmount(appt) / payable : 0));
 
     for (const line of lines) {
       const lineSum = serviceLineTotal(line) * factor;
@@ -395,9 +511,7 @@ export function sliceRegistry(items: DjangoAppointment[], linesOf: LinesOf): Reg
           id: employee.id,
           name: employee.fullName,
           visits: 0,
-          accrued: 0,
-          paid: 0,
-          debt: 0,
+          ...emptyMoney(),
         };
         slice.visits += 1;
         slice.accrued += lineSum;

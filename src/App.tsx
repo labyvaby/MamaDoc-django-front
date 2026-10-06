@@ -104,7 +104,29 @@ const AnnouncementsSettingsPage = lazy(() => import("./pages/settings/Announceme
 const KnowledgePage = lazy(() => import("./pages/knowledge"));
 const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPage"));
 const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
+const EstateDashboardPage = lazy(() => import("./pages/estate-dashboard"));
+const RealtyTodayPage = lazy(() => import("./pages/estate-dashboard/TodayPage"));
+const RealtyFunnelPage = lazy(() => import("./pages/realty-sales/FunnelPage"));
+const RealtyLeadsPage = lazy(() => import("./pages/realty-sales/LeadsPage"));
+const RealtyCallsPage = lazy(() => import("./pages/realty-sales/CallsPage"));
+const RealtyShowsPage = lazy(() => import("./pages/realty-sales/ShowsPage"));
+const RealtyDealsPage = lazy(() => import("./pages/realty-sales/DealsPage"));
+const RealtyCatalogPage = lazy(() => import("./pages/realty-sales/CatalogPage"));
+const RealtyMortgagePage = lazy(() => import("./pages/realty-sales/MortgagePage"));
+const RealtyPartnersPage = lazy(() => import("./pages/realty-sales/PartnersPage"));
+const RealtyMarketingPage = lazy(() => import("./pages/realty-sales/MarketingPage"));
+const RealtyMotivationPage = lazy(() => import("./pages/realty-sales/MotivationPage"));
 const BillingPage = lazy(() => import("./pages/billing"));
+const CashbankPage = lazy(() => import("./pages/realty-finance/CashbankPage"));
+const ConstructionSchedulePage = lazy(() => import("./pages/construction/SchedulePage"));
+const ConstructionContractorsPage = lazy(() => import("./pages/construction/ContractorsPage"));
+const ConstructionQualityPage = lazy(() => import("./pages/construction/QualityPage"));
+const SupplyEstimatesPage = lazy(() => import("./pages/construction/EstimatesPage"));
+const SupplyProcurementPage = lazy(() => import("./pages/construction/ProcurementPage"));
+const SupplyWarehousePage = lazy(() => import("./pages/construction/WarehousePage"));
+const PaycalPage = lazy(() => import("./pages/realty-finance/PaycalPage"));
+const BudgetPage = lazy(() => import("./pages/realty-finance/BudgetPage"));
+const ReceivablesPage = lazy(() => import("./pages/realty-finance/ReceivablesPage"));
 const EdoRegistryPage = lazy(() => import("./pages/edo/EdoRegistryPage"));
 const EdoTemplatesPage = lazy(() => import("./pages/edo/TemplatesPage"));
 const SalesDocumentsPage = lazy(() => import("./pages/edo/SalesDocumentsPage"));
@@ -1280,6 +1302,65 @@ function App() {
                                 </RequireModule>
                               }
                             />
+                            {/* Рабочий стол застройщика (AIVIO): раскладка и панели — от бэка под роль. */}
+                            <Route
+                              path="realestate/dashboard"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.estateDashboard}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <EstateDashboardPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            {/* Продажи застройщика (AIVIO) на /api/v2/realty/: воронка и лиды (не MamaDoc /deals и /patients), звонки, показы, брони, каталог, ипотека, партнёры, маркетинг. */}
+                            {(
+                              [
+                                ["realestate/funnel", RealtyFunnelPage],
+                                ["realestate/leads", RealtyLeadsPage],
+                                ["realestate/calls", RealtyCallsPage],
+                                ["realestate/shows", RealtyShowsPage],
+                                ["realestate/deals", RealtyDealsPage],
+                                ["realestate/catalog", RealtyCatalogPage],
+                                ["realestate/mortgage", RealtyMortgagePage],
+                                ["realestate/partners", RealtyPartnersPage],
+                                ["realestate/marketing", RealtyMarketingPage],
+                              ] as const
+                            ).map(([path, Page]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.realtySales}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
+                            {/* «Планы и мотивация» застройщика (AIVIO, группа «Персонал»): /api/v2/salary/motivation/. */}
+                            <Route
+                              path="realestate/motivation"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.realtyMotivation}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <RealtyMotivationPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
+                            {/* «Мой день» застройщика (AIVIO): задачи CRM, не внутренние заявки MamaDoc. */}
+                            <Route
+                              path="realestate/today"
+                              element={
+                                <RequirePermission permission={PAGE_PERMISSIONS.realtyToday}>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <RealtyTodayPage />
+                                  </Suspense>
+                                </RequirePermission>
+                              }
+                            />
                             {/* Квартиры и шахматка застройщика — вертикаль realestate, модуль бэка realty. */}
                             <Route
                               path="realestate/chessboard"
@@ -1302,6 +1383,67 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {/* Стройка застройщика (AIVIO) на /api/v2/construction/: графики, подрядчики и акты, стройконтроль. */}
+                            {(
+                              [
+                                ["construction/schedule", ConstructionSchedulePage],
+                                ["construction/contractors", ConstructionContractorsPage],
+                                ["construction/quality", ConstructionQualityPage],
+                              ] as const
+                            ).map(([path, Page]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.construction}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
+                            {/* Сметы, снабжение и склад застройщика (AIVIO, группа «Стройка») на /api/v2/supply/. */}
+                            {(
+                              [
+                                ["supply/estimates", SupplyEstimatesPage],
+                                ["supply/procurement", SupplyProcurementPage],
+                                ["supply/warehouse", SupplyWarehousePage],
+                              ] as const
+                            ).map(([path, Page]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.supply}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
+                            {/* Финансы застройщика (AIVIO) на /api/v2/treasury/: касса и банк, платёжный календарь, бюджеты, долги. */}
+                            {(
+                              [
+                                ["finance/cashbank", CashbankPage],
+                                ["finance/paycal", PaycalPage],
+                                ["finance/budget", BudgetPage],
+                                ["finance/receivables", ReceivablesPage],
+                              ] as const
+                            ).map(([path, Page]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.realtyFinance}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
                             {/* Документы застройщика (AIVIO): ЭДО, реестр договоров, архив — один экран-реестр со срезом.
                                 Префикс /edo, не /docs: /docs/ на сервере уходит в Django (swagger), F5 давал 404. */}
                             {(["edo", "contracts", "archive"] as const).map((view) => (
@@ -1551,7 +1693,9 @@ function App() {
                             return `${resourceLabel} | ${baseTitle}`;
                           }
                         }
-                        return baseTitle;
+                        // Заголовок экрана пишет TitleProvider (usePageTitle); Refine срабатывает на каждую
+                        // смену адреса — и `?call=`/`?lead=` затирали его до «Aximo». Без ресурса не трогаем.
+                        return document.title || baseTitle;
                       }}
                     />
                   </Refine>

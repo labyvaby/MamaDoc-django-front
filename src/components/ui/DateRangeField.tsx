@@ -55,6 +55,11 @@ export interface DateRangeFieldProps {
    * календарь открывался бы на много лет назад.
    */
   referenceDate?: Dayjs;
+  /**
+   * Текст на кнопке вместо подписи пресета/диапазона — когда период у
+   * владельца поля свой («Август 2026», «2026 · весь год»).
+   */
+  label?: string;
 }
 
 // ── Default presets ──────────────────────────────────────────────────────────────
@@ -164,6 +169,7 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
   disabled = false,
   dense = false,
   referenceDate,
+  label: labelOverride,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -172,7 +178,9 @@ export const DateRangeField: React.FC<DateRangeFieldProps> = ({
 
   const open = Boolean(anchorEl);
   const activePreset = matchPreset(value, presets);
-  const label = activePreset
+  const label = labelOverride
+    ? labelOverride
+    : activePreset
     ? presets.find((p) => p.key === activePreset)!.label
     : formatRange(value.from, value.to);
 

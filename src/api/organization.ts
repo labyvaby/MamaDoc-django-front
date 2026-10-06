@@ -56,6 +56,12 @@ export interface DjangoOrganization {
   /** Реквизиты для шапки формы №2 ОПиУ; старый бэкенд их не отдаёт —
    *  нормализуется в пустые строки. */
   requisites: OrganizationRequisites;
+  /** Онлайн-оплата через Bakai OpenBanking включена. Без сохранённого токена
+   *  бэк не даст включить (400, поле `bakaiOpenbankingToken`). */
+  onlinePaymentEnabled: boolean;
+  /** Маска сохранённого токена Bakai (сам токен write-only и не приходит);
+   *  null — токен не сохранён. */
+  bakaiTokenMasked: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -71,6 +77,9 @@ export interface UpdateOrganizationPayload {
   vertical?: Vertical;
   /** Только изменённые поля реквизитов; "" очищает поле. */
   requisites?: Partial<OrganizationRequisites>;
+  onlinePaymentEnabled?: boolean;
+  /** Write-only: в ответе не возвращается, вместо него — `bakaiTokenMasked`. */
+  bakaiOpenbankingToken?: string;
 }
 
 // ── Branch shape (mirrors BranchPayload rename='camel') ──────────────────────
@@ -131,9 +140,24 @@ function normalizeBranch(raw: DjangoBranchWire): DjangoBranch {
  *  отсутствующие поля к дефолтам (null / "forbid" = текущее поведение). */
 type DjangoOrganizationWire = Omit<
   DjangoOrganization,
-  "logoUrl" | "appointmentOverlapMode" | "themeConfig" | "vertical" | "requisites"
+  | "logoUrl"
+  | "appointmentOverlapMode"
+  | "themeConfig"
+  | "vertical"
+  | "onlinePaymentEnabled"
+  | "bakaiTokenMasked"
+  | "requisites"
 > &
-  Partial<Pick<DjangoOrganization, "logoUrl" | "appointmentOverlapMode" | "themeConfig">> & {
+  Partial<
+    Pick<
+      DjangoOrganization,
+      | "logoUrl"
+      | "appointmentOverlapMode"
+      | "themeConfig"
+      | "onlinePaymentEnabled"
+      | "bakaiTokenMasked"
+    >
+  > & {
     vertical?: string | null;
     requisites?: Partial<OrganizationRequisites> | null;
   };
@@ -146,6 +170,8 @@ function normalizeOrganization(raw: DjangoOrganizationWire): DjangoOrganization 
     themeConfig: raw.themeConfig ?? null,
     vertical: isVertical(raw.vertical) ? raw.vertical : DEFAULT_VERTICAL,
     requisites: { ...EMPTY_REQUISITES, ...(raw.requisites ?? {}) },
+    onlinePaymentEnabled: raw.onlinePaymentEnabled ?? false,
+    bakaiTokenMasked: raw.bakaiTokenMasked || null,
   };
 }
 
@@ -185,6 +211,44 @@ export async function uploadOrganizationLogo(
     }),
   );
   return normalizeOrganization(wire);
+}
+
+// ── Онлайн-оплата Bakai: URL вебхуков ────────────────────────────────────────
+
+/**
+ * URL вебхуков, которые админ вставляет в кабинете Bakai. Собирает их бэк —
+ * фронт только показывает (гайд `payment-webhooks-frontend-guide.md`).
+ */
+export interface PaymentWebhooks {
+  provider: string;
+  onlinePaymentEnabled: boolean;
+  bakaiTokenSet: boolean;
+  /** Вебхук для счетов организации (pay-link, биллинг). */
+  billingUrl: string;
+  /** Вебхук для предоплаты онлайн-брони; содержит секрет этой организации. */
+  bookingsUrl: string;
+}
+
+/**
+ * GET /organization/<id>/payment-webhooks/ — URL вебхуков. Секрет для
+ * `bookingsUrl` бэк выпускает при первом запросе, повторный GET отдаёт тот же.
+ * Право: organization.update (403), чужая организация — 404.
+ */
+export function getPaymentWebhooks(id: number): Promise<PaymentWebhooks> {
+  return apiRequest<PaymentWebhooks>(`/organization/${id}/payment-webhooks/`, {
+    headers: { "X-Organization-Id": String(id) },
+  });
+}
+
+/**
+ * POST /organization/<id>/payment-webhooks/ — перевыпуск секрета `bookingsUrl`.
+ * Старый URL перестаёт работать сразу: новый нужно вставить в кабинете Bakai.
+ */
+export function rotatePaymentWebhooks(id: number): Promise<PaymentWebhooks> {
+  return apiRequest<PaymentWebhooks>(`/organization/${id}/payment-webhooks/`, {
+    method: "POST",
+    headers: { "X-Organization-Id": String(id) },
+  });
 }
 
 /** DELETE /organization/<id>/logo/ — удаление логотипа. Возвращает 204. */

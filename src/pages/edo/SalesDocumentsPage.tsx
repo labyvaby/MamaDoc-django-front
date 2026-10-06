@@ -4,7 +4,7 @@ import { alpha, useTheme, type Theme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useSnackbar } from "notistack";
 import dayjs, { type Dayjs } from "dayjs";
 import AttachFileOutlined from "@mui/icons-material/AttachFileOutlined";
@@ -71,7 +71,12 @@ export default function SalesDocumentsPage() {
   const canEdo = can("edo.view");
   const enabled = scope.orgReady !== false;
 
-  const [chip, setChip] = React.useState<SalesDocChip>("all");
+  // `?chip=payments` — переход из «Брони и оплаты» сразу на квитанции.
+  const [searchParams] = useSearchParams();
+  const [chip, setChip] = React.useState<SalesDocChip>(() => {
+    const initial = searchParams.get("chip");
+    return SALES_DOC_CHIPS.includes(initial as SalesDocChip) ? (initial as SalesDocChip) : "all";
+  });
   const [search, setSearch] = React.useState("");
   const [from, setFrom] = React.useState<Dayjs | null>(null);
   const [to, setTo] = React.useState<Dayjs | null>(null);

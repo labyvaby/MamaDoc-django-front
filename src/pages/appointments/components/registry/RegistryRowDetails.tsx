@@ -21,10 +21,10 @@ import type { DjangoAppointment, AppointmentServiceLine } from "../../../../api/
 import { formatQuantity } from "../../../../utility/format";
 import { formatPhoneDisplay } from "../../../../utility/phone";
 import { useT } from "../../../../i18n/VerticalProvider";
-import { serviceLineTotal } from "../listFilters";
+import { linePriceChanges, serviceLineTotal, type LinePriceChange } from "../listFilters";
 import { isAppointmentClosedForPayment } from "../paymentCancelGuard";
-import { formatSom } from "./registryFormat";
-import { moneyOf } from "./registryStats";
+import { formatAmount, formatSom } from "./registryFormat";
+import { isFullyRefunded, moneyOf, productsTotal, refundedAmount } from "./registryStats";
 import { hasAcceptedPayment } from "../../../../components/appointments/appointmentInvoice";
 
 export interface RegistryRowActions {
@@ -41,7 +41,24 @@ interface Props extends RegistryRowActions {
   canUpdate: boolean;
   canViewFinance: boolean;
   canManageFinance: boolean;
+  /** Галочка «С товарами»: без неё сумма журнала — только услуги. */
+  withProducts?: boolean;
 }
+
+/** «было 1 200 → 1 500»: правка цены строки относительно цены до первой правки. */
+const PriceChangeNote: React.FC<{ change: LinePriceChange | undefined }> = ({ change }) => {
+  const { t } = useT("appointments");
+  if (!change) return null;
+  const raised = change.after > change.before;
+  return (
+    <Typography variant="caption" display="block" color={raised ? "success.main" : "error.main"}>
+      {t(raised ? "journal.details.priceRaised" : "journal.details.priceLowered", {
+        before: formatAmount(change.before),
+        after: formatAmount(change.after),
+      })}
+    </Typography>
+  );
+};
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <Paper elevation={0} variant="outlined" sx={{ p: 1.5, borderRadius: "10px", alignSelf: "start" }}>
@@ -88,6 +105,7 @@ export const RegistryRowDetails: React.FC<Props> = ({
   canUpdate,
   canViewFinance,
   canManageFinance,
+  withProducts = false,
   onPay,
   onEdit,
   onConclusion,
@@ -96,7 +114,10 @@ export const RegistryRowDetails: React.FC<Props> = ({
 }) => {
   const { t } = useT("appointments");
 
-  const money = moneyOf(appt, lines);
+  const money = moneyOf(appt, lines, withProducts);
+  const goods = productsTotal(appt);
+  const refundTotal = refundedAmount(appt);
+  const priceChanges = linePriceChanges(appt);
   const charged = parseFloat(appt.totalAmount ?? "") || 0;
   const discount = parseFloat(appt.discountAmount ?? "") || 0;
   const paid = parseFloat(appt.paidTotal ?? "") || 0;
@@ -149,9 +170,12 @@ export const RegistryRowDetails: React.FC<Props> = ({
                 </Typography>
               </Box>
               {canViewFinance && (
-                <Typography variant="body2" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                  {formatSom(serviceLineTotal(line))}
-                </Typography>
+                <Box sx={{ textAlign: "right" }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                    {formatSom(serviceLineTotal(line))}
+                  </Typography>
+                  <PriceChangeNote change={priceChanges.get(line.id)} />
+                </Box>
               )}
             </Stack>
           ))}
@@ -170,6 +194,15 @@ export const RegistryRowDetails: React.FC<Props> = ({
                   <Typography variant="caption" color="text.disabled">
                     ×{formatQuantity(product.quantity)}
                   </Typography>
+                  {canViewFinance && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ ml: 1.5, fontVariantNumeric: "tabular-nums" }}
+                    >
+                      {formatSom(parseFloat(String(product.lineTotal ?? "")) || 0)}
+                    </Typography>
+                  )}
                 </Stack>
               ))}
             </>
@@ -230,13 +263,31 @@ export const RegistryRowDetails: React.FC<Props> = ({
               <MoneyRow label={t("journal.details.discount")} value={`−${formatSom(discount)}`} />
             )}
             <MoneyRow label={t("journal.details.paid")} value={formatSom(paid)} />
+            {refundTotal > 0 && (
+              <MoneyRow label={t("journal.details.refunded")} value={`−${formatSom(refundTotal)}`} />
+            )}
             <Divider sx={{ my: 0.5 }} />
+            {/* После возврата итог — сколько у клиники осталось, а не сумма
+                чека: «Итого 500» при вернувшихся 500 читалось как выручка. */}
             <MoneyRow
-              label={rest > 0 ? t("journal.details.rest") : t("journal.details.total")}
-              value={formatSom(rest > 0 ? rest : payable)}
+              label={
+                rest > 0
+                  ? t("journal.details.rest")
+                  : refundTotal > 0
+                  ? t("journal.details.netAfterRefund")
+                  : t("journal.details.total")
+              }
+              value={formatSom(rest > 0 ? rest : refundTotal > 0 ? Math.max(0, paid - refundTotal) : payable)}
               strong
               accent={rest > 0 ? "warning.main" : undefined}
             />
+            {/* Чек включает проданные товары, а журнал по умолчанию считает
+                только услуги — подписываем, откуда расхождение с суммой строки. */}
+            {goods > 0 && !withProducts && (
+              <Typography variant="caption" color="text.disabled" display="block" sx={{ mt: 0.5 }}>
+                {t("journal.details.goodsExcluded", { amount: formatSom(goods) })}
+              </Typography>
+            )}
             {money.accrued > 0 && lines.length < appt.services.length && (
               <Typography variant="caption" color="text.disabled" display="block" sx={{ mt: 0.5 }}>
                 {t("journal.details.sliceShare", { amount: formatSom(money.accrued) })}
@@ -280,8 +331,9 @@ export const RegistryRowDetails: React.FC<Props> = ({
                 {t("journal.actions.edit")}
               </Button>
             )}
-            {/* Чек — по факту принятых денег: до оплаты печатать нечего. */}
-            {canViewFinance && hasAcceptedPayment(appt) && (
+            {/* Чек — по факту принятых денег: до оплаты печатать нечего, а
+                после полного возврата чек на «оплачено» вводил бы в заблуждение. */}
+            {canViewFinance && hasAcceptedPayment(appt) && !isFullyRefunded(appt) && (
               <Button
                 variant="outlined"
                 size="small"

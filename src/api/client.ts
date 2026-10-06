@@ -538,6 +538,41 @@ export async function apiRequestWithHeaders<T>(
 }
 
 
+/**
+ * Запрос, ответ которого читают потоком (SSE): возвращает сам `Response`,
+ * тело не трогает. Ошибки до старта потока бэк отдаёт обычным JSON с
+ * конвертом — их разбираем так же, как `apiRequest` (401/403/429 → те же
+ * глобальные события, `ApiError` с кодом).
+ */
+export async function apiStream(path: string, options: RequestOptions = {}): Promise<Response> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      credentials: "include",
+      ...options,
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...options.headers },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    if (import.meta.env.DEV) console.error("[api] network error:", err);
+    throw new ApiError(NETWORK_ERROR_MESSAGE, 0, null);
+  }
+  if (response.ok) return response;
+
+  const payload = await readJsonBody(response);
+  if (response.status === 401) {
+    const ended = accessEndedMessage(response.status, payload);
+    if (ended) rememberAccessEnded(ended);
+    window.dispatchEvent(new Event("mamadoc:api-unauthorized"));
+  }
+  if (response.status === 403 && parseErrorEnvelope(payload)?.code !== "MODULE_DISABLED") {
+    window.dispatchEvent(new Event("mamadoc:api-forbidden"));
+  }
+  if (response.status === 429) notifyRateLimited();
+  throw new ApiError(extractErrorMessage(payload, response.status), response.status, payload);
+}
+
 /** true для отменённых запросов (AbortController) — такие ошибки не показываем. */
 export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";

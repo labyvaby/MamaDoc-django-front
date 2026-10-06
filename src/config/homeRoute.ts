@@ -39,8 +39,10 @@ export function resolveHomeRoute({
     return "/pos";
   }
 
-  // Застройщик работает в шахматке: у суперадмина и широких ролей есть и
-  // клиничная Регистратура, но застройщику она ни к чему.
+  // Застройщик начинает с рабочего стола (как макет AIVIO), без права на него —
+  // с шахматки: у суперадмина и широких ролей есть и клиничная Регистратура,
+  // но застройщику она ни к чему.
+  if (vertical === "realestate" && can(PAGE_PERMISSIONS.estateDashboard)) return "/realestate/dashboard";
   if (vertical === "realestate" && canOpenModule("realty")) return "/realestate/chessboard";
 
   if (role === "doctor" && can(PAGE_PERMISSIONS.doctorRoom)) return "/doctor";

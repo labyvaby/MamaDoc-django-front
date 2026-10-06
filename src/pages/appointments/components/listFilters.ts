@@ -16,11 +16,7 @@ import type {
 import { APPOINTMENT_CANCEL_REASONS, isAppointmentCancelReason } from "../../../api/appointments";
 import type { PaymentStatus } from "../../../api/payments";
 import type { StatusCode } from "../../../config/appointmentStatuses";
-import {
-  isCancelledStatus,
-  isSlotCovered,
-  type BusyInterval,
-} from "./slotAvailability";
+import { isCancelledStatus, type BusyInterval } from "./slotAvailability";
 
 /**
  * Статусы визита, по которым можно отобрать день. Порядок — ход визита, а не
@@ -116,6 +112,21 @@ export function hasDiscount(appt: DjangoAppointment): boolean {
  * значит и вклад в чек) восстановить не из чего.
  */
 export function priceOverrideDelta(appt: DjangoAppointment): number {
+  return linesPriceDelta(appt, appt.services);
+}
+
+/** Цена единицы строки до первой правки и после последней. */
+export interface LinePriceChange {
+  before: number;
+  after: number;
+}
+
+/**
+ * Правки цены по строкам приёма: id строки → цена до первой правки и после
+ * последней (логика — см. priceOverrideDelta). Строки, у которых цену подняли
+ * и вернули назад, в карту не попадают: для журнала это не правка.
+ */
+export function linePriceChanges(appt: DjangoAppointment): Map<number, LinePriceChange> {
   const byLine = new Map<number, AppointmentPriceOverride[]>();
   for (const override of appt.priceOverrides ?? []) {
     if (override.serviceLineId == null) continue;
@@ -124,17 +135,30 @@ export function priceOverrideDelta(appt: DjangoAppointment): number {
     else byLine.set(override.serviceLineId, [override]);
   }
 
-  let delta = 0;
+  const result = new Map<number, LinePriceChange>();
   for (const [lineId, list] of byLine) {
-    const line = appt.services.find((sl) => sl.id === lineId);
-    if (!line) continue;
-
+    if (!appt.services.some((sl) => sl.id === lineId)) continue;
     const sorted = [...list].sort((a, b) => Date.parse(a.changedAt) - Date.parse(b.changedAt));
     const before = Number(sorted[0].oldUnitPrice);
     const after = Number(sorted[sorted.length - 1].newUnitPrice);
-    if (!Number.isFinite(before) || !Number.isFinite(after)) continue;
+    if (!Number.isFinite(before) || !Number.isFinite(after) || before === after) continue;
+    result.set(lineId, { before, after });
+  }
+  return result;
+}
 
-    delta += (after - before) * (Number(line.quantity) || 1);
+/**
+ * На сколько правки цены изменили сумму выбранных строк (> 0 — дороже прайса).
+ * В процедурах в срез входят только строки медсестры, и правка цены врача
+ * не должна помечать процедуру как «повышенную».
+ */
+export function linesPriceDelta(appt: DjangoAppointment, lines: AppointmentServiceLine[]): number {
+  const changes = linePriceChanges(appt);
+  if (changes.size === 0) return 0;
+  let delta = 0;
+  for (const line of lines) {
+    const change = changes.get(line.id);
+    if (change) delta += (change.after - change.before) * (Number(line.quantity) || 1);
   }
   return delta;
 }
@@ -429,6 +453,14 @@ export function discountFactor(appt: DjangoAppointment): number {
   return factor > 0 ? (factor < 1 ? factor : 1) : 0;
 }
 
+/** Сумма чека к оплате: со скидкой, с товарами и платными расходниками. */
+export function payableTotal(appt: DjangoAppointment): number {
+  return (
+    parseFloat(appt.payableAmount ?? "") ||
+    (parseFloat(appt.totalAmount ?? "") || 0) - (parseFloat(appt.discountAmount ?? "") || 0)
+  );
+}
+
 /**
  * Какая доля чека приёма уже закрыта деньгами: 0 — не платили, 1 — закрыт.
  *
@@ -438,9 +470,7 @@ export function discountFactor(appt: DjangoAppointment): number {
  * из данных не следует, и точный ответ потребовал бы поля от бэка.
  */
 export function paidShare(appt: DjangoAppointment): number {
-  const payable =
-    parseFloat(appt.payableAmount ?? "") ||
-    (parseFloat(appt.totalAmount ?? "") || 0) - (parseFloat(appt.discountAmount ?? "") || 0);
+  const payable = payableTotal(appt);
   const paid = parseFloat(appt.paidTotal ?? "") || 0;
 
   if (payable > 0) {
@@ -471,6 +501,11 @@ export function employeeMoneyTotals(
 
   for (const appt of appointments) {
     if (isCancelledStatus(appt.status)) continue; // отмена и неявка (см. slotAvailability)
+    // Полный возврат: деньги отдали. ⚠ `paidTotal` в списке — сумма ДО
+    // возврата (прод 06.10.2026, приём 20322), без этой проверки возврат
+    // числился в «оплачено» у врача. Частичный возврат по списку не виден —
+    // тикет `docs/backend_ticket_appointments_list_refunds.md`.
+    if (appt.paymentStatus === "refunded") continue;
 
     const lineSum = appt.services
       .filter((sl) => (sl.employee?.id ?? null) === employeeId)

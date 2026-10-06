@@ -130,6 +130,62 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.KNOWLEDGE_VIEW],
   },
 
+  // Рабочий стол застройщика (AIVIO)
+  {
+    path: '/realestate/dashboard',
+    requiredPermissions: [PERMISSIONS.ESTATE_DASHBOARD_VIEW],
+  },
+
+  // Продажи застройщика (realty): воронка, лиды, звонки, показы, брони, каталог, ипотека, партнёры, маркетинг
+  {
+    path: '/realestate/funnel',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/leads',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/calls',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/shows',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/deals',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/catalog',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/mortgage',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/partners',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/marketing',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+
+  // «Планы и мотивация» застройщика (группа «Персонал»): salary
+  {
+    path: '/realestate/motivation',
+    requiredPermissions: [PERMISSIONS.SALARY_VIEW],
+  },
+
+  // «Мой день» застройщика: задачи CRM (realty)
+  {
+    path: '/realestate/today',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+
   // Квартиры и шахматка застройщика (модуль бэка realty)
   {
     path: '/realestate/chessboard',
@@ -140,6 +196,52 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
   {
     path: '/finance/billing',
     requiredPermissions: [PERMISSIONS.TREASURY_VIEW, PERMISSIONS.REALESTATE_VIEW],
+  },
+
+  // Стройка застройщика: графики, подрядчики и акты, стройконтроль (construction)
+  {
+    path: '/construction/schedule',
+    requiredPermissions: [PERMISSIONS.CONSTRUCTION_VIEW],
+  },
+  {
+    path: '/construction/contractors',
+    requiredPermissions: [PERMISSIONS.CONSTRUCTION_VIEW],
+  },
+  {
+    path: '/construction/quality',
+    requiredPermissions: [PERMISSIONS.CONSTRUCTION_VIEW],
+  },
+
+  // Сметы, снабжение, склад застройщика (supply)
+  {
+    path: '/supply/estimates',
+    requiredPermissions: [PERMISSIONS.SUPPLY_VIEW],
+  },
+  {
+    path: '/supply/procurement',
+    requiredPermissions: [PERMISSIONS.SUPPLY_VIEW],
+  },
+  {
+    path: '/supply/warehouse',
+    requiredPermissions: [PERMISSIONS.SUPPLY_VIEW],
+  },
+
+  // Финансы застройщика: касса и банк, платёжный календарь, бюджеты, долги (treasury)
+  {
+    path: '/finance/cashbank',
+    requiredPermissions: [PERMISSIONS.TREASURY_VIEW],
+  },
+  {
+    path: '/finance/paycal',
+    requiredPermissions: [PERMISSIONS.TREASURY_VIEW],
+  },
+  {
+    path: '/finance/budget',
+    requiredPermissions: [PERMISSIONS.TREASURY_VIEW],
+  },
+  {
+    path: '/finance/receivables',
+    requiredPermissions: [PERMISSIONS.TREASURY_VIEW],
   },
 
   // Документы застройщика: ЭДО, договоры, шаблоны, архив.

@@ -35,6 +35,7 @@ import ChevronLeftOutlined from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import SearchOffOutlined from "@mui/icons-material/SearchOffOutlined";
+import CheckOutlined from "@mui/icons-material/CheckOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
@@ -47,7 +48,14 @@ import { usePageTitle } from "../../../../hooks/usePageTitle";
 import { useCanChecker } from "../../../../hooks/useCan";
 import { useKeyboardViewportHeight } from "../../../../hooks/useKeyboardViewportHeight";
 import { useSheetBackClose } from "../../../../hooks/useSheetBackClose";
-import { ListEmptyState, ListLoadingSkeleton, SegmentedTabs } from "../../../../components/ui";
+import {
+  DateRangeField,
+  ListEmptyState,
+  ListLoadingSkeleton,
+  SegmentedTabs,
+  type DateRange,
+  type DateRangePreset,
+} from "../../../../components/ui";
 import { subtleBg } from "../../../../theme";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { getStatusLabel } from "../../../../config/appointmentStatuses";
@@ -64,8 +72,9 @@ import RegistrySummaryBar from "./RegistrySummaryBar";
 import RegistryFeed from "./RegistryFeed";
 import RegistryTable from "./RegistryTable";
 import RegistryInsights from "./RegistryInsights";
-import { applySearch, type RegistryToken } from "./registryFilters";
+import { applySearch, narrowLinesOf, type RegistryToken } from "./registryFilters";
 import { useRegistryFilters } from "./useRegistryFilters";
+import { useRegistryRefunds } from "./useRegistryRefunds";
 import {
   MONEY_FLAG_LABEL_KEY,
   MONEY_FLAG_OPTIONS,
@@ -73,12 +82,16 @@ import {
   matchesMoneyFlags,
 } from "../listFilters";
 import { exportRegistry } from "./buildRegistryXlsx";
+import { isCancelledStatus } from "../slotAvailability";
 import RegistryCourseFeed from "./RegistryCourseFeed";
 import type { SummaryTile } from "./RegistrySummaryBar";
 import {
   consumedUnits,
   groupByDay,
   groupByPatient,
+  hasRefund,
+  isFullyRefunded,
+  moneyOf,
   pulseByDay,
   pulseByMonth,
   sliceRegistry,
@@ -111,6 +124,14 @@ interface Props {
   employeeId?: number | "me";
   /** Подписи и четвёртая карточка разрезов зависят от реестра. */
   variant: "appointments" | "procedures";
+}
+
+/** «1 – 20 авг 2026», «28 июл – 10 авг 2026», «1 дек 2025 – 10 янв 2026». */
+function formatRangeLabel(from: dayjs.Dayjs, to: dayjs.Dayjs): string {
+  if (from.isSame(to, "day")) return from.format("D MMM YYYY");
+  if (from.isSame(to, "month")) return `${from.format("D")} – ${to.format("D MMM YYYY")}`;
+  if (from.isSame(to, "year")) return `${from.format("D MMM")} – ${to.format("D MMM YYYY")}`;
+  return `${from.format("D MMM YYYY")} – ${to.format("D MMM YYYY")}`;
 }
 
 const defaultGetLines: LinesOf = (appt) => appt.services.filter((line) => line.employee);
@@ -147,6 +168,12 @@ export const RegistryJournalView: React.FC<Props> = ({
     setPaymentFilter,
     moneyFlags,
     toggleMoneyFlag,
+    showCancelled,
+    setShowCancelled,
+    withProducts,
+    setWithProducts,
+    withRefunds,
+    setWithRefunds,
   } = useRegistryFilters();
   const [view, setView] = React.useState<RegistryViewMode>("feed");
   // Раскладка ленты: по дням (общая) или по пациентам и курсам (процедуры).
@@ -172,37 +199,152 @@ export const RegistryJournalView: React.FC<Props> = ({
     () => dayjs().year(period.year).month(period.month ?? 0).date(1).startOf("day"),
     [period],
   );
-  const dateFrom = period.month != null
-    ? monthStart.startOf("month").format("YYYY-MM-DD")
-    : `${period.year}-01-01`;
-  const dateTo = period.month != null
-    ? monthStart.endOf("month").format("YYYY-MM-DD")
-    : `${period.year}-12-31`;
+  /** Быстрые периоды в календаре; по умолчанию журнал открывается на месяце. */
+  const periodPresets = React.useMemo<DateRangePreset[]>(
+    () => [
+      { key: "month", label: t("journal.period.presets.month"), range: () => [dayjs().startOf("month"), dayjs().endOf("month")] },
+      {
+        key: "prevMonth",
+        label: t("journal.period.presets.prevMonth"),
+        range: () => [dayjs().subtract(1, "month").startOf("month"), dayjs().subtract(1, "month").endOf("month")],
+      },
+      { key: "7d", label: t("journal.period.presets.last7"), range: () => [dayjs().subtract(6, "day"), dayjs()] },
+      { key: "30d", label: t("journal.period.presets.last30"), range: () => [dayjs().subtract(29, "day"), dayjs()] },
+      {
+        key: "quarter",
+        label: t("journal.period.presets.last3Months"),
+        range: () => [dayjs().subtract(2, "month").startOf("month"), dayjs().endOf("month")],
+      },
+      { key: "ytd", label: t("journal.period.presets.yearToDate"), range: () => [dayjs().startOf("year"), dayjs()] },
+    ],
+    [t],
+  );
+
+  // Границы периода: месяц, весь год или свой диапазон (по умолчанию — месяц).
+  const { periodFrom, periodTo } = React.useMemo(() => {
+    if (period.range) {
+      return { periodFrom: dayjs(period.range.from), periodTo: dayjs(period.range.to).endOf("day") };
+    }
+    if (period.month != null) {
+      return { periodFrom: monthStart, periodTo: monthStart.endOf("month") };
+    }
+    const yearStart = dayjs(`${period.year}-01-01`);
+    return { periodFrom: yearStart, periodTo: yearStart.endOf("year") };
+  }, [period, monthStart]);
+  const dateFrom = periodFrom.format("YYYY-MM-DD");
+  const dateTo = periodTo.format("YYYY-MM-DD");
+  /**
+   * Пульс по дням — в месяце и в своём периоде до двух месяцев; длиннее —
+   * по месяцам, иначе столбики сливаются в штрихкод.
+   */
+  const dayBuckets = period.range
+    ? periodTo.diff(periodFrom, "day") < 62
+    : period.month != null;
 
   const {
     data: rawAppointments = [],
     isLoading: loading,
+    isPlaceholderData,
     refetch,
   } = useAppointmentsList({ dateFrom, dateTo, employeeId });
 
-  const isLoading = loading || extraLoading;
+  // ⚠ Refine ставит всем запросам `placeholderData: keepPreviousData`
+  // (@refinedev/core, defaultOptions). При смене периода в данных ещё лежит
+  // прошлый: подпись уже «Август», а плитки и разрезы — сентябрьские. Пока так,
+  // лента показывает загрузку, а сводка приглушена.
+  const isStale = isPlaceholderData;
+  const isLoading = loading || isStale || extraLoading;
+
+  // Возвраты из ленты кассы — пока бэк не отдаёт refundedTotal в списке.
+  const refundsByAppointment = useRegistryRefunds({ periodFrom, enabled: canViewFinance });
 
   // ── Срез ───────────────────────────────────────────────────────────────────
-  const scoped = React.useMemo(
-    () => (isVisible ? rawAppointments.filter(isVisible) : rawAppointments),
-    [rawAppointments, isVisible],
-  );
+  const scoped = React.useMemo(() => {
+    const visible = isVisible ? rawAppointments.filter(isVisible) : rawAppointments;
+    if (!refundsByAppointment || refundsByAppointment.size === 0) return visible;
+    // Новый объект только у приёмов с возвратом: строки ленты мемоизированы по
+    // ссылке на приём, остальные не перерисовываются. Поле бэка, когда оно
+    // появится, главнее кассы.
+    return visible.map((appt) => {
+      const refunded = refundsByAppointment.get(appt.id);
+      return refunded != null && appt.refundedTotal == null
+        ? { ...appt, refundedTotal: refunded.toFixed(2) }
+        : appt;
+    });
+  }, [rawAppointments, isVisible, refundsByAppointment]);
 
-  const searched = React.useMemo(
+  // Условие исполнителя/услуги сужает не только список, но и деньги: сумма
+  // считается по выбранным строкам, а не по всему чеку (см. narrowLinesOf).
+  const sliceLines = React.useMemo(() => narrowLinesOf(getLines, tokens), [getLines, tokens]);
+  const narrowed = sliceLines !== getLines;
+
+  const searchedAll = React.useMemo(
     () => applySearch(scoped, tokens, query, getLines),
     [scoped, tokens, query, getLines],
   );
 
+  /**
+   * Отменённые и неявки из журнала убраны (решение заказчика 05.10.2026): в
+   * деньги они и раньше не шли, но раздували счётчик приёмов, «Не оплачено» и
+   * разрезы. Посмотреть их можно отдельным чипом «Отменённые» — тогда в ленте
+   * только они, а сводка по-прежнему считает состоявшиеся.
+   */
+  /**
+   * Возвраты — два режима (решение заказчика 05.10.2026). По умолчанию
+   * («без возвратов») приём с полным возвратом скрыт и в деньги не идёт, а с
+   * частичным остаётся в ленте с выручкой за вычетом возврата. В
+   * режиме «С возвратами» он виден в ленте — даже если приём отменён: возврат
+   * почти всегда идёт вместе с отменой, иначе режим был бы пустым, — а сумма
+   * возврата выходит отдельной плиткой. Выручка в обоих режимах одна: деньги,
+   * которые вернули, выручкой не считаются (см. moneyOf).
+   */
+  const { searched, cancelledItems, refundCount } = React.useMemo(() => {
+    const active: DjangoAppointment[] = [];
+    const cancelled: DjangoAppointment[] = [];
+    let refunds = 0;
+    for (const appt of searchedAll) {
+      if (hasRefund(appt)) refunds += 1;
+      const isCancelled = isCancelledStatus(appt.status);
+      // Отмена с возвратом — тоже «возврат»: денег по ней не осталось.
+      const fullRefund = isFullyRefunded(appt) || (hasRefund(appt) && isCancelled);
+      if (fullRefund && withRefunds) active.push(appt);
+      // Без режима возврат по отмене живёт под «Отменёнными», а возврат по
+      // неотменённому приёму просто скрыт: в «Отменённые» он не годится
+      // (на проде 06.10 так и вышло — приём 20322, scheduled + refunded).
+      else if (isCancelled) cancelled.push(appt);
+      else if (!fullRefund) active.push(appt);
+    }
+    return { searched: active, cancelledItems: cancelled, refundCount: refunds };
+  }, [searchedAll, withRefunds]);
+  const base = showCancelled ? cancelledItems : searched;
+
+  // Товары приёма — по галочке и только в «Всех приёмах»: товар привязан к
+  // приёму, а не к строке медсестры, в процедуры его не разнести.
+  // При условии на услугу/исполнителя товары не прибавляем: они относятся к
+  // приёму целиком, а не к выбранной услуге.
+  const includeProducts = variant === "appointments" && withProducts && !narrowed;
+  const hasProducts = React.useMemo(
+    () => variant === "appointments" && searched.some((appt) => appt.productLines.length > 0),
+    [variant, searched],
+  );
+
+  // Должник — у кого в срезе есть незакрытый остаток: та же функция денег,
+  // что считает плитку «Долг», поэтому число на плитке и в ленте совпадает.
+  const isInDebt = React.useCallback(
+    (appt: DjangoAppointment) => moneyOf(appt, sliceLines(appt), includeProducts).debt > 0,
+    [sliceLines, includeProducts],
+  );
+
   const paymentCounts = React.useMemo(() => {
-    const counts = new Map<RegistryTileKey, number>([["all", searched.length]]);
-    for (const appt of searched) {
+    const counts = new Map<RegistryTileKey, number>([["all", base.length]]);
+    for (const appt of base) {
       const status = appt.paymentStatus;
-      if (status) counts.set(status, (counts.get(status) ?? 0) + 1);
+      // «Возврат» — по факту возврата, а не по статусу: частичный возврат
+      // статус не меняет (см. hasRefund).
+      if (status && status !== "refunded") counts.set(status, (counts.get(status) ?? 0) + 1);
+      if (hasRefund(appt)) counts.set("refunded", (counts.get("refunded") ?? 0) + 1);
+      // «Долг» — по деньгам, тем же правилом, что плитка (см. PaymentFilter).
+      if (isInDebt(appt)) counts.set("debt", (counts.get("debt") ?? 0) + 1);
       // Флаги цены живут в той же карте: приём попадает и в «Оплачено», и в
       // «Со скидкой», поэтому сумма счётчиков больше числа записей среза.
       for (const flag of appointmentMoneyFlags(appt)) {
@@ -210,40 +352,56 @@ export const RegistryJournalView: React.FC<Props> = ({
       }
     }
     return counts;
-  }, [searched]);
+  }, [base, isInDebt]);
 
   const displayed = React.useMemo(() => {
-    let list = searched;
+    let list = base;
     if (paymentFilter !== "all") {
-      list = list.filter((appt) => appt.paymentStatus === paymentFilter);
+      list = list.filter((appt) =>
+        paymentFilter === "refunded"
+          ? hasRefund(appt)
+          : paymentFilter === "debt"
+          ? isInDebt(appt)
+          : appt.paymentStatus === paymentFilter,
+      );
     }
     if (moneyFlags.length > 0) {
       list = list.filter((appt) => matchesMoneyFlags(appt, moneyFlags));
     }
-    if (bucket && period.month != null) {
+    if (bucket && dayBuckets) {
       list = list.filter((appt) => dayjs(appt.scheduledAt).format("YYYY-MM-DD") === bucket);
     }
     return list;
-  }, [searched, paymentFilter, moneyFlags, bucket, period.month]);
+  }, [base, paymentFilter, isInDebt, moneyFlags, bucket, dayBuckets]);
 
   // Сводка и пульс считаются до фильтра по оплате и дню: иначе выбор «Долга»
   // обнулял бы «Выручку», по которой этот выбор и делают.
-  const summary = React.useMemo(() => summarize(searched, getLines), [searched, getLines]);
+  const summary = React.useMemo(
+    () => summarize(searched, sliceLines, includeProducts),
+    [searched, sliceLines, includeProducts],
+  );
+  // Один день — один столбик: пульс ничего не сообщает, карточку прячем.
+  const singleDay = periodFrom.isSame(periodTo, "day");
   const pulse = React.useMemo(
     () =>
-      period.month != null
-        ? pulseByDay(searched, getLines, monthStart)
-        : pulseByMonth(searched, getLines, period.year),
-    [searched, getLines, period, monthStart],
+      singleDay
+        ? []
+        : dayBuckets
+        ? pulseByDay(searched, sliceLines, periodFrom, periodTo, includeProducts)
+        : pulseByMonth(searched, sliceLines, periodFrom, periodTo, includeProducts),
+    [searched, sliceLines, singleDay, dayBuckets, periodFrom, periodTo, includeProducts],
   );
-  const groups = React.useMemo(() => groupByDay(displayed, getLines), [displayed, getLines]);
+  const groups = React.useMemo(
+    () => groupByDay(displayed, sliceLines, includeProducts),
+    [displayed, sliceLines, includeProducts],
+  );
   const slices = React.useMemo(
-    () => (view === "insights" ? sliceRegistry(displayed, getLines) : null),
-    [view, displayed, getLines],
+    () => (view === "insights" ? sliceRegistry(displayed, sliceLines) : null),
+    [view, displayed, sliceLines],
   );
   const displayedSummary = React.useMemo(
-    () => summarize(displayed, getLines),
-    [displayed, getLines],
+    () => summarize(displayed, sliceLines, includeProducts),
+    [displayed, sliceLines, includeProducts],
   );
 
   // ── Профиль модуля ─────────────────────────────────────────────────────────
@@ -254,8 +412,8 @@ export const RegistryJournalView: React.FC<Props> = ({
   // сумме в строке — иначе журнал показывал бы пустые нули там, где раньше
   // были деньги.
   const consumed = React.useMemo(
-    () => (isProcedures ? consumedUnits(searched, getLines) : 0),
-    [isProcedures, searched, getLines],
+    () => (isProcedures ? consumedUnits(searched, sliceLines) : 0),
+    [isProcedures, searched, sliceLines],
   );
   const materialsProfile = isProcedures && consumed > 0;
   const patients = React.useMemo(
@@ -263,8 +421,8 @@ export const RegistryJournalView: React.FC<Props> = ({
     [isProcedures, searched],
   );
   const patientGroups = React.useMemo(
-    () => (isProcedures && grouping === "courses" ? groupByPatient(displayed, getLines) : []),
-    [isProcedures, grouping, displayed, getLines],
+    () => (isProcedures && grouping === "courses" ? groupByPatient(displayed, sliceLines) : []),
+    [isProcedures, grouping, displayed, sliceLines],
   );
   const countKey = isProcedures ? "journal.count.procedures" : "journal.count.appointments";
   const countLabel = React.useCallback(
@@ -309,8 +467,8 @@ export const RegistryJournalView: React.FC<Props> = ({
           hint: t("journal.summary.ofTotal", { total: summary.visits }),
         },
         {
-          key: "partial",
-          label: t("journal.payFilter.partial"),
+          key: "debt",
+          label: t("journal.payFilter.debt"),
           value: String(summary.debtors),
           hint: t("journal.summary.ofTotal", { total: summary.visits }),
           accent: "debt",
@@ -323,7 +481,9 @@ export const RegistryJournalView: React.FC<Props> = ({
       label: t("journal.summary.revenue"),
       value: formatCompactAmount(summary.paid),
       unit: t("journal.summary.som"),
-      hint: t("journal.summary.accruedHint", { amount: formatCompactAmount(summary.accrued) }),
+      // Значение плитки сжато («6,1 млн»), поэтому подпись под ним — полной
+      // суммой до сома: по ней сверяют кассу.
+      hint: t("journal.summary.accruedHint", { amount: formatAmount(summary.accrued) }),
       accent: "paid",
     };
 
@@ -353,32 +513,63 @@ export const RegistryJournalView: React.FC<Props> = ({
       visitsTile,
       revenueTile,
       {
-        key: "partial",
+        key: "debt",
         label: t("journal.summary.debt"),
         value: formatCompactAmount(summary.debt),
         unit: t("journal.summary.som"),
         hint: t("journal.summary.debtorsHint", { count: summary.debtors }),
         accent: "debt",
       },
-      {
-        key: null,
-        label: t("journal.summary.averageCheck"),
-        value: formatCompactAmount(summary.averageCheck),
-        unit: t("journal.summary.som"),
-        hint: t("journal.summary.discountedHint", { count: summary.discounted }),
-      },
+      // В режиме «С возвратами» четвёртая плитка — возвраты: средний чек
+      // ради них никто не открывает, а сумма возврата — то, что смотрят.
+      withRefunds
+        ? {
+            key: "refunded",
+            label: t("journal.summary.refunds"),
+            value: summary.refunded > 0 ? `−${formatCompactAmount(summary.refunded)}` : "0",
+            unit: t("journal.summary.som"),
+            hint: t("journal.summary.refundsHint", { count: summary.refunds }),
+            accent: "debt",
+          }
+        : {
+            key: null,
+            label: t("journal.summary.averageCheck"),
+            value: formatCompactAmount(summary.averageCheck),
+            unit: t("journal.summary.som"),
+            hint: t("journal.summary.discountedHint", { count: summary.discounted }),
+          },
     ];
-  }, [summary, listLabel, canViewFinance, materialsProfile, consumed, patients, t]);
+  }, [summary, listLabel, canViewFinance, materialsProfile, consumed, patients, withRefunds, t]);
 
-  const periodLabel = period.month != null
+  const periodLabel = period.range
+    ? formatRangeLabel(periodFrom, periodTo)
+    : period.month != null
     ? monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)
     : t("registry.wholeYearLabel", { year: period.year });
+  const periodKey = period.range
+    ? `${dateFrom}_${dateTo}`
+    : period.month != null
+    ? monthStart.format("YYYY-MM")
+    : String(period.year);
 
   // ── Действия ───────────────────────────────────────────────────────────────
   const shiftPeriod = (delta: number) => {
     setBucket(null);
     setOpenId(null);
     setPeriod((prev) => {
+      // Свой период листается своей длиной: «1–10 авг» → «11–20 авг».
+      if (prev.range) {
+        const from = dayjs(prev.range.from);
+        const to = dayjs(prev.range.to);
+        const length = to.diff(from, "day") + 1;
+        const nextFrom = from.add(delta * length, "day");
+        const nextTo = to.add(delta * length, "day");
+        return {
+          year: nextFrom.year(),
+          month: nextFrom.month(),
+          range: { from: nextFrom.format("YYYY-MM-DD"), to: nextTo.format("YYYY-MM-DD") },
+        };
+      }
       if (prev.month == null) return { year: prev.year + delta, month: null };
       const next = dayjs().year(prev.year).month(prev.month).add(delta, "month");
       return { year: next.year(), month: next.month() };
@@ -389,10 +580,27 @@ export const RegistryJournalView: React.FC<Props> = ({
     setBucket(null);
     setOpenId(null);
     setPeriod((prev) =>
-      prev.month == null
+      prev.month == null && !prev.range
         ? { year: prev.year, month: dayjs().year() === prev.year ? dayjs().month() : 0 }
         : { year: prev.year, month: null },
     );
+  };
+
+  /** Выбор в календаре: целый месяц сворачиваем в режим месяца, остальное — свой период. */
+  const handleRangeChange = (range: DateRange) => {
+    setBucket(null);
+    setOpenId(null);
+    const from = range.from.startOf("day");
+    const to = range.to.startOf("day");
+    if (from.date() === 1 && to.isSame(from.endOf("month"), "day")) {
+      setPeriod({ year: from.year(), month: from.month() });
+      return;
+    }
+    setPeriod({
+      year: from.year(),
+      month: from.month(),
+      range: { from: from.format("YYYY-MM-DD"), to: to.format("YYYY-MM-DD") },
+    });
   };
 
   /**
@@ -411,11 +619,11 @@ export const RegistryJournalView: React.FC<Props> = ({
 
   const handleSelectBucket = (key: string | null) => {
     setOpenId(null);
-    if (period.month != null || key == null) {
+    if (dayBuckets || key == null) {
       setBucket(key);
       return;
     }
-    // В режиме года столбик — месяц: клик открывает этот месяц целиком.
+    // В режиме года (и длинного периода) столбик — месяц: клик открывает этот месяц целиком.
     const month = dayjs(`${key}-01`);
     setPeriod({ year: month.year(), month: month.month() });
     setBucket(null);
@@ -427,7 +635,7 @@ export const RegistryJournalView: React.FC<Props> = ({
       await exportRegistry(
         {
           items: displayed,
-          linesOf: getLines,
+          linesOf: sliceLines,
           title: `${pageTitle} · ${periodLabel}`,
           sheetName: periodLabel.slice(0, 28),
           performerHeader: employeeGroupLabel,
@@ -436,8 +644,9 @@ export const RegistryJournalView: React.FC<Props> = ({
           paymentLabel: (appt) =>
             appt.paymentStatus ? t(`journal.payFilter.${appt.paymentStatus}`) : "—",
           withMoney: canViewFinance,
+          withProducts: includeProducts,
         },
-        `${pageTitle} ${period.month != null ? monthStart.format("YYYY-MM") : period.year}.xlsx`,
+        `${pageTitle} ${periodKey}.xlsx`,
       );
     } catch {
       notify?.({ type: "error", message: t("journal.exportError") });
@@ -492,13 +701,14 @@ export const RegistryJournalView: React.FC<Props> = ({
       return (
         <RegistryTable
           items={displayed}
-          linesOf={getLines}
+          linesOf={sliceLines}
           loading={isLoading}
           summary={displayedSummary}
           canViewFinance={canViewFinance}
           onOpenCard={setCardTarget}
           performerHeader={employeeGroupLabel}
           servicesHeader={t("journal.table.services")}
+          withProducts={includeProducts}
         />
       );
     }
@@ -518,7 +728,7 @@ export const RegistryJournalView: React.FC<Props> = ({
       return (
         <RegistryCourseFeed
           groups={patientGroups}
-          linesOf={getLines}
+          linesOf={sliceLines}
           openId={openId}
           onToggle={handleToggleRow}
           canUpdate={canUpdate}
@@ -532,7 +742,7 @@ export const RegistryJournalView: React.FC<Props> = ({
     return (
       <RegistryFeed
         groups={groups}
-        linesOf={getLines}
+        linesOf={sliceLines}
         openId={openId}
         onToggle={handleToggleRow}
         canUpdate={canUpdate}
@@ -540,6 +750,7 @@ export const RegistryJournalView: React.FC<Props> = ({
         canManageFinance={canManageFinance}
         countLabel={countLabel}
         metric={materialsProfile ? "materials" : "money"}
+        withProducts={includeProducts}
         {...rowActions}
       />
     );
@@ -581,14 +792,18 @@ export const RegistryJournalView: React.FC<Props> = ({
                 <IconButton size="small" aria-label={t("journal.period.prev")} onClick={() => shiftPeriod(-1)}>
                   <ChevronLeftOutlined fontSize="small" />
                 </IconButton>
-                <Typography
-                  variant="body2"
-                  fontWeight={600}
-                  noWrap
-                  sx={{ flex: 1, minWidth: 118, textAlign: "center" }}
-                >
-                  {periodLabel}
-                </Typography>
+                {/* Подпись периода — она же кнопка календаря: месяц по
+                    умолчанию, но можно выбрать любой свой период. */}
+                <Box sx={{ flex: 1, minWidth: 118, display: "flex", justifyContent: "center" }}>
+                  <DateRangeField
+                    dense
+                    fullWidth={isMobile}
+                    value={{ from: periodFrom, to: periodTo }}
+                    onChange={handleRangeChange}
+                    presets={periodPresets}
+                    label={periodLabel}
+                  />
+                </Box>
                 <IconButton size="small" aria-label={t("journal.period.next")} onClick={() => shiftPeriod(1)}>
                   <ChevronRightOutlined fontSize="small" />
                 </IconButton>
@@ -599,13 +814,13 @@ export const RegistryJournalView: React.FC<Props> = ({
                 clickable
                 label={t("journal.period.wholeYear")}
                 onClick={toggleWholeYear}
-                variant={period.month == null ? "filled" : "outlined"}
+                variant={period.month == null && !period.range ? "filled" : "outlined"}
                 sx={(t) => ({
                   height: 30,
                   borderRadius: "7px",
                   fontWeight: 500,
                   flexShrink: 0,
-                  ...(period.month == null
+                  ...(period.month == null && !period.range
                     ? {
                         bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.18 : 0.1),
                         color: "primary.onSurface",
@@ -683,6 +898,7 @@ export const RegistryJournalView: React.FC<Props> = ({
           />
 
           <RegistrySummaryBar
+            stale={isStale}
             tiles={tiles}
             pulse={pulse}
             isTileActive={isTileActive}
@@ -690,7 +906,13 @@ export const RegistryJournalView: React.FC<Props> = ({
             selectedBucket={bucket}
             onSelectBucket={handleSelectBucket}
             canViewFinance={canViewFinance}
-            pulseTitle={period.month != null ? t("journal.pulse.month") : t("journal.pulse.year")}
+            pulseTitle={
+              period.range
+                ? t("journal.pulse.period")
+                : period.month != null
+                ? t("journal.pulse.month")
+                : t("journal.pulse.year")
+            }
           />
 
           {/* Чипы оплаты и цены со счётчиками среза. Оси идут одним рядом:
@@ -733,7 +955,80 @@ export const RegistryJournalView: React.FC<Props> = ({
               );
             })}
 
-            {bucket && period.month != null && (
+            {/* Отменённые и неявки: по умолчанию скрыты, чип показывает
+                только их (в деньги они не идут в любом режиме). */}
+            {(cancelledItems.length > 0 || showCancelled) && (
+              <Chip
+                size="small"
+                clickable
+                onClick={() => {
+                  setOpenId(null);
+                  setShowCancelled(!showCancelled);
+                }}
+                label={`${t("journal.cancelledFilter")} · ${cancelledItems.length}`}
+                sx={(t) => ({
+                  height: 26,
+                  borderRadius: "7px",
+                  fontWeight: 500,
+                  border: 1,
+                  borderStyle: showCancelled ? "solid" : "dashed",
+                  borderColor: showCancelled ? alpha(t.palette.text.primary, 0.3) : "divider",
+                  color: showCancelled ? "text.primary" : "text.disabled",
+                  bgcolor: showCancelled ? subtleBg(t) : "transparent",
+                  "&:hover": { bgcolor: subtleBg(t, true) },
+                })}
+              />
+            )}
+
+            {/* Режим возвратов: по умолчанию скрыты, с галочкой — в ленте
+                и отдельной плиткой (в выручку не идут ни в каком режиме). */}
+            {(refundCount > 0 || withRefunds) && (
+              <Chip
+                size="small"
+                clickable
+                icon={withRefunds ? <CheckOutlined sx={{ fontSize: 15 }} /> : undefined}
+                onClick={() => {
+                  setOpenId(null);
+                  setWithRefunds(!withRefunds);
+                }}
+                label={`${t("journal.withRefunds")} · ${refundCount}`}
+                variant="outlined"
+                sx={(t) => ({
+                  height: 26,
+                  borderRadius: "7px",
+                  fontWeight: 500,
+                  borderColor: withRefunds ? alpha(t.palette.primary.main, 0.4) : "divider",
+                  color: withRefunds ? "text.primary" : "text.secondary",
+                  bgcolor: withRefunds
+                    ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
+                    : "transparent",
+                })}
+              />
+            )}
+
+            {/* Товары, проданные в приёме, по умолчанию в суммы не идут. */}
+            {canViewFinance && !narrowed && (hasProducts || withProducts) && variant === "appointments" && (
+              <Chip
+                size="small"
+                clickable
+                icon={withProducts ? <CheckOutlined sx={{ fontSize: 15 }} /> : undefined}
+                onClick={() => setWithProducts(!withProducts)}
+                label={t("journal.withProducts")}
+                variant="outlined"
+                sx={(t) => ({
+                  height: 26,
+                  borderRadius: "7px",
+                  fontWeight: 500,
+                  borderColor: withProducts ? alpha(t.palette.primary.main, 0.4) : "divider",
+                  color: withProducts ? "text.primary" : "text.secondary",
+                  bgcolor: withProducts
+                    ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
+                    : "transparent",
+                })}
+              />
+            )}
+
+            {bucket && dayBuckets && (
               <Chip
                 size="small"
                 label={dayjs(bucket).format("D MMMM")}

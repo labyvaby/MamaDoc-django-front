@@ -1,9 +1,10 @@
 import React from "react";
 
 import {
+  AiAssistStreamError,
   fitAiFormRows,
   isAiUnavailableError,
-  requestAiAssistBatch,
+  requestAiAssistStream,
   type AiAssistField,
   type AiAssistForm,
 } from "../../api/medical";
@@ -14,6 +15,8 @@ export interface AiAssistFieldState {
   loading: boolean;
   /** Текст, который врач ещё не применил и не отклонил. */
   suggestion: string | null;
+  /** Короткая причина правки от модели («исправлена орфография»); может не быть. */
+  reason?: string | null;
   /**
    * Текст поля, который ушёл в AI. Ответ идёт до минуты, и врач за это
    * время может поле поправить — режим проверки сравнивает с ним и
@@ -40,7 +43,10 @@ export interface AiAssistSummary {
   empty: number;
   /** Модель вернула тот же текст — править нечего, плашки нет. */
   unchanged: number;
-  /** 502–504: AI-сервис за бэком недоступен (в том числе квота провайдера). */
+  /**
+   * AI-сервис за бэком недоступен: 502–504 до старта потока или обрыв потока
+   * (`event: error`, конец без `done`). При обрыве часть подсказок уже могла прийти.
+   */
   unavailable: number;
   failed: number;
 }
@@ -57,13 +63,13 @@ interface UseAiAssistOptions {
 /**
  * Подсказки AI-помощника для полей заключения — одна кнопка на всю форму.
  *
- * Нажатие — один пакетный запрос по всем доступным колонкам и свободным
- * строкам бланка (`POST /medical/ai/assist/batch/`, бэк 16.09 и 27.09.2026):
- * разделы согласованы между собой, 48–60 с на 5 полей; строки бэк режет на
- * параллельные чанки, по времени это один чанк. Подсказки появляются все
- * разом, когда вернётся ответ. По 502 (сервис лёг или кончилась квота
- * провайдера) ничего не дозапрашиваем и не повторяем: квота общая на всех,
- * повторы её только сжигают.
+ * Нажатие — один запрос по всем доступным колонкам и свободным строкам
+ * бланка, ответ потоком (`POST /medical/ai/assist/batch/stream/`, бэк
+ * 05.10.2026): подсказки появляются по мере готовности чанков модели (до 8
+ * элементов), врач разбирает первые, пока модель дописывает остальные. Где
+ * стрима нет — тот же пакетный `batch/`, всё разом (см. `requestAiAssistStream`).
+ * По 502 и обрыву потока ничего не дозапрашиваем и не повторяем: квота
+ * провайдера общая на всех, повторы её только сжигают.
  *
  * Держится отдельно от текста полей: ответ модели — предложение рядом с
  * оригиналом, а не значение. В само поле текст попадает только когда
@@ -124,32 +130,44 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
         unavailable: 0,
         failed: 0,
       };
+      // Ключи, по которым ответа ещё нет: после конца потока они — «пусто»,
+      // после обрыва — «AI недоступен».
+      const pending = new Set<AiAssistKey>(keys);
+      const got = (key: AiAssistKey, suggestion: string | null, reason: string | null) => {
+        if (!pending.delete(key)) return;
+        // Слово в слово тот же текст — не предложение, а шум: врач
+        // открыл бы проверку и увидел «без изменений».
+        if (suggestion != null && sameText(suggestion, sources.get(key) ?? "")) {
+          patch(key, { loading: false, suggestion: null, reason: null });
+          summary.unchanged += 1;
+          return;
+        }
+        patch(key, { loading: false, suggestion, reason: suggestion == null ? null : reason });
+        if (suggestion == null) summary.empty += 1;
+        else summary.suggested += 1;
+      };
+      const settleRest = (bucket: "empty" | "unavailable" | "failed") => {
+        for (const key of pending) patch(key, { loading: false, suggestion: null });
+        summary[bucket] += pending.size;
+        pending.clear();
+      };
       try {
-        const result = await requestAiAssistBatch(fields, {
+        await requestAiAssistStream(fields, {
           serviceLineId,
           form: sentForm,
           signal: ctrl.signal,
+          onSuggestion: ({ kind, key, text, reason }) => {
+            if (ctrl.signal.aborted) return;
+            got(kind === "row" ? aiRowKey(key) : (key as AiAssistField), text, reason);
+          },
         });
         if (ctrl.signal.aborted) return;
-        const got = (key: AiAssistKey, suggestion: string | null | undefined) => {
-          // Слово в слово тот же текст — не предложение, а шум: врач
-          // открыл бы проверку и увидел «без изменений».
-          if (suggestion != null && sameText(suggestion, sources.get(key) ?? "")) {
-            patch(key, { loading: false, suggestion: null });
-            summary.unchanged += 1;
-            return;
-          }
-          patch(key, { loading: false, suggestion: suggestion ?? null });
-          if (suggestion == null) summary.empty += 1;
-          else summary.suggested += 1;
-        };
-        for (const { field } of fields) got(field, result.fields[field]);
-        for (const row of rows) got(aiRowKey(row.id), result.rows[row.id]);
+        settleRest("empty");
       } catch (err) {
         if (ctrl.signal.aborted) return;
-        for (const key of keys) patch(key, { loading: false, suggestion: null });
-        if (isAiUnavailableError(err)) summary.unavailable = keys.length;
-        else summary.failed = keys.length;
+        settleRest(
+          err instanceof AiAssistStreamError || isAiUnavailableError(err) ? "unavailable" : "failed",
+        );
       }
       if (controller.current === ctrl) controller.current = null;
       settledRef.current(summary);
@@ -159,6 +177,15 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
 
   const dismiss = React.useCallback(
     (key: AiAssistKey) => patch(key, { suggestion: null }),
+    [patch],
+  );
+
+  /**
+   * Вернуть предложение, которое врач принял или отклонил, — «Вернуть»
+   * у карточки. Поле дровер откатывает сам (снимок до применения).
+   */
+  const restore = React.useCallback(
+    (key: AiAssistKey, suggestion: string) => patch(key, { loading: false, suggestion }),
     [patch],
   );
 
@@ -187,7 +214,8 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
   );
 
   const keys = Object.keys(state) as AiAssistKey[];
-  const loadingCount = keys.filter((k) => state[k]?.loading).length;
+  const loadingKeys = keys.filter((k) => state[k]?.loading);
+  const loadingCount = loadingKeys.length;
   /** Поля с неприменёнными подсказками — для «Применить все». */
   const suggestedKeys = keys.filter((k) => state[k]?.suggestion != null);
 
@@ -196,8 +224,11 @@ export function useAiAssist({ serviceLineId, onSettled }: UseAiAssistOptions) {
     requestAll,
     dismiss,
     take,
+    restore,
     reset,
     loading: loadingCount > 0,
+    /** Поля, по которым ждём ответа, — подсветка «AI читает» у полей. */
+    loadingKeys,
     /** Сколько полей ждут ответа — для «AI заполняет 5 полей…». */
     loadingCount,
     suggestedKeys,

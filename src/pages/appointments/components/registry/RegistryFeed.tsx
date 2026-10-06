@@ -10,9 +10,11 @@
  * перерисовывало все восемьсот вместе с их чипами статусов, и клик подвисал.
  */
 import React from "react";
-import { Box, Button, Paper, Stack, Typography } from "@mui/material";
+import { Box, Button, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
+import ArrowUpwardOutlined from "@mui/icons-material/ArrowUpwardOutlined";
+import ArrowDownwardOutlined from "@mui/icons-material/ArrowDownwardOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
@@ -24,6 +26,7 @@ import { useT } from "../../../../i18n/VerticalProvider";
 import { formatAmount } from "./registryFormat";
 import RegistryRowDetails, { type RegistryRowActions } from "./RegistryRowDetails";
 import { moneyOf, type DayGroup, type LinesOf } from "./registryStats";
+import { linesPriceDelta } from "../listFilters";
 
 /**
  * Порция ленты — в записях, а не в днях.
@@ -47,6 +50,8 @@ interface Props extends RegistryRowActions {
   countLabel: (count: number) => string;
   /** Что в правой колонке строки: деньги или расход материалов. */
   metric: RowMetric;
+  /** Прибавлять ли к сумме строки товары приёма (галочка «С товарами»). */
+  withProducts: boolean;
 }
 
 const durationMinutes = (appt: DjangoAppointment): number => {
@@ -82,10 +87,22 @@ interface RowProps extends RegistryRowActions {
   canUpdate: boolean;
   canViewFinance: boolean;
   canManageFinance: boolean;
+  withProducts: boolean;
 }
 
 const RegistryRow: React.FC<RowProps> = React.memo(
-  ({ appointment: appt, linesOf, metric, isOpen, onToggle, canUpdate, canViewFinance, canManageFinance, ...actions }) => {
+  ({
+    appointment: appt,
+    linesOf,
+    metric,
+    isOpen,
+    onToggle,
+    canUpdate,
+    canViewFinance,
+    canManageFinance,
+    withProducts,
+    ...actions
+  }) => {
     const { t } = useT("appointments");
     const theme = useTheme();
 
@@ -93,7 +110,10 @@ const RegistryRow: React.FC<RowProps> = React.memo(
     const first = lines[0] ?? appt.services[0];
     const employee = first?.employee ?? null;
     const rest = lines.length - 1;
-    const money = moneyOf(appt, lines);
+    const money = moneyOf(appt, lines, withProducts);
+    // Правка цены относительно прайса — по строкам среза, а не по чеку: в
+    // процедурах правка цены врача не должна помечать строку медсестры.
+    const priceDelta = canViewFinance ? linesPriceDelta(appt, lines) : 0;
     const duration = durationMinutes(appt);
     const hasMoney = money.accrued > 0;
     const materials = lines.reduce((count, line) => count + (line.consumptions?.length ?? 0), 0);
@@ -200,20 +220,59 @@ const RegistryRow: React.FC<RowProps> = React.memo(
             </Box>
           ) : canViewFinance ? (
             <Box sx={{ textAlign: "right", gridColumn: { xs: 4, md: "auto" }, gridRow: { xs: 1, md: "auto" } }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                {hasMoney ? formatAmount(money.accrued) : "—"}
+              <Typography
+                variant="body2"
+                color={money.refunded > 0 ? "text.secondary" : undefined}
+                sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}
+              >
+                {hasMoney
+                  ? formatAmount(money.accrued)
+                  : money.refunded > 0
+                  ? `−${formatAmount(money.refunded)}`
+                  : "—"}
               </Typography>
-              {hasMoney && (
-                <Typography
-                  variant="caption"
-                  color={money.debt > 0 ? "warning.main" : "text.disabled"}
-                  sx={{ fontSize: "0.65rem" }}
-                >
-                  {money.debt > 0
-                    ? t("journal.feed.debtOf", { amount: formatAmount(money.debt) })
-                    : t("journal.summary.som")}
+              {money.refunded > 0 ? (
+                <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem" }}>
+                  {/* Частичный возврат: сумма приёма осталась, подписываем, сколько вернули. */}
+                  {hasMoney
+                    ? `${t("journal.feed.refund")} −${formatAmount(money.refunded)}`
+                    : t("journal.feed.refund")}
                 </Typography>
-              )}
+              ) : hasMoney && money.debt > 0 ? (
+                <Typography variant="caption" color="warning.main" sx={{ fontSize: "0.65rem" }}>
+                  {t("journal.feed.debtOf", { amount: formatAmount(money.debt) })}
+                </Typography>
+              ) : priceDelta !== 0 ? (
+                <Tooltip
+                  title={t(priceDelta > 0 ? "journal.feed.priceUpBy" : "journal.feed.priceDownBy", {
+                    amount: formatAmount(Math.abs(priceDelta)),
+                  })}
+                >
+                  <Typography
+                    variant="caption"
+                    color={priceDelta > 0 ? "success.main" : "error.main"}
+                    sx={{
+                      fontSize: "0.65rem",
+                      fontWeight: 600,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 0.25,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {priceDelta > 0 ? (
+                      <ArrowUpwardOutlined sx={{ fontSize: 11 }} />
+                    ) : (
+                      <ArrowDownwardOutlined sx={{ fontSize: 11 }} />
+                    )}
+                    {formatAmount(Math.abs(priceDelta))}
+                  </Typography>
+                </Tooltip>
+              ) : hasMoney ? (
+                <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem" }}>
+                  {t("journal.summary.som")}
+                </Typography>
+              ) : null}
             </Box>
           ) : (
             <Box />
@@ -236,6 +295,7 @@ const RegistryRow: React.FC<RowProps> = React.memo(
           <RegistryRowDetails
             appointment={appt}
             lines={lines}
+            withProducts={withProducts}
             canUpdate={canUpdate}
             canViewFinance={canViewFinance}
             canManageFinance={canManageFinance}
@@ -258,6 +318,7 @@ export const RegistryFeed: React.FC<Props> = ({
   canManageFinance,
   countLabel,
   metric,
+  withProducts,
   ...actions
 }) => {
   const { t } = useT("appointments");
@@ -349,6 +410,14 @@ export const RegistryFeed: React.FC<Props> = ({
                       </Box>
                     </Typography>
                   )}
+                  {canViewFinance && group.money.refunded > 0 && (
+                    <Typography variant="caption" color="text.secondary">
+                      {t("journal.feed.refund")}{" "}
+                      <Box component="span" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                        −{formatAmount(group.money.refunded)}
+                      </Box>
+                    </Typography>
+                  )}
                 </Stack>
               </Stack>
 
@@ -363,6 +432,7 @@ export const RegistryFeed: React.FC<Props> = ({
                   canUpdate={canUpdate}
                   canViewFinance={canViewFinance}
                   canManageFinance={canManageFinance}
+                  withProducts={withProducts}
                   {...actions}
                 />
               ))}
