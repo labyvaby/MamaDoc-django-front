@@ -34,6 +34,7 @@ import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import CloseIcon from "@mui/icons-material/Close";
+import CheckIcon from "@mui/icons-material/Check";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
@@ -76,6 +77,8 @@ import ProductFilterDrawer, { ProductFilters } from "../../../components/product
 import { describeFailures, runBulk, toggleSelection, type BulkResult } from "./bulk";
 import { BulkCategoryDialog, BulkPriceDialog, type CategoryChoice } from "./BulkProductDialogs";
 import { exportProductsXlsx } from "./exportProductsXlsx";
+import { useLongPress } from "./useLongPress";
+import { hapticTap } from "../../../utility/haptics";
 
 /**
  * Состояние остатка для бейджа в строке: нет / мало / есть.
@@ -409,6 +412,13 @@ const DjangoProductsPage: React.FC = () => {
     anchorIdRef.current = null;
   };
 
+  // Долгое нажатие включает выбор и отмечает строку (повторное — не снимает).
+  const longPress = useLongPress((id) => {
+    hapticTap();
+    setCheckedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    anchorIdRef.current = id;
+  }, !bulkBusy);
+
   const clearChecked = () => {
     setCheckedIds(new Set());
     anchorIdRef.current = null;
@@ -591,6 +601,7 @@ const DjangoProductsPage: React.FC = () => {
                     : undefined,
                 })}
               >
+                {hasChecked && (
                 <Tooltip title={allVisibleChecked ? "Снять выбор" : "Выбрать все в списке"}>
                   <span>
                     <Checkbox
@@ -604,6 +615,7 @@ const DjangoProductsPage: React.FC = () => {
                     />
                   </span>
                 </Tooltip>
+                )}
                 {hasChecked ? (
                   <>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -889,18 +901,20 @@ const DjangoProductsPage: React.FC = () => {
                       return (
                         <ButtonBase
                           key={p.id}
-                          // div, а не button: внутри чекбокс, а input в button —
-                          // невалидная разметка.
-                          component="div"
                           focusRipple
+                          {...longPress.bind(p.id)}
+                          role={hasChecked ? "checkbox" : undefined}
+                          aria-checked={hasChecked ? isChecked : undefined}
                           // Shift-клик иначе выделяет текст строк вместо диапазона.
                           onMouseDown={(e: React.MouseEvent) => {
                             if (e.shiftKey) e.preventDefault();
                           }}
                           onClick={(e: React.MouseEvent) => {
-                            // Ctrl/Cmd/Shift-клик отмечает строку, как в проводнике; на
-                            // телефоне, пока идёт выбор, тап тоже отмечает.
-                            if (e.ctrlKey || e.metaKey || e.shiftKey || (isMobile && checkedIds.size > 0)) {
+                            // Хвост долгого нажатия: отметку оно уже поставило.
+                            if (longPress.consumeClick()) return;
+                            // Как в галерее: пока идёт выбор, тап отмечает строку.
+                            // Ctrl/Cmd/Shift-клик — то же с мыши, без долгого нажатия.
+                            if (hasChecked || e.ctrlKey || e.metaKey || e.shiftKey) {
                               if (!bulkBusy) toggleChecked(p.id, e.shiftKey);
                               return;
                             }
@@ -909,6 +923,11 @@ const DjangoProductsPage: React.FC = () => {
                             }
                           }}
                           sx={{
+                            // Долгое касание не должно выделять текст и звать
+                            // системное меню iOS.
+                            userSelect: "none",
+                            WebkitUserSelect: "none",
+                            WebkitTouchCallout: "none",
                             display: "flex",
                             alignItems: "center",
                             gap: 1.5,
@@ -928,34 +947,57 @@ const DjangoProductsPage: React.FC = () => {
                             },
                           }}
                         >
-                          <Checkbox
-                            size="small"
-                            checked={isChecked}
-                            disabled={bulkBusy}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onClick={(e) => e.stopPropagation()}
-                            // Для чекбокса React строит onChange из click — Shift
-                            // виден в nativeEvent.
-                            onChange={(e) => toggleChecked(p.id, (e.nativeEvent as MouseEvent).shiftKey)}
-                            inputProps={{ "aria-label": `Выбрать «${p.name}»` }}
-                            sx={{ p: 0.5, ml: -0.5, mr: -0.75, flexShrink: 0 }}
-                          />
-                          {/* Левая часть приглушается, если товара нет в наличии */}
-                          <Avatar
-                            variant="rounded"
-                            src={p.imageThumbnailUrl ?? p.imageUrl ?? undefined}
-                            sx={{
-                              flexShrink: 0,
-                              width: 48,
-                              height: 48,
-                              borderRadius: "14px",
-                              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                              color: "primary.onSurface",
-                              opacity: stockState.out ? 0.55 : 1,
-                            }}
-                          >
-                            {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
-                          </Avatar>
+                          {/* Фото; в режиме выбора поверх него — отметка, как в галерее.
+                              Левая часть приглушается, если товара нет в наличии. */}
+                          <Box sx={{ position: "relative", flexShrink: 0, width: 48, height: 48 }}>
+                            <Avatar
+                              variant="rounded"
+                              src={p.imageThumbnailUrl ?? p.imageUrl ?? undefined}
+                              sx={{
+                                width: 48,
+                                height: 48,
+                                borderRadius: "14px",
+                                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                                color: "primary.onSurface",
+                                opacity: stockState.out && !hasChecked ? 0.55 : 1,
+                              }}
+                            >
+                              {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
+                            </Avatar>
+                            {hasChecked && (
+                              <Box
+                                aria-hidden
+                                sx={(theme) => ({
+                                  position: "absolute",
+                                  inset: 0,
+                                  borderRadius: "14px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  bgcolor: isChecked
+                                    ? "primary.main"
+                                    : alpha(theme.palette.background.paper, 0.55),
+                                  color: "primary.contrastText",
+                                  transition: "background-color .15s ease",
+                                })}
+                              >
+                                {isChecked ? (
+                                  <CheckIcon />
+                                ) : (
+                                  <Box
+                                    sx={(theme) => ({
+                                      width: 22,
+                                      height: 22,
+                                      borderRadius: "50%",
+                                      border: 2,
+                                      borderColor: alpha(theme.palette.text.primary, 0.45),
+                                      bgcolor: alpha(theme.palette.background.paper, 0.8),
+                                    })}
+                                  />
+                                )}
+                              </Box>
+                            )}
+                          </Box>
                           <Box sx={{ flex: 1, minWidth: 0, opacity: stockState.out ? 0.55 : 1 }}>
                             <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                               {p.name}
