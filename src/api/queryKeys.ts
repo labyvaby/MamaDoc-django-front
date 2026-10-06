@@ -82,6 +82,10 @@ export const djangoQueryKeys = {
     /** Живые заключения пациента (patient-conclusions) — «как в прошлый раз». */
     conclusions: (patientId: number) =>
       ["django", "patients", patientId, "conclusions"] as const,
+    conclusionHistory: (patientId: number, scope: unknown) =>
+      ["django", "patients", patientId, "conclusions", "history", scope] as const,
+    historicalConclusion: (patientId: number, conclusionId: number, scope: unknown) =>
+      ["django", "patients", patientId, "conclusions", "detail", conclusionId, scope] as const,
     // Root key — use for invalidateQueries to bust all pages.
     transactions: (patientId: number) =>
       ["django", "patients", patientId, "balance-transactions"] as const,
