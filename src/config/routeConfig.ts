@@ -230,6 +230,20 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: ['attendance.view'],
   },
 
+  // Эксплуатация застройщика: приёмка и сервис жильцов (estate_ops), приложение жильца (resident_app)
+  {
+    path: '/ops/handover',
+    requiredPermissions: [PERMISSIONS.ESTATE_OPS_VIEW],
+  },
+  {
+    path: '/ops/residents',
+    requiredPermissions: [PERMISSIONS.ESTATE_OPS_VIEW],
+  },
+  {
+    path: '/ops/mobileapp',
+    requiredPermissions: [PERMISSIONS.RESIDENT_APP_VIEW],
+  },
+
   // Сметы, снабжение, склад застройщика (supply)
   {
     path: '/supply/estimates',

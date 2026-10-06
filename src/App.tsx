@@ -128,6 +128,9 @@ const PersonnelStaffPage = lazy(() => import("./pages/personnel/StaffPage"));
 const PersonnelTimesheetPage = lazy(() => import("./pages/personnel/TimesheetPage"));
 const PersonnelPayrollPage = lazy(() => import("./pages/personnel/PayrollPage"));
 const PersonnelAcsPage = lazy(() => import("./pages/personnel/AcsPage"));
+const OpsHandoverPage = lazy(() => import("./pages/estate-ops/HandoverPage"));
+const OpsResidentsPage = lazy(() => import("./pages/estate-ops/ResidentsPage"));
+const OpsMobileAppPage = lazy(() => import("./pages/estate-ops/MobileAppPage"));
 const PaycalPage = lazy(() => import("./pages/realty-finance/PaycalPage"));
 const BudgetPage = lazy(() => import("./pages/realty-finance/BudgetPage"));
 const ReceivablesPage = lazy(() => import("./pages/realty-finance/ReceivablesPage"));
@@ -1434,6 +1437,10 @@ function App() {
                                 ["personnel/timesheet", PersonnelTimesheetPage, PAGE_PERMISSIONS.personnel],
                                 ["personnel/payroll", PersonnelPayrollPage, PAGE_PERMISSIONS.estatePayroll],
                                 ["personnel/acs", PersonnelAcsPage, PAGE_PERMISSIONS.attendance],
+                                // Эксплуатация застройщика (AIVIO): /api/v2/estate-ops/ и /api/v2/resident-app/.
+                                ["ops/handover", OpsHandoverPage, PAGE_PERMISSIONS.estateOps],
+                                ["ops/residents", OpsResidentsPage, PAGE_PERMISSIONS.estateOps],
+                                ["ops/mobileapp", OpsMobileAppPage, PAGE_PERMISSIONS.residentApp],
                               ] as const
                             ).map(([path, Page, permission]) => (
                               <Route

@@ -42,7 +42,9 @@ describe("estateHref", () => {
     expect(estateHref("construction")).toBe("/construction/schedule");
     expect(estateHref("cashbank")).toBe("/finance/cashbank");
     expect(estateHref("staff", 30)).toBe("/personnel/staff?employee=30");
-    // Экранов эксплуатации ещё нет — без перехода.
-    expect(estateHref("handover")).toBeNull();
+    expect(estateHref("handover", 5)).toBe("/ops/handover?handover=5");
+    expect(estateHref("residents")).toBe("/ops/residents");
+    // Экрана нет — без перехода.
+    expect(estateHref("unknown-screen")).toBeNull();
   });
 });

@@ -51,6 +51,12 @@ export function estateHref(view: string, objectId?: number | null): string | nul
       return "/personnel/acs";
     case "payroll":
       return "/personnel/payroll";
+    case "handover":
+      return objectId ? `/ops/handover?handover=${objectId}` : "/ops/handover";
+    case "residents":
+      return objectId ? `/ops/residents?request=${objectId}` : "/ops/residents";
+    case "mobileapp":
+      return "/ops/mobileapp";
     case "smeta":
       return "/supply/estimates";
     case "procurement":

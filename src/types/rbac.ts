@@ -252,6 +252,11 @@ export const PERMISSIONS = {
   // Кадры застройщика (AIVIO): сотрудники и табель — personnel.*, ведомость — salary.*.
   PERSONNEL_VIEW: 'personnel.view',
   PERSONNEL_MANAGE: 'personnel.manage',
+  // Эксплуатация застройщика (AIVIO): приёмка и сервис жильцов — estate_ops.*, приложение жильца — resident_app.*.
+  ESTATE_OPS_VIEW: 'estate_ops.view',
+  ESTATE_OPS_MANAGE: 'estate_ops.manage',
+  RESIDENT_APP_VIEW: 'resident_app.view',
+  RESIDENT_APP_MANAGE: 'resident_app.manage',
 
   // ЭДО и документы застройщика (AIVIO, 04.10.2026)
   EDO_VIEW: 'edo.view',

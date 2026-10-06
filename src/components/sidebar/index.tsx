@@ -101,6 +101,7 @@ import { constructionKeys, getActsSummary, getDefectsSummary, getStages } from "
 import { getStockSummary, getSupplySummary, supplyKeys } from "../../api/supply";
 import { hasPendingPayroll, payrollKeys } from "../../api/salaryPayroll";
 import { acsKeys, getMyShift } from "../../api/acs";
+import { estateOpsKeys, getHandoverSummary, getRequestsSummary } from "../../api/estateOps";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -128,6 +129,9 @@ import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 import ManageAccountsOutlined from "@mui/icons-material/ManageAccountsOutlined";
 import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
+import KeyOutlined from "@mui/icons-material/KeyOutlined";
+import SupportAgentOutlined from "@mui/icons-material/SupportAgentOutlined";
+import PhoneIphoneOutlined from "@mui/icons-material/PhoneIphoneOutlined";
 
 type NavGroup = "all" | "my-work" | "org" | "storage" | "management";
 
@@ -481,6 +485,10 @@ const RealEstateSidebarMenu: React.FC = () => {
   // СКУД AIVIO (гайд frontend-acs §2): attendance.view, пункт — по матрице (canSee.acs).
   const canAcs = can(PAGE_PERMISSIONS.attendance) && estateNav != null && seen("acs");
   const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
+  // «Эксплуатация» AIVIO (гайд frontend-hr-ops §4–6): приёмка и сервис — estate_ops.view, приложение — resident_app.view.
+  const canHandover = can(PAGE_PERMISSIONS.estateOps) && seen("handover");
+  const canResidents = can(PAGE_PERMISSIONS.estateOps) && seen("residents");
+  const canMobileApp = can(PAGE_PERMISSIONS.residentApp) && seen("mobileapp");
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
     ? ([
@@ -575,6 +583,21 @@ const RealEstateSidebarMenu: React.FC = () => {
     staleTime: 5 * 60_000,
     retry: false,
   }).data;
+  // Бейджи «Приёмка и ключи» — приёмки сегодня, «Сервис жильцов» — новые обращения (гайд §4, §5).
+  const handoversToday = useQuery({
+    queryKey: estateOpsKeys.handoverSummary(realtyScope, null),
+    queryFn: ({ signal }) => getHandoverSummary(null, realtyScope, signal),
+    enabled: canHandover && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.today;
+  const newResidentRequests = useQuery({
+    queryKey: estateOpsKeys.requestsSummary(realtyScope, null),
+    queryFn: ({ signal }) => getRequestsSummary(null, realtyScope, signal),
+    enabled: canResidents && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.new;
   const tasksBadgeColor: "error" | "primary" = todayTasks?.some((task) => task.overdue && !task.done) ? "error" : "primary";
 
   const sectionLabel = (text: string) =>
@@ -659,6 +682,11 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canPayroll && <SidebarMenuItem to="/personnel/payroll" icon={<PaidOutlined />} label="Зарплата" collapsed={siderCollapsed} badgeText={payrollPending ? "!" : undefined} badgeColor="warning" />}
       {canAcs && <SidebarMenuItem to="/personnel/acs" icon={<SensorDoorOutlined />} label="СКУД" collapsed={siderCollapsed} badgeText={shiftActive ? "●" : undefined} badgeColor="primary" />}
       {canMotivation && <SidebarMenuItem to="/realestate/motivation" icon={<EmojiEventsOutlined />} label="Планы и мотивация" collapsed={siderCollapsed} />}
+
+      {(canHandover || canResidents || canMobileApp) && sectionLabel("Эксплуатация")}
+      {canHandover && <SidebarMenuItem to="/ops/handover" icon={<KeyOutlined />} label="Приёмка и ключи" collapsed={siderCollapsed} badgeCount={handoversToday ?? 0} badgeColor="primary" />}
+      {canResidents && <SidebarMenuItem to="/ops/residents" icon={<SupportAgentOutlined />} label="Сервис жильцов" collapsed={siderCollapsed} badgeCount={newResidentRequests ?? 0} badgeColor="error" />}
+      {canMobileApp && <SidebarMenuItem to="/ops/mobileapp" icon={<PhoneIphoneOutlined />} label="Мобильное приложение" collapsed={siderCollapsed} />}
 
       {canSettings && sectionLabel("Компания")}
       {canSettings && (
