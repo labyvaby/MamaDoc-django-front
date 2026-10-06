@@ -4,7 +4,7 @@
  * плитки фактов (дата рождения, адрес) и приглушённые блоки секций.
  */
 import React from "react";
-import { Alert, AlertTitle, Box, IconButton, Link, Stack, Tooltip, Typography } from "@mui/material";
+import { Alert, AlertTitle, Box, IconButton, LinearProgress, Link, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import dayjs from "dayjs";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -18,11 +18,13 @@ import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
+import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
+import WorkspacePremiumOutlined from "@mui/icons-material/WorkspacePremiumOutlined";
 
 import { AppCard, InfoTile, ListEmptyState, UserAvatar } from "../../components/ui";
 import { subtleBg } from "../../theme/uiHelpers";
 import { birthdayCountdownLabel, daysUntilBirthday, formatAgeYears } from "../../utility/age";
-import type { DjangoClient } from "../../api/clients";
+import type { ClientMetrics, DjangoClient } from "../../api/clients";
 import type { ClientLayoutSettings } from "./clientLayout";
 
 /** Ближайший день рождения подсвечиваем за неделю — время поздравить. */
@@ -38,14 +40,33 @@ function birthDateLabel(dob: string) {
   return `${dayjs(dob).format("DD.MM.YYYY")}${age ? ` (${age})` : ""}`;
 }
 
+/** «12,5» без хвостовых нулей — для процентов уровня. */
+function percent(value: string) {
+  return `${Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 2 })}%`;
+}
+
 type Props = {
   client: DjangoClient | null;
   settings: ClientLayoutSettings;
   canUpdate: boolean;
   onEdit: () => void;
+  /** Блок «Покупки»: показывается, только если у роли есть clients.crm.view. */
+  showPurchases?: boolean;
+  metrics?: ClientMetrics | null;
+  metricsLoading?: boolean;
+  metricsError?: boolean;
 };
 
-export default function ClientCard({ client, settings, canUpdate, onEdit }: Props) {
+export default function ClientCard({
+  client,
+  settings,
+  canUpdate,
+  onEdit,
+  showPurchases = false,
+  metrics = null,
+  metricsLoading = false,
+  metricsError = false,
+}: Props) {
   const isCompany = client?.clientType === "company";
   const daysToBirthday = client && !isCompany ? daysUntilBirthday(client.dob) : null;
   const showDob = Boolean(client?.dob) && !isCompany;
@@ -157,6 +178,10 @@ export default function ClientCard({ client, settings, canUpdate, onEdit }: Prop
                 </FactBlock>
               )}
 
+              {showPurchases && (
+                <PurchasesBlock metrics={metrics} loading={metricsLoading} error={metricsError} />
+              )}
+
               {settings.sections.finance && (
                 <FactBlock icon={<AccountBalanceWalletOutlined />} title="Счёт клиента">
                   <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -178,6 +203,88 @@ export default function ClientCard({ client, settings, canUpdate, onEdit }: Prop
         </Box>
       </AppCard>
     </Box>
+  );
+}
+
+/**
+ * «Покупки»: сколько клиент потратил в организации — по этой сумме считается
+ * его уровень. Итог включает покупки до перехода в CRM (перенесены из
+ * прежней учётной системы), поэтому под ним — из чего он сложен.
+ */
+function PurchasesBlock({ metrics, loading, error }: { metrics: ClientMetrics | null; loading: boolean; error: boolean }) {
+  if (!metrics) {
+    return (
+      <FactBlock icon={<ShoppingBagOutlined />} title="Покупки">
+        <Typography variant="body2" color={error ? "error" : "text.secondary"}>
+          {loading ? "Загрузка…" : error ? "Не удалось загрузить покупки" : "Покупок пока нет"}
+        </Typography>
+      </FactBlock>
+    );
+  }
+
+  const net = Number(metrics.netTotal || 0);
+  const imported = Number(metrics.importedPurchaseTotal || 0);
+  // В CRM — то, что прошло через кассу: покупки минус возвраты.
+  const inCrm = Number(metrics.purchaseTotal || 0) - Number(metrics.returnTotal || 0);
+  const tier = metrics.tier ?? null;
+  const nextTier = metrics.nextTier ?? null;
+  const nextThreshold = nextTier ? Number(nextTier.threshold || 0) : 0;
+  const progress = nextThreshold > 0 ? Math.min(100, Math.max(0, (net / nextThreshold) * 100)) : 100;
+
+  return (
+    <FactBlock icon={<ShoppingBagOutlined />} title="Покупки">
+      <Stack spacing={1.25}>
+        <Box minWidth={0}>
+          <Typography variant="caption" color="text.secondary" display="block">Потратил всего</Typography>
+          <Typography variant="h6" fontWeight={700} sx={{ lineHeight: 1.25, overflowWrap: "anywhere" }}>
+            {money(String(net))}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ overflowWrap: "anywhere" }}>
+            {`в CRM: ${money(String(inCrm))}`}
+            {imported > 0 ? ` · до перехода: ${money(String(imported))}` : ""}
+          </Typography>
+        </Box>
+
+        <Box sx={{ display: "grid", gap: 1, gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))" }}>
+          <FactRow label="Покупок" value={metrics.purchaseCount.toLocaleString("ru-RU")} />
+          <FactRow label="Средний чек" value={metrics.purchaseCount > 0 ? money(metrics.averageReceipt) : ""} />
+          <FactRow label="Последняя покупка" value={metrics.lastPurchaseAt ? dayjs(metrics.lastPurchaseAt).format("DD.MM.YYYY") : ""} />
+        </Box>
+
+        {(tier || nextTier) && (
+          <Box sx={{ borderRadius: "10px", border: 1, borderColor: "divider", bgcolor: "background.paper", p: 1 }}>
+            <Stack direction="row" alignItems="center" gap={1} minWidth={0}>
+              <WorkspacePremiumOutlined fontSize="small" color={tier ? "primary" : "disabled"} />
+              <Box minWidth={0}>
+                <Typography variant="body2" fontWeight={700} sx={{ overflowWrap: "anywhere" }}>
+                  {tier ? tier.name : "Без уровня"}
+                </Typography>
+                {tier && (Number(tier.discountPercent) > 0 || Number(tier.cashbackPercent) > 0) && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    {[
+                      Number(tier.discountPercent) > 0 ? `скидка ${percent(tier.discountPercent)}` : "",
+                      Number(tier.cashbackPercent) > 0 ? `кешбэк ${percent(tier.cashbackPercent)}` : "",
+                    ].filter(Boolean).join(" · ")}
+                  </Typography>
+                )}
+              </Box>
+            </Stack>
+            {nextTier ? (
+              <Box sx={{ mt: 1 }}>
+                <LinearProgress variant="determinate" value={progress} sx={{ height: 6, borderRadius: 3 }} />
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, overflowWrap: "anywhere" }}>
+                  {`До уровня «${nextTier.name}» осталось ${money(nextTier.remaining)}`}
+                </Typography>
+              </Box>
+            ) : (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                Максимальный уровень
+              </Typography>
+            )}
+          </Box>
+        )}
+      </Stack>
+    </FactBlock>
   );
 }
 
