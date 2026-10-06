@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 import { useSnackbar } from "notistack";
 import dayjs from "dayjs";
+import "dayjs/locale/ru";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 
@@ -48,6 +49,8 @@ import { useRefreshOps } from "./hooks";
 
 type Tab = "users" | "devices" | "pushes" | "access";
 const TABS: Tab[] = ["users", "devices", "pushes", "access"];
+/** «2026-10» → «октябрь 2026»; иное — как пришло. */
+const billMonth = (month: string) => (/^\d{4}-\d{2}$/.test(month) ? dayjs(`${month}-01`).locale("ru").format("MMMM YYYY") : month);
 const message = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback);
 
 /**
@@ -378,7 +381,7 @@ function UserDrawer({ user, open, canManage, onClose }: { user: AppUser | null; 
                 <Skeleton variant="rounded" height={100} />
               ) : bill ? (
                 <Box sx={{ display: "grid", gap: 0.5 }}>
-                  <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>{t("mobileapp.user.bill", { month: bill.month })}</Typography>
+                  <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>{t("mobileapp.user.bill", { month: billMonth(bill.month) })}</Typography>
                   {bill.lines.map(([name, amount]) => (
                     <InfoRow key={name} label={name} value={formatKGS(amount)} />
                   ))}

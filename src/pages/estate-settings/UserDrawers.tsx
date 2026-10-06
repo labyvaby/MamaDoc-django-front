@@ -69,10 +69,9 @@ export function UserDrawer({ user, open, roles, onClose }: { user: OrgUser | nul
         ) : (
           <>
             <Box>
-              {user.position && <InfoRow label={t("roles.users.name")} value={user.position} />}
+              {user.position && <InfoRow label={t("roles.users.position")} value={user.position} />}
               <InfoRow label={t("roles.users.email")} value={user.email || "—"} />
               <InfoRow label={t("roles.users.lastLogin")} value={user.lastLogin ? dayjs(user.lastLogin).format("DD.MM.YYYY HH:mm") : t("common.never")} />
-              {user.isOwner && <InfoRow label={t("roles.users.role")} value={t("roles.users.owner")} />}
             </Box>
             {canEdit ? (
               <TextField
@@ -93,7 +92,7 @@ export function UserDrawer({ user, open, roles, onClose }: { user: OrgUser | nul
                 ))}
               </TextField>
             ) : (
-              <InfoRow label={t("roles.users.role")} value={user.roleName || "—"} />
+              <InfoRow label={t("roles.users.role")} value={[user.roleName, user.isOwner ? t("roles.users.owner") : null].filter(Boolean).join(" · ") || "—"} />
             )}
             <Box>
               <FormControlLabel

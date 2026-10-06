@@ -201,8 +201,8 @@ function Grid({ sheet, editable, busy, onCell }: { sheet: Timesheet; editable: b
   const days = Array.from({ length: sheet.days }, (_, i) => i + 1);
   const today = dayjs().format("YYYY-MM") === sheet.month ? dayjs().date() : null;
   const sticky = { position: "sticky" as const, left: 0, zIndex: 1, bgcolor: "background.paper", borderRight: 1, borderColor: "divider" };
-  const head = (label: React.ReactNode, w: number, weekend = false, isToday = false) => (
-    <Box sx={{ width: w, flexShrink: 0, textAlign: "center", fontSize: "0.68rem", fontWeight: 700, color: isToday ? "primary.main" : weekend ? "text.disabled" : "text.secondary", py: 0.75 }}>{label}</Box>
+  const head = (label: React.ReactNode, w: number, weekend = false, isToday = false, key?: React.Key) => (
+    <Box key={key} sx={{ width: w, flexShrink: 0, textAlign: "center", fontSize: "0.68rem", fontWeight: 700, color: isToday ? "primary.main" : weekend ? "text.disabled" : "text.secondary", py: 0.75 }}>{label}</Box>
   );
   const tip = (row: TimesheetRow, day: number) => {
     const acs = row.acsTimes[String(day)];
@@ -214,7 +214,7 @@ function Grid({ sheet, editable, busy, onCell }: { sheet: Timesheet; editable: b
       <Box sx={{ minWidth: NAME_W + days.length * DAY_W + SUM_W * 4 }}>
         <Box sx={{ display: "flex", borderBottom: 1, borderColor: "divider" }}>
           <Box sx={{ ...sticky, width: NAME_W, flexShrink: 0, px: 2, py: 0.75, fontSize: "0.72rem", fontWeight: 700, color: "text.secondary" }}>{t("timesheet.employee")}</Box>
-          {days.map((d) => head(d, DAY_W, isWeekend(sheet.month, d), d === today))}
+          {days.map((d) => head(d, DAY_W, isWeekend(sheet.month, d), d === today, d))}
           {head(t("timesheet.worked"), SUM_W)}
           {head(t("timesheet.vacation"), SUM_W)}
           {head(t("timesheet.sick"), SUM_W)}

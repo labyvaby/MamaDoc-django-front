@@ -164,18 +164,19 @@ function CrmAnalyticsScreen() {
           ))}
         </Box>
       ) : (
+        // Две независимые колонки: карточки разной высоты не оставляют пустых дыр в сетке.
         <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 3fr) minmax(0, 2fr)" }, alignItems: "start" }}>
-          <Funnel data={a} onStage={(stage) => navigate(leadsHref({ stage }))} />
+          <Box sx={{ display: "grid", gap: 1.5, minWidth: 0 }}>
+            <Funnel data={a} onStage={(stage) => navigate(leadsHref({ stage }))} />
+            <Dynamics data={a} />
+            <Managers rows={a.managers} onOpen={(m) => navigate(leadsHref({ managerId: String(m.managerId) }))} />
+            <Sources rows={a.sources} />
+          </Box>
           <Box sx={{ display: "grid", gap: 1.5, minWidth: 0 }}>
             <Tasks data={a} onTasks={() => navigate(managerId != null ? "/realestate/today?mine=1" : "/realestate/today")} onNoTask={() => navigate(leadsHref({ filter: "notask" }))} />
             <Activity data={a} />
-          </Box>
-          <Dynamics data={a} />
-          <StageConversion data={a} />
-          <Managers rows={a.managers} onOpen={(m) => navigate(leadsHref({ managerId: String(m.managerId) }))} />
-          <Projects data={a} />
-          <Box sx={{ gridColumn: { md: "1 / -1" }, display: "grid", gap: 1.5, gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 3fr) minmax(0, 2fr)" }, alignItems: "start" }}>
-            <Sources rows={a.sources} />
+            <StageConversion data={a} />
+            <Projects data={a} />
             <UnitTrends data={a} />
           </Box>
         </Box>
@@ -384,7 +385,6 @@ function Dynamics({ data }: { data: CrmAnalytics }) {
 
 function StageConversion({ data }: { data: CrmAnalytics }) {
   const { t } = useT("estateAnalytics");
-  const first = data.stages[0]?.current ?? 0;
   const max = Math.max(0, ...data.stages.map((s) => s.current));
   return (
     <Box sx={{ ...cardSx, minWidth: 0 }}>
@@ -400,7 +400,6 @@ function StageConversion({ data }: { data: CrmAnalytics }) {
                   {s.name}
                 </Typography>
                 <Typography sx={{ fontSize: "0.8125rem", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{s.current}</Typography>
-                {first > 0 && <Typography sx={{ width: 44, textAlign: "right", fontSize: "0.75rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{`${Math.round((s.current / first) * 100)}%`}</Typography>}
               </Box>
               <ProgressBar value={shareOf(s.current, max)} height={5} />
             </Box>
