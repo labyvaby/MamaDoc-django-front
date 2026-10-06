@@ -7,13 +7,14 @@ import { useRealtimeRefetch } from "./useRealtimeRefetch";
 import type { ChangeMessage } from "./useChangesSocket";
 
 const mock = vi.hoisted(() => ({
+  activeBranch: { id: 21 } as { id: number } | null,
   socket: null as null | { organizationId?: number; enabled?: boolean; onMessage: (message: ChangeMessage) => void },
 }));
 vi.mock("./useChangesSocket", () => ({
   useChangesSocket: (options: NonNullable<typeof mock.socket>) => { mock.socket = options; return true; },
 }));
 vi.mock("./usePermissions", () => ({
-  usePermissions: () => ({ activeBranch: { id: 21 }, activeOrganization: { id: 7 } }),
+  usePermissions: () => ({ activeBranch: mock.activeBranch, activeOrganization: { id: 7 } }),
 }));
 let root: Root;
 let hidden: boolean;
@@ -27,6 +28,7 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   root = createRoot(document.createElement("div"));
+  mock.activeBranch = { id: 21 };
   hidden = false;
   changed = vi.fn<() => void>();
   vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
@@ -56,4 +58,12 @@ it("gates the subscription until the cashbox context and permissions are ready",
   expect(mock.socket!.enabled).toBe(false);
   await act(async () => { root.render(<Screen />); });
   expect(mock.socket!.enabled).toBe(true);
+});
+it("updates organization-wide cashbox without a selected branch", async () => {
+  mock.activeBranch = null;
+  await act(async () => { root.render(<Screen />); });
+  expect(mock.socket!.enabled).toBe(true);
+  hint("appointment");
+  await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+  expect(changed).toHaveBeenCalledTimes(1);
 });
