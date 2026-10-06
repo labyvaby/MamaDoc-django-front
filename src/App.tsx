@@ -58,7 +58,7 @@ import { RateLimitDialog } from "./components/errors/RateLimitDialog";
 
 import { Fragment, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { djangoQueryKeys } from "./api/queryKeys";
-import { ApiError } from "./api/client";
+import { APP_QUERY_CLIENT_CONFIG } from "./api/queryClientConfig";
 import { CASHLESS_METHODS_ENABLED } from "./api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "./api/deals";
 import { WAITLIST_MODULE_ENABLED } from "./api/waitlist";
@@ -495,23 +495,7 @@ function App() {
                       warnWhenUnsavedChanges: true,
                       projectId: "Ajscvf-43VuiP-CaKNwq",
                       reactQuery: {
-                        clientConfig: {
-                          defaultOptions: {
-                            queries: {
-                              staleTime: 5 * 60 * 1000, // 5 minutes
-                              gcTime: 10 * 60 * 1000, // 10 minutes
-                              refetchOnWindowFocus: false,
-                              // Повторяем один раз только временные сбои. 429
-                              // обрабатывается единым диалогом; мгновенный retry
-                              // лишь создаст ещё один отклонённый запрос.
-                              retry: (failureCount, error) =>
-                                !(
-                                  error instanceof ApiError &&
-                                  error.status === 429
-                                ) && failureCount < 1,
-                            },
-                          },
-                        },
+                        clientConfig: APP_QUERY_CLIENT_CONFIG,
                       },
                     }}
                   >
