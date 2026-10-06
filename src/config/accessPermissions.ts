@@ -59,6 +59,10 @@ export const PAGE_PERMISSIONS = {
   conclusionPrint: "medical.conclusions.print",
   clients: "clients.view",
   pos: "pos.view",
+  // Подарочные сертификаты: реестр, карточка и отчёт по филиалам бэк отдаёт
+  // по promotions.view или promotions.manage; аннулирование и срок по
+  // умолчанию — только promotions.manage (страница проверяет сама).
+  certificates: ["promotions.view", "promotions.manage"],
   // Застройщик (AIVIO): бэк пускает в биллинг по treasury.view или realty.view.
   billing: ["treasury.view", "realty.view"],
   // Финансы застройщика (касса, календарь, бюджеты, долги) — /api/v2/treasury/, действия — treasury.manage.

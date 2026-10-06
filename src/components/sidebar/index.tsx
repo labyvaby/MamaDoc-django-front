@@ -119,6 +119,7 @@ import {
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import { AccountBalanceWalletOutlined } from "@mui/icons-material";
+import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import WorkOutlineOutlined from "@mui/icons-material/WorkOutline";
 import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 import ManageAccountsOutlined from "@mui/icons-material/ManageAccountsOutlined";
@@ -737,6 +738,8 @@ const SidebarSecondary: React.FC = () => {
     pnl: can(PAGE_PERMISSIONS.pnl),
     load: !isRetail && can(PAGE_PERMISSIONS.load),
     doctorProfit: !isRetail && can(PAGE_PERMISSIONS.doctorProfit),
+    // can() проверяет и модуль promotions: без него пункта нет.
+    certificates: can(PAGE_PERMISSIONS.certificates),
     notifications: can(PAGE_PERMISSIONS.notifications),
     settings: hasVisibleSettingsTab,
   };
@@ -914,7 +917,7 @@ const SidebarSecondary: React.FC = () => {
     "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.realestate || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
-    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.pnl || can_.load || can_.doctorProfit || can_.notifications || can_.settings,
+    "management": can_.salaryReports || can_.reports || can_.cashbox || can_.certificates || can_.pnl || can_.load || can_.doctorProfit || can_.notifications || can_.settings,
   };
 
   // Если активная группа стала недоступной — сбросить на "all"
@@ -1258,6 +1261,10 @@ const SidebarSecondary: React.FC = () => {
         {/* Прибыли и убытки */}
         {show("management") && can_.pnl && (
           <SidebarMenuItem to="/pnl" icon={<QueryStatsOutlined />} label="Прибыли и убытки" collapsed={siderCollapsed} />
+        )}
+        {/* Подарочные сертификаты — реестр и отчёт по филиалам */}
+        {show("management") && can_.certificates && (
+          <SidebarMenuItem to="/certificates" icon={<CardGiftcardOutlined />} label="Сертификаты" collapsed={siderCollapsed} />
         )}
 
         {/* Нагрузка */}

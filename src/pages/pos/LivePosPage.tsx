@@ -23,13 +23,14 @@ import PrintRounded from "@mui/icons-material/PrintRounded";
 import DownloadRounded from "@mui/icons-material/DownloadRounded";
 import QrCode2Rounded from "@mui/icons-material/QrCode2Rounded";
 import CloseRounded from "@mui/icons-material/CloseRounded";
-import { apiRequest } from "../../api/client";
+import { ApiError, apiRequest } from "../../api/client";
 import { uploadClientPhoto, type CreateClientPayload, type DjangoClientStatus } from "../../api/clients";
-import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
+import { getDiscountKinds, type DiscountKind, type GiftCertificateDetail } from "../../api/promotions";
 import {
   checkoutPosCart,
   getPosBootstrap,
   getPosProducts,
+  lookupPosCertificate,
   posRequest,
   promoCodesEnabled,
   quotePosCart,
@@ -54,6 +55,7 @@ import {
   emptyBenefits,
   inlineQuoteErrorField,
   type Benefits,
+  type CodeInfo,
 } from "./LivePaymentPanel";
 import { decimalForRequest, maxDiscountPercent } from "./discountInput";
 import { posColors } from "./layout";
@@ -62,6 +64,8 @@ import { PosAmount } from "./ui";
 import { playScanFeedback, useBarcodeScanner } from "./barcodeScanner";
 import { formatPosError, posError, toPosUserError, type PosUserError } from "./errors";
 import { PosErrorNotice } from "./ErrorNotice";
+import { CertificateSellDialog } from "./CertificateSellDialog";
+import { certificateLookupMessage } from "../certificates/certificateMeta";
 
 type CartRow = {
   product: PosProduct;
@@ -267,6 +271,12 @@ export default function LivePosPage() {
   const [clientSearch, setClientSearch] = React.useState("");
   const [clientEditorOpen, setClientEditorOpen] = React.useState(false);
   const [clientEditorQuery, setClientEditorQuery] = React.useState("");
+  /** Для кого открыта форма нового клиента: покупатель чека или покупатель сертификата. */
+  const [clientEditorTarget, setClientEditorTarget] = React.useState<"receipt" | "certificate">("receipt");
+  const [certificateSellOpen, setCertificateSellOpen] = React.useState(false);
+  const [certificateBuyer, setCertificateBuyer] = React.useState<PosClient | null>(null);
+  const [certificateScan, setCertificateScan] = React.useState<{ code: string; key: number } | null>(null);
+  const [soldNotice, setSoldNotice] = React.useState<string | null>(null);
   const [benefits, setBenefits] = React.useState<Benefits>(emptyBenefits);
   const [held, setHeld] = React.useState<PosSavedReceipt | null>(null);
   const [holdOpen, setHoldOpen] = React.useState(false);
@@ -475,6 +485,23 @@ export default function LivePosPage() {
     // Пока сервер пересчитывает, панель не мигает «—»: показываем оценку ниже.
     placeholderData: keepPreviousData,
   });
+  // Остаток и срок применённого сертификата — до расчёта чека и независимо от
+  // него: списание по-прежнему считает quote/ (`certificateAmount`).
+  const certificateCode = benefits.certificateCode.trim();
+  const certificateLookup = useQuery({
+    queryKey: [...prefix, "certificate-lookup", certificateCode],
+    queryFn: ({ signal }) => lookupPosCertificate(scope, certificateCode, signal),
+    enabled: ready && !!actions.certificate && Boolean(certificateCode) && !held,
+    retry: false,
+    staleTime: 0,
+  });
+  const certificateInfo: CodeInfo | null = !certificateCode
+    ? null
+    : certificateLookup.data
+      ? certificateLookupMessage(certificateLookup.data)
+      : certificateLookup.error instanceof ApiError && certificateLookup.error.status === 404
+        ? { tone: "error", text: "Сертификат с таким номером не найден." }
+        : null;
   const discountKindsQuery = useQuery({
     queryKey: ["django", "promotions", "discount-kinds", scope.branchId],
     queryFn: ({ signal }) => getDiscountKinds({ branchId: scope.branchId }, signal),
@@ -720,6 +747,25 @@ export default function LivePosPage() {
 
   /** Код со сканера — сразу в чек, при любом фокусе. */
   const handleScan = (code: string) => {
+    // Окно продажи сертификата: сканируют саму карту — номер идёт в его поле.
+    // Форма нового клиента поверх окна сканер не принимает.
+    if (certificateSellOpen && !clientEditorOpen) {
+      setCertificateScan({ code, key: Date.now() });
+      playScanFeedback(true);
+      return;
+    }
+    // Фокус в поле сертификата панели оплаты: это карта, а не товар.
+    const focused = document.activeElement;
+    if (
+      actions.certificate &&
+      !held &&
+      focused instanceof HTMLElement &&
+      focused.closest("[data-pos-scan-target='certificate']")
+    ) {
+      setBenefits((current) => ({ ...current, certificateCode: code.trim() }));
+      playScanFeedback(true);
+      return;
+    }
     // Открыто окно (оплата, скидка, выбор варианта): товар в чек не кладём —
     // иначе сумма поменялась бы прямо во время оплаты.
     const modalOpen =
@@ -846,13 +892,13 @@ export default function LivePosPage() {
       }
       if (event.key === "F5") {
         event.preventDefault();
-        if (actions.sell && quote && !busy && !list && !lineDiscountIgnored)
+        if (actions.sell && quote && !busy && !list && !lineDiscountIgnored && !certificateSellOpen)
           setCheckoutOpen(true);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [actions.sell, quote, busy, list, lineDiscountIgnored]);
+  }, [actions.sell, quote, busy, list, lineDiscountIgnored, certificateSellOpen]);
 
   useBarcodeScanner(handleScan, ready && Boolean(data));
 
@@ -1011,6 +1057,12 @@ export default function LivePosPage() {
         }}
         canSell={actions.sell && !pending}
         canHold={actions.hold}
+        canSellCertificate={Boolean(actions.certificate_sell)}
+        onSellCertificate={() => {
+          setCertificateBuyer(null);
+          setCertificateScan(null);
+          setCertificateSellOpen(true);
+        }}
         onScan={() => void addByCode(search, "manual")}
       />
       {visibleError && (
@@ -1113,6 +1165,7 @@ export default function LivePosPage() {
                 canRegister={actions.client_create}
                 canHistory={actions.history}
                 onCreateClient={(query) => {
+                  setClientEditorTarget("receipt");
                   setClientEditorQuery(query);
                   setClientEditorOpen(true);
                 }}
@@ -1137,6 +1190,8 @@ export default function LivePosPage() {
             initialQuery={clientEditorQuery}
             statuses={clientStatuses.data ?? []}
             showPhoto={auth.hasPermission("clients.update") || auth.isSuperAdmin()}
+            // Поверх окна продажи сертификата: у Drawer слой ниже, чем у Dialog.
+            zIndex={clientEditorTarget === "certificate" ? theme.zIndex.modal + 1 : undefined}
             onClose={() => setClientEditorOpen(false)}
             onCreate={async (payload: CreateClientPayload, photoFile) => {
               // Организацию касса передаёт заголовком (posRequest), а ФИО ручка
@@ -1148,10 +1203,14 @@ export default function LivePosPage() {
                 method: "POST",
                 body: { ...fields, name: payload.fullName, branchId: scope.branchId },
               });
-              setClient(result);
-              setClientQuery("");
-              setClientSearch("");
-              setBenefits(emptyBenefits);
+              if (clientEditorTarget === "certificate") {
+                setCertificateBuyer(result);
+              } else {
+                setClient(result);
+                setClientQuery("");
+                setClientSearch("");
+                setBenefits(emptyBenefits);
+              }
               void cache.invalidateQueries({ queryKey: [...prefix, "clients"] });
               void cache.invalidateQueries({ queryKey: ["clients", scope.organizationId] });
               if (photoFile) {
@@ -1182,6 +1241,8 @@ export default function LivePosPage() {
           maxPercent={maxDiscountPercent(data.rules)}
           lineDiscounts={panelLineDiscounts}
           lineDiscountIgnored={lineDiscountIgnored}
+          certificateInfo={certificateInfo}
+          certificateInfoLoading={Boolean(certificateCode) && certificateLookup.isFetching && !certificateLookup.data}
         />
       </Box>
       <Snackbar
@@ -1202,6 +1263,47 @@ export default function LivePosPage() {
         onClose={() => setHoldOpen(false)}
         onConfirm={(comment) => void save([], "held", comment)}
       />
+      {actions.certificate_sell && (
+        <CertificateSellDialog
+          open={certificateSellOpen}
+          scope={scope}
+          bootstrap={{ ...data, actions }}
+          scan={certificateScan}
+          buyer={certificateBuyer}
+          onBuyerChange={setCertificateBuyer}
+          onCreateBuyer={
+            actions.client_create
+              ? (query) => {
+                  setClientEditorTarget("certificate");
+                  setClientEditorQuery(query);
+                  setClientEditorOpen(true);
+                }
+              : undefined
+          }
+          onClose={() => setCertificateSellOpen(false)}
+          onSold={(certificate: GiftCertificateDetail) => {
+            setCertificateSellOpen(false);
+            setCertificateBuyer(null);
+            setSoldNotice(`Сертификат №${certificate.code} продан`);
+            // Деньги за карту — операция кассы и смены, а не чек: обновляем их
+            // вместе с данными кассы магазина и реестром сертификатов.
+            invalidate();
+            void cache.invalidateQueries({ queryKey: ["django", "cashbox"] });
+            void cache.invalidateQueries({ queryKey: ["django", "shifts"] });
+            void cache.invalidateQueries({ queryKey: ["django", "promotions", "certificates"] });
+          }}
+        />
+      )}
+      <Snackbar
+        open={soldNotice !== null}
+        autoHideDuration={5000}
+        onClose={() => setSoldNotice(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="success" variant="filled" onClose={() => setSoldNotice(null)} sx={{ fontWeight: 700 }}>
+          {soldNotice}
+        </Alert>
+      </Snackbar>
       {quote && (
         <CheckoutDialog
           open={checkoutOpen}

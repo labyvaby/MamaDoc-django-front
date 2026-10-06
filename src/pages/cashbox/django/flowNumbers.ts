@@ -25,6 +25,9 @@ export const NO_METHOD_HINT = "Безнал до появления справо
 export const SALES_NO_METHOD_HINT =
   "В продаже указывают нал или карту, но не конкретный терминал — поэтому в разрезе по способам её нет";
 const REFUNDS_LABEL = "Возвраты";
+export const CERTIFICATES_LABEL = "Продажа сертификатов";
+export const CERTIFICATES_HINT =
+  "Не выручка: деньги за подарочные карты — аванс. Выручка появится, когда сертификатом оплатят товар. Возвраты — при аннулировании карты.";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -74,6 +77,62 @@ function paymentsRow(payments: number, refunds: number, children: FlowSubRow[]):
     direction: net < 0 ? -1 : 1,
     children,
   };
+}
+
+/**
+ * Строка «Продажа сертификатов» — нетто: продано минус возвращено при
+ * аннулировании. Деньги за карту двигают кассу, но выручкой не являются,
+ * поэтому строка отдельная и с пояснением. Без движений строки нет вовсе:
+ * у клиники без сертификатов не должно появиться «0 с» лишней строкой.
+ */
+function certificateRow(income: number, refunds: number, children: FlowSubRow[]): FlowBreakdownRow[] {
+  if (income === 0 && refunds === 0) return [];
+  const net = income - refunds;
+  return [
+    {
+      key: "certificate",
+      label: CERTIFICATES_LABEL,
+      amount: Math.abs(net),
+      direction: net < 0 ? -1 : 1,
+      hint: CERTIFICATES_HINT,
+      children,
+    },
+  ];
+}
+
+/** Подстроки сертификатов: «Продано» и «Возвращено» — только если возвраты были. */
+function certificateGrossSubRows(income: number, refunds: number): FlowSubRow[] {
+  if (refunds === 0) return [];
+  return [
+    { key: "certificate-gross", label: "Продано", amount: income, direction: 1 },
+    { key: "certificate-refunds", label: "Возвращено при аннулировании", amount: refunds, direction: -1 },
+  ];
+}
+
+/** Сертификаты по способам безнала — нетто, как оплаты (`cardPaymentSubRows`). */
+function certificateMethodSubRows(rows: CashlessMethodBreakdownRow[] | undefined): FlowSubRow[] {
+  return (rows ?? [])
+    .filter((r) => num(r.certificateIncome) !== 0 || num(r.certificateRefunds) !== 0)
+    .map((r) => {
+      const income = num(r.certificateIncome);
+      const refunded = num(r.certificateRefunds);
+      const net = income - refunded;
+      const noMethod = r.cashlessMethodId == null;
+      return {
+        net,
+        row: {
+          key: `certificate-${r.cashlessMethodId ?? "none"}`,
+          label: r.cashlessMethodName ?? NO_METHOD_LABEL,
+          amount: Math.abs(net),
+          direction: net < 0 ? -1 : 1,
+          muted: noMethod,
+          hint: noMethod ? NO_METHOD_HINT : undefined,
+          note: refunded !== 0 ? `продано ${plain(income)} · возврат −${plain(refunded)}` : undefined,
+        } satisfies FlowSubRow,
+      };
+    })
+    .sort((a, b) => Number(a.row.muted) - Number(b.row.muted) || b.net - a.net)
+    .map(({ row }): FlowSubRow => row);
 }
 
 // ── Безнал ────────────────────────────────────────────────────────────────────
@@ -147,9 +206,13 @@ export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
   // Пусто, пока бэк не отдаёт `salesIncome`: тогда вместо разреза — подпись,
   // почему его нет (см. SALES_NO_METHOD_HINT).
   const saleSubRows = methodSubRows(methods, "salesIncome");
+  // Сертификаты: аванс, не выручка — но безнал за них пришёл на терминал.
+  const certificates = num(s?.certificateCardIncome);
+  const certificateRefunds = num(s?.certificateCardRefunds);
+  const certificateMethods = certificateMethodSubRows(methods);
 
   return {
-    inflow: payments - refunds + sales,
+    inflow: payments - refunds + sales + certificates - certificateRefunds,
     outflow: expenses + supplies,
     breakdown: [
       paymentsRow(payments, refunds, cardPaymentSubRows(methods, refunds)),
@@ -163,6 +226,11 @@ export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
         // отсутствие разреза — иначе продажи выглядят как потерянные деньги.
         hint: sales > 0 && saleSubRows.length === 0 ? SALES_NO_METHOD_HINT : undefined,
       },
+      ...certificateRow(
+        certificates,
+        certificateRefunds,
+        certificateMethods.length ? certificateMethods : certificateGrossSubRows(certificates, certificateRefunds),
+      ),
       {
         key: "expense",
         label: "Расходы",
@@ -183,12 +251,18 @@ export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
 
 // ── Наличные ──────────────────────────────────────────────────────────────────
 
-/** Наличный остаток по учёту: всё с начала записей до сегодня. */
+/**
+ * Наличный остаток по учёту: всё с начала записей до сегодня. Деньги за
+ * подарочные сертификаты лежат в ящике, хотя выручкой не являются, — бэк
+ * так же включает их в `netCashFlow` и `expectedCash` смены.
+ */
 export function cashNet(s: CashboxSummary): number {
   return (
     num(s.cashIncome) +
-    num(s.salesCashIncome) -
+    num(s.salesCashIncome) +
+    num(s.certificateCashIncome) -
     num(s.cashRefunds) -
+    num(s.certificateCashRefunds) -
     num(s.cashExpenses) -
     num(s.supplyCashExpenses)
   );
@@ -205,9 +279,11 @@ export function cashFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
   const refunds = num(s?.cashRefunds);
   const expenses = num(s?.cashExpenses);
   const supplies = num(s?.supplyCashExpenses);
+  const certificates = num(s?.certificateCashIncome);
+  const certificateRefunds = num(s?.certificateCashRefunds);
 
   return {
-    inflow: payments - refunds + sales,
+    inflow: payments - refunds + sales + certificates - certificateRefunds,
     outflow: expenses + supplies,
     breakdown: [
       paymentsRow(
@@ -221,6 +297,7 @@ export function cashFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
           : [],
       ),
       { key: "sale", label: "Продажи товаров", amount: sales, direction: 1 },
+      ...certificateRow(certificates, certificateRefunds, certificateGrossSubRows(certificates, certificateRefunds)),
       { key: "expense", label: "Расходы", amount: expenses, direction: -1 },
       { key: "supply", label: "Закупки товара", amount: supplies, direction: -1 },
     ],

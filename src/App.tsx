@@ -185,6 +185,8 @@ const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPag
 // живёт в отдельной ветке layout.
 const PosPage = lazy(() => import("./pages/pos"));
 const PosSalesHistoryPage = lazy(() => import("./pages/pos/PosSalesHistoryPage"));
+// Подарочные сертификаты: реестр, отчёт по филиалам, срок по умолчанию.
+const CertificatesPage = lazy(() => import("./pages/certificates/CertificatesPage"));
 
 
 // Вспомогательный компонент для защиты корневого редиректа
@@ -431,6 +433,11 @@ function App() {
                         name: "cashbox",
                         list: "/cashbox",
                         meta: { label: "Касса" }
+                      },
+                      {
+                        name: "certificates",
+                        list: "/certificates",
+                        meta: { label: "Сертификаты" }
                       },
                       {
                         name: "reports",
@@ -845,6 +852,16 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.cashbox}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoCashboxPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="certificates"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.certificates}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <CertificatesPage />
                               </Suspense>
                             </RequirePermission>
                           }
