@@ -6,6 +6,7 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Link,
   MenuItem,
   Stack,
   Table,
@@ -17,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link as RouterLink } from "react-router";
 
 import {
   createPromoCode,
@@ -200,6 +202,10 @@ export default function PromotionsSettingsPage() {
         </Stack>}
         <Divider />
         <Typography variant="h6" fontWeight={700}>Подарочные сертификаты</Typography>
+        <Alert severity="info">
+          Здесь сертификат выпускается бесплатно, без денег. Проданные на кассе карты, их историю, аннулирование и
+          отчёт по филиалам смотрите в разделе <Link component={RouterLink} to="/certificates">«Сертификаты»</Link>.
+        </Alert>
         <Stack direction={{ xs: "column", md: "row" }} gap={1.5}><TextField label="Код сертификата" value={certificateCode} onChange={(e) => setCertificateCode(e.target.value.toUpperCase())} disabled={!canManage || busy} /><TextField label="Номинал, сом" value={certificateAmount} onChange={(e) => setCertificateAmount(e.target.value)} inputProps={{ inputMode: "decimal" }} disabled={!canManage || busy} /><TextField label="Срок (необязательно)" type="datetime-local" value={certificateEndsAt} onChange={(e) => setCertificateEndsAt(e.target.value)} InputLabelProps={{ shrink: true }} disabled={!canManage || busy} /><Button onClick={addCertificate} disabled={!canManage || busy}>Выпустить сертификат</Button></Stack>
         <Table size="small"><TableHead><TableRow><TableCell>Код</TableCell><TableCell>Номинал</TableCell><TableCell>Остаток</TableCell><TableCell>Срок</TableCell><TableCell>Статус</TableCell></TableRow></TableHead><TableBody>{(certificates.data ?? []).map((certificate) => <TableRow key={certificate.id}><TableCell>{certificate.code}</TableCell><TableCell>{certificate.nominal}</TableCell><TableCell>{certificate.balance}</TableCell><TableCell>{datetime(certificate.expiresAt)}</TableCell><TableCell>{certificate.isActive && !certificate.isSpent ? "Активен" : "Закрыт"}</TableCell></TableRow>)}</TableBody></Table>
       </Stack>

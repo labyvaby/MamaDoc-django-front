@@ -108,6 +108,14 @@ const ShiftSummaryDialog: React.FC<Props> = ({ open, shift, onClose }) => {
             <Row label="Приход" value={`+ ${fmt(s.cashIncome)} с`} color="success.main" />
             <Row label="Возвраты" value={`− ${fmt(s.cashRefunds)} с`} color="success.main" />
             <Row label="Расходы" value={`− ${fmt(s.cashExpenses)} с`} color="success.main" />
+            {/* Сертификаты — в ящике и в ожидаемых наличных, но не выручка. */}
+            {(parseFloat(s.certificateCashIncome ?? "0") !== 0 || parseFloat(s.certificateCashRefunds ?? "0") !== 0) && (
+              <Row
+                label="Продажа сертификатов (не выручка)"
+                value={netSom(parseFloat(s.certificateCashIncome ?? "0") - parseFloat(s.certificateCashRefunds ?? "0"))}
+                color="success.main"
+              />
+            )}
             <Row label="Ожидается в кассе" value={`${fmt(s.expectedCash)} с`} color="success.main" bold />
 
             {shift?.actualCash != null && (
@@ -140,6 +148,13 @@ const ShiftSummaryDialog: React.FC<Props> = ({ open, shift, onClose }) => {
             <Row label="Карта приход" value={`${fmt(s.cardIncome)} с`} color="primary.main" />
             <Row label="Карта возвраты" value={`− ${fmt(s.cardRefunds)} с`} color="primary.main" />
             <Row label="Карта расходы" value={`− ${fmt(s.cardExpenses)} с`} color="primary.main" />
+            {(parseFloat(s.certificateCardIncome ?? "0") !== 0 || parseFloat(s.certificateCardRefunds ?? "0") !== 0) && (
+              <Row
+                label="Сертификаты безналом (не выручка)"
+                value={netSom(parseFloat(s.certificateCardIncome ?? "0") - parseFloat(s.certificateCardRefunds ?? "0"))}
+                color="primary.main"
+              />
+            )}
 
             {/* Продажи товаров сюда не попадают: способа у них нет. */}
             <CashlessMethodBreakdown

@@ -11,6 +11,7 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import ClearOutlined from "@mui/icons-material/ClearOutlined";
 import PauseCircleOutlineOutlined from "@mui/icons-material/PauseCircleOutlineOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
@@ -21,6 +22,9 @@ import { POS_RADIUS, posColors } from "./layout";
 type Props = {
   canSell?: boolean;
   canHold?: boolean;
+  /** «Продать сертификат» — действие `certificate_sell` кассы. */
+  canSellCertificate?: boolean;
+  onSellCertificate?: () => void;
   onScan?: () => void;
   inputRef?: React.Ref<HTMLInputElement>;
   search: string;
@@ -88,6 +92,8 @@ export const PosTopBar: React.FC<Props> = ({
   onOpenHeldReceipts,
   canSell = false,
   canHold = false,
+  canSellCertificate = false,
+  onSellCertificate,
   onScan,
 }) => {
   const theme = useTheme();
@@ -221,6 +227,9 @@ export const PosTopBar: React.FC<Props> = ({
       <Stack direction="row" alignItems="center" gap="8px" sx={{ flexShrink: 0, ml: { md: "auto" } }}>
         {canSell && <TopBarButton label="Новый чек" icon={<AddOutlined />} onClick={onNewReceipt} />}
         {canHold && <TopBarButton label="Отложенные" icon={<PauseCircleOutlineOutlined />} onClick={onOpenHeldReceipts} />}
+        {canSellCertificate && onSellCertificate && (
+          <TopBarButton label="Продать сертификат" icon={<CardGiftcardOutlined />} onClick={onSellCertificate} />
+        )}
       </Stack>
     </Box>
   );

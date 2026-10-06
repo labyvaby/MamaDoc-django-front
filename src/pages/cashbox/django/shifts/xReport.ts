@@ -139,6 +139,18 @@ export function buildXReport(summary: CashboxShiftSummary): XReport {
       // строка остаётся без разреза (см. salesIncome в разрезе кассы).
       methodRows(b, (r) => r.salesIncome ?? 0, 1),
     ),
+    // Деньги за подарочные сертификаты: в ящике и на терминале они есть (бэк
+    // включает их в expectedCash), но это аванс, а не выручка. Нетто —
+    // продано минус возвращено при аннулировании.
+    row(
+      "certificates",
+      "Продажа сертификатов (не выручка)",
+      num(summary.certificateCashIncome) - num(summary.certificateCashRefunds),
+      num(summary.certificateCardIncome) - num(summary.certificateCardRefunds),
+      0,
+      (summary.certificateCount ?? 0) + (summary.certificateRefundCount ?? 0),
+      methodRows(b, (r) => num(r.certificateIncome) - num(r.certificateRefunds), 1),
+    ),
     row(
       "supplies",
       "Закупки",

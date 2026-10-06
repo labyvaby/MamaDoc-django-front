@@ -140,6 +140,20 @@ const ShiftCloseDialog: React.FC<Props> = ({
                       <Typography variant="caption" color="success.main">+ {fmt(summary.salesCash)} с</Typography>
                     </Stack>
                   )}
+                  {/* Деньги за подарочные сертификаты лежат в ящике и входят в
+                      ожидаемые наличные, но выручкой не являются. */}
+                  {parseFloat(summary.certificateCashIncome ?? "0") > 0 && (
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="caption" color="text.secondary">Продажа сертификатов (не выручка):</Typography>
+                      <Typography variant="caption" color="success.main">+ {fmt(summary.certificateCashIncome)} с</Typography>
+                    </Stack>
+                  )}
+                  {parseFloat(summary.certificateCashRefunds ?? "0") > 0 && (
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="caption" color="text.secondary">Возврат за аннулированные сертификаты:</Typography>
+                      <Typography variant="caption" color="success.main">− {fmt(summary.certificateCashRefunds)} с</Typography>
+                    </Stack>
+                  )}
                   <Stack direction="row" justifyContent="space-between">
                     <Typography variant="caption" color="text.secondary">Возвраты наличными:</Typography>
                     <Typography variant="caption" color="success.main">− {fmt(summary.cashRefunds)} с</Typography>
