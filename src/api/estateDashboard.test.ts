@@ -38,8 +38,10 @@ describe("estateHref", () => {
     expect(estateHref("billing", 8)).toBe("/finance/billing?account=8");
     expect(estateHref("billing", null)).toBe("/finance/billing");
     expect(estateHref("inventory")).toBe("/realestate/chessboard");
-    // Экранов стройки и кадров ещё нет — без перехода.
-    expect(estateHref("quality", 14)).toBeNull();
+    expect(estateHref("quality", 14)).toBe("/construction/quality?defect=14");
+    expect(estateHref("construction")).toBe("/construction/schedule");
+    expect(estateHref("cashbank")).toBe("/finance/cashbank");
+    // Экрана кадров ещё нет — без перехода.
     expect(estateHref("staff")).toBeNull();
   });
 });

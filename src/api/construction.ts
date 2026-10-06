@@ -841,6 +841,46 @@ export function upcomingMilestones(stages: Stage[], limit = 5): Stage[] {
     .slice(0, limit);
 }
 
+export interface DefectMapCell {
+  floor: number;
+  section: string;
+  defects: Pick<Defect, "id" | "severity">[];
+}
+
+const SEVERITY_RANK: Record<string, number> = { critical: 3, major: 2, minor: 1 };
+
+/** Самая серьёзная критичность в ячейке карты — по ней цвет. */
+export const worstSeverity = (defects: Pick<Defect, "severity">[]) =>
+  defects.reduce<string | null>((worst, d) => ((SEVERITY_RANK[d.severity] ?? 0) > (SEVERITY_RANK[worst ?? ""] ?? 0) ? d.severity : worst), null);
+
+/**
+ * Карта дефектов: этажи сверху вниз × секции ЖК. Секция дефекта сверяется по
+ * названию без регистра; дефекты без секции/этажа или вне сетки — в `outside`.
+ */
+export function defectMap<D extends Pick<Defect, "id" | "severity" | "section" | "floor">>(
+  defects: D[],
+  sections: { name: string; floors: number; startFloor: number }[],
+): { floors: number[]; sections: string[]; cells: Map<string, D[]>; outside: D[] } {
+  const norm = (value: string) => value.trim().toLocaleLowerCase("ru");
+  const names = sections.map((sec) => sec.name);
+  const top = Math.max(0, ...sections.map((sec) => sec.startFloor + sec.floors - 1));
+  const bottom = sections.length ? Math.min(...sections.map((sec) => sec.startFloor)) : 1;
+  const floors: number[] = [];
+  for (let f = top; f >= bottom; f--) floors.push(f);
+  const cells = new Map<string, D[]>();
+  const outside: D[] = [];
+  for (const d of defects) {
+    const section = names.find((name) => norm(name) === norm(d.section));
+    if (section == null || d.floor == null || !floors.includes(d.floor)) {
+      outside.push(d);
+      continue;
+    }
+    const key = `${d.floor}|${section}`;
+    cells.set(key, [...(cells.get(key) ?? []), d]);
+  }
+  return { floors, sections: names, cells, outside };
+}
+
 const scopeKey = (scope: RealtyScope | undefined) => [scope?.organizationId ?? "session", scope?.branchId ?? "all"] as const;
 
 export const constructionKeys = {

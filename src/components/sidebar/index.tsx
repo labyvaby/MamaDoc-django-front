@@ -55,6 +55,7 @@ import DonutSmallOutlined from "@mui/icons-material/DonutSmallOutlined";
 import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
 import ViewTimelineOutlined from "@mui/icons-material/ViewTimelineOutlined";
 import EngineeringOutlined from "@mui/icons-material/EngineeringOutlined";
+import ReportProblemOutlined from "@mui/icons-material/ReportProblemOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
@@ -90,7 +91,7 @@ import { useEstateNav } from "../../hooks/useEstateNav";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { getRealtyTasks, realtyTaskKeys } from "../../api/realtyTasks";
 import { getCashForecast, getDebtSummary, treasuryKeys } from "../../api/treasury";
-import { constructionKeys, getActsSummary, getStages } from "../../api/construction";
+import { constructionKeys, getActsSummary, getDefectsSummary, getStages } from "../../api/construction";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -459,6 +460,7 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canConstruction = can(PAGE_PERMISSIONS.construction);
   const canSchedule = canConstruction && seen("construction");
   const canContractors = canConstruction && seen("contractors");
+  const canQuality = canConstruction && seen("quality");
   const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
@@ -514,6 +516,14 @@ const RealEstateSidebarMenu: React.FC = () => {
     staleTime: 5 * 60_000,
     retry: false,
   }).data?.checkCount;
+  // Бейдж «Стройконтроль» — критичные дефекты (гайд §5: `defects/summary` → criticalCount).
+  const criticalDefects = useQuery({
+    queryKey: constructionKeys.defectsSummary(realtyScope, null),
+    queryFn: ({ signal }) => getDefectsSummary(null, realtyScope, signal),
+    enabled: canQuality && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.criticalCount;
   const tasksBadgeColor: "error" | "primary" = todayTasks?.some((task) => task.overdue && !task.done) ? "error" : "primary";
 
   const sectionLabel = (text: string) =>
@@ -548,12 +558,15 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canPartners && <SidebarMenuItem to="/realestate/partners" icon={<HandshakeOutlined />} label="Риелторы и партнёры" collapsed={siderCollapsed} />}
       {canMarketing && <SidebarMenuItem to="/realestate/marketing" icon={<CampaignOutlined />} label="Маркетинг и ROI" collapsed={siderCollapsed} />}
 
-      {(canSchedule || canContractors) && sectionLabel("Стройка")}
+      {(canSchedule || canContractors || canQuality) && sectionLabel("Стройка")}
       {canSchedule && (
         <SidebarMenuItem to="/construction/schedule" icon={<ViewTimelineOutlined />} label="Проекты и графики" collapsed={siderCollapsed} badgeCount={delayedStages ?? 0} badgeColor="error" />
       )}
       {canContractors && (
         <SidebarMenuItem to="/construction/contractors" icon={<EngineeringOutlined />} label="Подрядчики и акты" collapsed={siderCollapsed} badgeCount={actsToCheck ?? 0} badgeColor="warning" />
+      )}
+      {canQuality && (
+        <SidebarMenuItem to="/construction/quality" icon={<ReportProblemOutlined />} label="Стройконтроль" collapsed={siderCollapsed} badgeCount={criticalDefects ?? 0} badgeColor="error" />
       )}
 
       {(docsItems.length > 0 || canSalesDocs) && sectionLabel("Документы")}

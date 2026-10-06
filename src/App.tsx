@@ -120,6 +120,7 @@ const BillingPage = lazy(() => import("./pages/billing"));
 const CashbankPage = lazy(() => import("./pages/realty-finance/CashbankPage"));
 const ConstructionSchedulePage = lazy(() => import("./pages/construction/SchedulePage"));
 const ConstructionContractorsPage = lazy(() => import("./pages/construction/ContractorsPage"));
+const ConstructionQualityPage = lazy(() => import("./pages/construction/QualityPage"));
 const PaycalPage = lazy(() => import("./pages/realty-finance/PaycalPage"));
 const BudgetPage = lazy(() => import("./pages/realty-finance/BudgetPage"));
 const ReceivablesPage = lazy(() => import("./pages/realty-finance/ReceivablesPage"));
@@ -1368,6 +1369,7 @@ function App() {
                               [
                                 ["construction/schedule", ConstructionSchedulePage],
                                 ["construction/contractors", ConstructionContractorsPage],
+                                ["construction/quality", ConstructionQualityPage],
                               ] as const
                             ).map(([path, Page]) => (
                               <Route

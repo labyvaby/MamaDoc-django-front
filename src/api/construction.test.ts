@@ -4,6 +4,7 @@ import {
   actActions,
   constructionQuery,
   defectActions,
+  defectMap,
   defectBody,
   defectsQuery,
   fromRawAct,
@@ -17,6 +18,7 @@ import {
   ganttRange,
   stageBody,
   upcomingMilestones,
+  worstSeverity,
 } from "./construction";
 
 describe("разбор ответов стройки", () => {
@@ -126,5 +128,33 @@ describe("Гант", () => {
       { ...base, id: 3, order: 3, name: "C", end: "2026-04-01", status: "late" },
     ];
     expect(upcomingMilestones(list).map((s) => s.name)).toEqual(["C", "B"]);
+  });
+});
+
+describe("карта дефектов", () => {
+  const sections = [
+    { name: "А", floors: 3, startFloor: 2 },
+    { name: "Б", floors: 2, startFloor: 2 },
+  ];
+
+  it("этажи сверху вниз, секции по названию без регистра, лишнее — снаружи", () => {
+    const map = defectMap(
+      [
+        { id: 1, severity: "major", section: "а", floor: 3 },
+        { id: 2, severity: "critical", section: "А", floor: 3 },
+        { id: 3, severity: "minor", section: "Б", floor: 9 },
+        { id: 4, severity: "minor", section: "", floor: null },
+      ],
+      sections,
+    );
+    expect(map.floors).toEqual([4, 3, 2]);
+    expect(map.sections).toEqual(["А", "Б"]);
+    expect(map.cells.get("3|А")?.map((d) => d.id)).toEqual([1, 2]);
+    expect(map.outside.map((d) => d.id)).toEqual([3, 4]);
+  });
+
+  it("худшая критичность ячейки", () => {
+    expect(worstSeverity([{ severity: "minor" }, { severity: "critical" }, { severity: "major" }])).toBe("critical");
+    expect(worstSeverity([])).toBeNull();
   });
 });
