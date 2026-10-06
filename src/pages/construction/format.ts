@@ -2,6 +2,8 @@ import type { Theme } from "@mui/material";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
 
+import { formatKGS } from "../../utility/format";
+
 /**
  * Цвет раздела графика — из палитры темы, без хардкода: разделы стабильны
  * (`GET /stage-groups/`), незнакомый код — нейтральный серый.
@@ -57,3 +59,13 @@ export function positiveAmount(value: string): string | null {
 }
 
 export const isoDate = (value: dayjs.Dayjs | null) => (value && value.isValid() ? value.format("YYYY-MM-DD") : null);
+
+type T = (key: string, opts?: Record<string, unknown>) => string;
+
+/** «307,2 млн», «1,47 млрд», иначе полная сумма. */
+export const compactSum = (value: number, t: T) =>
+  Math.abs(value) >= 1_000_000_000
+    ? t("common.billions", { value: (value / 1_000_000_000).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) })
+    : Math.abs(value) >= 1_000_000
+      ? t("common.millions", { value: (value / 1_000_000).toLocaleString("ru-RU", { maximumFractionDigits: 1 }) })
+      : formatKGS(value);

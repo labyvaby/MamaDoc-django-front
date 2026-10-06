@@ -43,6 +43,8 @@ export function estateHref(view: string, objectId?: number | null): string | nul
       return objectId ? `/finance/billing?account=${objectId}` : "/finance/billing";
     case "construction":
       return objectId ? `/construction/schedule?stage=${objectId}` : "/construction/schedule";
+    case "contractors":
+      return "/construction/contractors";
     case "cashbank":
       return objectId ? `/finance/cashbank?operation=${objectId}` : "/finance/cashbank";
     case "paycal":

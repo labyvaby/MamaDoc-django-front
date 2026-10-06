@@ -203,6 +203,10 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     path: '/construction/schedule',
     requiredPermissions: [PERMISSIONS.CONSTRUCTION_VIEW],
   },
+  {
+    path: '/construction/contractors',
+    requiredPermissions: [PERMISSIONS.CONSTRUCTION_VIEW],
+  },
 
   // Финансы застройщика: касса и банк, платёжный календарь, бюджеты, долги (treasury)
   {
