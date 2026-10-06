@@ -3,7 +3,7 @@ import { Autocomplete, Box, MenuItem, TextField, Typography } from "@mui/materia
 import { alpha } from "@mui/material/styles";
 
 import type { DjangoUnitOfMeasure } from "../../api/warehouse";
-import { draftProductName, isVariantDraft, type CategoryOption, type NewProductDraft } from "./newProductDraft";
+import { draftProductName, isVariantDraft, variantName, type CategoryOption, type NewProductDraft } from "./newProductDraft";
 
 /** Значение пункта «новая категория» в выпадающем списке — не id справочника. */
 const NEW_CATEGORY = "__new__";
@@ -18,6 +18,15 @@ export interface NewProductFieldsProps {
   units: DjangoUnitOfMeasure[];
   /** Уже заведённые бренды организации — подсказки, чтобы не плодить написания. */
   brands?: string[];
+  /** Уже заведённые сезоны организации — подсказки к полю «Сезон». */
+  seasons?: string[];
+  /**
+   * Категория ещё не заведена (`newCategory`), но заведётся вариантной —
+   * её оси подставляются сюда, чтобы строка уже сейчас считалась моделью.
+   */
+  pendingCategory?: CategoryOption | null;
+  /** Размеры строки разложены отдельными строками — одиночное поле не нужно. */
+  sizes?: string[];
   /** Текст проблемы черновика или null — см. draftProblem. */
   problem: string | null;
   disabled?: boolean;
@@ -36,14 +45,20 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
   legacyCategories,
   units,
   brands = [],
+  seasons = [],
+  pendingCategory = null,
+  sizes,
   problem,
   disabled,
 }) => {
-  const category = categories.find((option) => option.id === draft.categoryId) ?? null;
-  const variant = isVariantDraft(draft, category);
-  const showAxes = Boolean(category?.matrix || draft.color || draft.size);
+  const category = categories.find((option) => option.id === draft.categoryId) ?? (draft.categoryId == null ? pendingCategory : null);
+  const bySizes = Boolean(sizes?.length);
+  // Разложенная по размерам строка — вариант, если категория вариантная: размер у каждой строки свой.
+  const variant = bySizes ? Boolean(category?.matrix) : isVariantDraft(draft, category);
+  const showAxes = Boolean(category?.matrix || draft.color || draft.size || bySizes);
   const activeUnits = units.filter((unit) => unit.isActive || unit.id === draft.unitId);
-  const finalName = variant ? `${draft.name.trim()}, ${draft.color.trim()}, ${draft.size.trim()}` : draftProductName(draft);
+  const finalName = variant ? variantName(draft) : draftProductName(draft);
+  const sizeList = (sizes ?? []).filter((size) => size.trim()).join(", ");
 
   return (
     <Box
@@ -139,6 +154,24 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
         sx={{ minWidth: 0 }}
       />
 
+      <Autocomplete<string, false, false, true>
+        freeSolo
+        size="small"
+        options={seasons}
+        value={draft.season}
+        disabled={disabled}
+        onChange={(_, next) => onChange({ season: next ?? "" })}
+        onInputChange={(_, next) => onChange({ season: next })}
+        // Набрали «осень-зима 2026», а так уже заведено — берём заведённое написание.
+        onBlur={() => {
+          const known = seasons.find((s) => s.toLowerCase() === draft.season.trim().toLowerCase());
+          if (known && known !== draft.season) onChange({ season: known });
+        }}
+        sx={{ minWidth: 0, gridColumnStart: 1 }}
+        renderInput={(params) => (
+          <TextField {...params} label="Сезон" placeholder="Осень-зима 2026" InputLabelProps={{ ...params.InputLabelProps, shrink: true }} />
+        )}
+      />
       {showAxes && (
         <>
           <Autocomplete<string, false, false, true>
@@ -149,20 +182,24 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
             disabled={disabled}
             onChange={(_, next) => onChange({ color: next ?? "" })}
             onInputChange={(_, next) => onChange({ color: next })}
-            sx={{ minWidth: 0, gridColumnStart: 1 }}
-            renderInput={(params) => <TextField {...params} label="Цвет" />}
-          />
-          <Autocomplete<string, false, false, true>
-            freeSolo
-            size="small"
-            options={category?.sizes ?? []}
-            value={draft.size}
-            disabled={disabled}
-            onChange={(_, next) => onChange({ size: next ?? "" })}
-            onInputChange={(_, next) => onChange({ size: next })}
             sx={{ minWidth: 0 }}
-            renderInput={(params) => <TextField {...params} label="Размер" />}
+            renderInput={(params) => (
+              <TextField {...params} label="Цвет" placeholder={variant ? "Без цвета" : undefined} InputLabelProps={{ ...params.InputLabelProps, shrink: true }} />
+            )}
           />
+          {!bySizes && (
+            <Autocomplete<string, false, false, true>
+              freeSolo
+              size="small"
+              options={category?.sizes ?? []}
+              value={draft.size}
+              disabled={disabled}
+              onChange={(_, next) => onChange({ size: next ?? "" })}
+              onInputChange={(_, next) => onChange({ size: next })}
+              sx={{ minWidth: 0 }}
+              renderInput={(params) => <TextField {...params} label="Размер" />}
+            />
+          )}
         </>
       )}
 
@@ -231,9 +268,13 @@ export const NewProductFields: React.FC<NewProductFieldsProps> = ({
       >
         {problem
           ? problem
-          : variant
-            ? `Вариант модели «${draft.name.trim()}»: «${finalName}». Модель, цвет и размер, которых нет, заведутся сами.`
-            : `Новая карточка «${finalName}» появится в каталоге вместе с приходом.`}
+          : bySizes
+            ? variant
+              ? `Модель «${draft.name.trim()}», ${draft.color.trim() || "без цвета"}: каждый размер (${sizeList || "—"}) заведётся вариантом. Модель, цвет и размеры, которых нет, заведутся сами.`
+              : `Каждый размер (${sizeList || "—"}) — отдельная карточка «${draftProductName({ ...draft, size: sizes?.[0] ?? "" })}» и т. д. Чтобы завести их вариантами одной модели, выберите категорию «цвет × размер».`
+            : variant
+              ? `Вариант модели «${draft.name.trim()}»: «${finalName}». Модель, цвет и размер, которых нет, заведутся сами.`
+              : `Новая карточка «${finalName}» появится в каталоге вместе с приходом.`}
       </Typography>
     </Box>
   );

@@ -11,6 +11,11 @@ import {
   isVariantDraft,
   matchUnit,
   newProductInput,
+  seasonOptions,
+  sizeLineInputs,
+  sizesProblem,
+  sizesTotal,
+  variantName,
   type CategoryOption,
 } from "./newProductDraft";
 
@@ -222,11 +227,72 @@ describe("draftProblem", () => {
     expect(draftProblem({ ...emptyDraft("Шарф"), categoryId: 8 }, { categoryRequired: true, category: flat })).toBeNull();
   });
 
-  it("в вариантной категории — обе оси или ни одной", () => {
+  it("в вариантной категории цвет без размера — не вариант; размер без цвета — вариант «Без цвета»", () => {
     const base = { ...emptyDraft("Платье"), categoryId: 7 };
     expect(draftProblem({ ...base, color: "чёрный" }, { categoryRequired: true, category: matrix })).toBe(
-      "Для варианта нужны и цвет, и размер",
+      "Для варианта с цветом нужен размер",
     );
     expect(draftProblem(base, { categoryRequired: true, category: matrix })).toBeNull();
+    expect(draftProblem({ ...base, size: "38" }, { categoryRequired: true, category: matrix })).toBeNull();
+    expect(isVariantDraft({ ...base, size: "38" }, matrix)).toBe(true);
+    expect(variantName({ ...base, size: "38" })).toBe("Платье, Без цвета, 38");
+    // Цвет бэк поставит сам — пустой не отправляем.
+    expect(newProductInput({ ...base, size: "38" }, matrix)).toEqual({ name: "Платье", categoryId: 7, price: "0", size: "38" });
+  });
+});
+
+describe("сезон", () => {
+  it("значения свойства «Сезон» — в порядке справочника", () => {
+    const season = { ...attribute(9, "generic", [["Весна-лето 2027", 2], ["Осень-зима 2026", 1], ["Архив", 0, false]]), name: "Сезон" };
+    expect(seasonOptions([season])).toEqual(["Осень-зима 2026", "Весна-лето 2027"]);
+  });
+
+  it("из документа — уже заведённым написанием; уходит свойством", () => {
+    const units = [unit(1, "Штука", "шт")];
+    const draft = draftFromRecognized(
+      { name: "COAT", color: null, size: null, barcode: null, sku: null, unit: null, season: "осень-зима 2026" },
+      { units, skuIsUnique: false, seasons: ["Осень-зима 2026"] },
+    );
+    expect(draft.season).toBe("Осень-зима 2026");
+    expect(draft.description).toContain("Сезон: осень-зима 2026");
+    expect(newProductInput(draft, null)).toMatchObject({ season: "Осень-зима 2026" });
+    expect(newProductInput({ ...draft, season: " " }, null)).not.toHaveProperty("season");
+  });
+});
+
+describe("размеры строки", () => {
+  const sizes = [
+    { size: "36", quantity: "1" },
+    { size: "37.5", quantity: "2" },
+    { size: "39", quantity: "3" },
+  ];
+
+  it("количество строки — сумма размеров", () => {
+    expect(sizesTotal(sizes)).toBe(6);
+    expect(sizesTotal([{ size: "S", quantity: "0,5" }, { size: "M", quantity: "" }])).toBe(0.5);
+  });
+
+  it("каждый размер назван, не повторяется и с количеством", () => {
+    expect(sizesProblem(sizes)).toBeNull();
+    expect(sizesProblem([...sizes, { size: " ", quantity: "1" }])).toBe("Укажите размер в каждой строке разбивки");
+    expect(sizesProblem([...sizes, { size: "36", quantity: "1" }])).toBe("Размер 36 указан дважды");
+    expect(sizesProblem([{ size: "M", quantity: "0" }])).toBe("Укажите количество размера M");
+  });
+
+  it("вариантная категория — клетки одной модели, строка прихода на размер", () => {
+    const draft = { ...emptyDraft("Туфли"), categoryId: 7, sku: "A6WC04", barcode: "4601", season: "FW26" };
+    expect(sizeLineInputs(draft, matrix, sizes)).toEqual([
+      { quantity: "1", newProduct: { name: "Туфли", categoryId: 7, price: "0", size: "36", season: "FW26" } },
+      { quantity: "2", newProduct: { name: "Туфли", categoryId: 7, price: "0", size: "37.5", season: "FW26" } },
+      { quantity: "3", newProduct: { name: "Туфли", categoryId: 7, price: "0", size: "39", season: "FW26" } },
+    ]);
+  });
+
+  it("обычная категория — отдельные карточки: размер в имени, свой артикул, штрихкод выдаст сервер", () => {
+    const draft = { ...emptyDraft("Туфли"), categoryId: 8, sku: "A6WC04", barcode: "4601" };
+    const [first, second] = sizeLineInputs(draft, flat, sizes);
+    expect(first.newProduct).toEqual({ name: "Туфли, 36", categoryId: 8, price: "0", sku: "A6WC04-36" });
+    expect(second.newProduct.name).toBe("Туфли, 37.5");
+    expect(second.newProduct).not.toHaveProperty("barcode");
   });
 });

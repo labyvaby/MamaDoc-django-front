@@ -27,6 +27,8 @@ export interface NewProductDraft {
   size: string;
   /** Свойство «Бренд»; пусто — бренд по умолчанию из карточки поставщика. */
   brand: string;
+  /** Свойство «Сезон» («Осень-зима 2026», «FW26»); пусто — не задаётся. */
+  season: string;
   /** Описание карточки: по умолчанию — всё, что о строке сказано в накладной. */
   description: string;
   /**
@@ -47,6 +49,7 @@ export const emptyDraft = (name = ""): NewProductDraft => ({
   color: "",
   size: "",
   brand: "",
+  season: "",
   description: "",
   newCategory: "",
 });
@@ -75,6 +78,8 @@ export function describeRecognized(line: {
   sku?: string | null;
   color?: string | null;
   size?: string | null;
+  sizes?: Array<{ size: string; quantity: string | null }>;
+  season?: string | null;
   barcode?: string | null;
   details?: Array<{ label: string; value: string }>;
 }): string {
@@ -87,6 +92,8 @@ export function describeRecognized(line: {
     ["Код модели", line.modelCode],
     ["Цвет", line.color],
     ["Размер", line.size],
+    ["Размеры", line.sizes?.length ? line.sizes.map((s) => (s.quantity ? `${s.size} — ${Number(s.quantity)}` : s.size)).join(", ") : null],
+    ["Сезон", line.season],
     ["Штрихкод", line.barcode],
     ...(line.details ?? []).map((d): [string, string] => [d.label, d.value]),
   ];
@@ -101,12 +108,28 @@ export function describeRecognized(line: {
  * заведённых, не плодим «Zara» / «ZARA» / «Zara » и находим товары поиском.
  */
 export function brandOptions(attributes: DjangoProductAttribute[]): string[] {
-  const brand = attributes.find((a) => a.isActive && a.role === "generic" && /^(бренд|brand)$/i.test(a.name.trim()));
-  return (brand?.values ?? [])
-    .filter((v) => v.isActive)
-    .map((v) => v.value)
-    .sort((a, b) => a.localeCompare(b, "ru"));
+  return genericValues(attributes, /^(бренд|brand)$/i).sort((a, b) => a.localeCompare(b, "ru"));
 }
+
+/** Значения свойства «Сезон» — в порядке справочника, как их расставила организация. */
+export function seasonOptions(attributes: DjangoProductAttribute[]): string[] {
+  return genericValues(attributes, /^(сезон|season)$/i);
+}
+
+function genericValues(attributes: DjangoProductAttribute[], name: RegExp): string[] {
+  const found = attributes.find((a) => a.isActive && a.role === "generic" && name.test(a.name.trim()));
+  return (found?.values ?? [])
+    .filter((v) => v.isActive)
+    .sort((a, b) => a.position - b.position)
+    .map((v) => v.value);
+}
+
+/** Уже заведённое написание значения («Осень-зима 2026», а не «осень-зима 2026»). */
+const knownSpelling = (options: string[] | undefined, raw: string): string =>
+  options?.find((known) => known.toLowerCase() === raw.toLowerCase()) ?? raw;
+
+/** Цвет варианта, когда в документе только размер, — как у импорта из 1С. */
+export const NO_COLOR = "Без цвета";
 
 /** Категория, в которой товар живёт вариантами: её форма несёт и цвет, и размер. */
 export interface CategoryOption {
@@ -162,9 +185,16 @@ export function buildCategoryOptions(
     .sort((a, b) => a.label.localeCompare(b.label, "ru"));
 }
 
-/** Вариант модели — только в вариантной категории и когда заданы обе оси. */
+/**
+ * Вариант модели — только в вариантной категории и когда задан размер.
+ * Цвета может не быть (обувь, однотонное пальто): бэк ставит «Без цвета».
+ */
 export const isVariantDraft = (draft: NewProductDraft, category: CategoryOption | null | undefined): boolean =>
-  Boolean(category?.matrix && draft.color.trim() && draft.size.trim());
+  Boolean(category?.matrix && draft.size.trim());
+
+/** Имя варианта, как его соберёт генератор матрицы: «Модель, цвет, размер». */
+export const variantName = (draft: NewProductDraft): string =>
+  `${draft.name.trim()}, ${draft.color.trim() || NO_COLOR}, ${draft.size.trim()}`;
 
 const tokens = (text: string): string[] =>
   text
@@ -211,9 +241,10 @@ export function newProductInput(draft: NewProductDraft, category: CategoryOption
   if (draft.unitId != null) input.unitId = draft.unitId;
   if (draft.barcode.trim()) input.barcode = draft.barcode.trim();
   if (draft.brand.trim()) input.brand = draft.brand.trim();
+  if (draft.season.trim()) input.season = draft.season.trim();
   if (draft.description.trim()) input.description = draft.description.trim();
   if (variant) {
-    input.color = draft.color.trim();
+    if (draft.color.trim()) input.color = draft.color.trim();
     input.size = draft.size.trim();
   } else if (draft.sku.trim()) {
     input.sku = draft.sku.trim();
@@ -237,11 +268,12 @@ export function matchUnit(units: DjangoUnitOfMeasure[], raw: string | null | und
  */
 export function draftFromRecognized(
   line: Pick<RecognizedLine, "name" | "color" | "size" | "barcode" | "sku" | "unit" | "productName" | "brand"> &
-    Partial<Pick<RecognizedLine, "category" | "sourceName" | "description" | "modelCode" | "details">>,
+    Partial<Pick<RecognizedLine, "category" | "sourceName" | "description" | "modelCode" | "details" | "sizes" | "season">>,
   options: {
     units: DjangoUnitOfMeasure[];
     skuIsUnique: boolean;
     brands?: string[];
+    seasons?: string[];
     /** Справочник категорий (розница); пусто — категория свободной строкой. */
     categories?: CategoryOption[];
   },
@@ -258,7 +290,8 @@ export function draftFromRecognized(
     size: line.size?.trim() ?? "",
     // Уже заведённое написание («Zara», а не «ZARA» из документа) — одно
     // значение свойства на бренд, иначе фильтр найдёт только часть товаров.
-    brand: options.brands?.find((known) => known.toLowerCase() === brand.toLowerCase()) ?? brand,
+    brand: knownSpelling(options.brands, brand),
+    season: knownSpelling(options.seasons, line.season?.trim() ?? ""),
     barcode: line.barcode?.trim() ?? "",
     sku: options.skuIsUnique ? line.sku?.trim() ?? "" : "",
     unitId: matchUnit(options.units, line.unit)?.id ?? null,
@@ -276,8 +309,51 @@ export function draftProblem(
 ): string | null {
   if (!draft.name.trim()) return "Укажите название товара";
   if (options.categoryRequired && draft.categoryId == null && !draft.newCategory.trim()) return "Выберите категорию";
-  if (options.category?.matrix && Boolean(draft.color.trim()) !== Boolean(draft.size.trim())) {
-    return "Для варианта нужны и цвет, и размер";
+  if (options.category?.matrix && draft.color.trim() && !draft.size.trim()) {
+    return "Для варианта с цветом нужен размер";
   }
   return null;
+}
+
+/** Размер строки накладной и сколько штук его пришло. */
+export interface SizeQuantity {
+  size: string;
+  /** Количество строкой, как в поле. */
+  quantity: string;
+}
+
+/** Штук по всем размерам — это и есть количество строки («верхнее» поле). */
+export const sizesTotal = (sizes: SizeQuantity[]): number =>
+  Math.round(sizes.reduce((sum, row) => sum + toAmount(row.quantity), 0) * 1000) / 1000;
+
+/** Что не так с разбивкой по размерам — текст для строки, либо null. */
+export function sizesProblem(sizes: SizeQuantity[]): string | null {
+  const seen = new Set<string>();
+  for (const row of sizes) {
+    const size = row.size.trim();
+    if (!size) return "Укажите размер в каждой строке разбивки";
+    if (seen.has(size.toLowerCase())) return `Размер ${size} указан дважды`;
+    seen.add(size.toLowerCase());
+    if (toAmount(row.quantity) <= 0) return `Укажите количество размера ${size}`;
+  }
+  return null;
+}
+
+/**
+ * Новая карточка, разложенная по размерам: на каждый размер — своя строка
+ * прихода со своим количеством. В вариантной категории это клетки одной
+ * модели; в обычной — отдельные карточки «Название, 38». Штрихкод у
+ * размеров не общий — его выдаст сервер; артикул получает суффикс размера.
+ */
+export function sizeLineInputs(
+  draft: NewProductDraft,
+  category: CategoryOption | null | undefined,
+  sizes: SizeQuantity[],
+): Array<{ newProduct: GoodsReceiptNewProductInput; quantity: string }> {
+  return sizes.map((row) => {
+    const size = row.size.trim();
+    const sku = draft.sku.trim();
+    const perSize: NewProductDraft = { ...draft, size, barcode: "", sku: sku ? `${sku}-${size}` : "" };
+    return { newProduct: newProductInput(perSize, category), quantity: String(toAmount(row.quantity)) };
+  });
 }
