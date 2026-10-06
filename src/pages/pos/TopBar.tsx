@@ -24,7 +24,16 @@ type Props = {
   canHold?: boolean;
   /** «Продать сертификат» — действие `certificate_sell` кассы. */
   canSellCertificate?: boolean;
+  /** Кнопка сертификата видна, но недоступна (например, открыт отложенный чек). */
+  sellCertificateDisabledReason?: string;
   onSellCertificate?: () => void;
+  /**
+   * Где показывать поиск: `dropdown` — список под полем (десктоп), `inline` —
+   * только поле, список рисует страница (телефон), `hidden` — без поиска.
+   */
+  searchMode?: "dropdown" | "inline" | "hidden";
+  /** Фокус в поиск при открытии: на телефоне он поднял бы клавиатуру. */
+  autoFocusSearch?: boolean;
   onScan?: () => void;
   inputRef?: React.Ref<HTMLInputElement>;
   search: string;
@@ -45,19 +54,25 @@ type Props = {
   onOpenHeldReceipts: () => void;
 };
 
-/** Кнопка шапки: «Новый чек», «Отложенные». На телефоне — только иконка. */
-const TopBarButton: React.FC<{ label: string; icon: React.ReactNode; onClick: () => void }> = ({ label, icon, onClick }) => {
+/** Кнопка шапки: «Новый чек», «Отложенные». До широкого экрана — только иконка. */
+const TopBarButton: React.FC<{ label: string; icon: React.ReactNode; onClick: () => void; disabledReason?: string }> = ({
+  label,
+  icon,
+  onClick,
+  disabledReason,
+}) => {
   const theme = useTheme();
   const c = posColors(theme);
   return (
     <ButtonBase
       onClick={onClick}
+      disabled={Boolean(disabledReason)}
       aria-label={label}
-      title={label}
+      title={disabledReason || label}
       sx={{
-        height: 40,
-        minWidth: 40,
-        px: { xs: "10px", md: "14px" },
+        height: { xs: 44, md: 40 },
+        minWidth: { xs: 44, md: 40 },
+        px: { xs: "10px", lg: "14px" },
         gap: "6px",
         borderRadius: `${POS_RADIUS.control}px`,
         bgcolor: c.card,
@@ -67,11 +82,12 @@ const TopBarButton: React.FC<{ label: string; icon: React.ReactNode; onClick: ()
         fontWeight: 700,
         whiteSpace: "nowrap",
         "&:hover": { bgcolor: c.tile, borderColor: c.accent },
-        "& svg": { fontSize: 18 },
+        "& svg": { fontSize: { xs: 20, md: 18 } },
+        "&.Mui-disabled": { opacity: 0.45 },
       }}
     >
       {icon}
-      <Box component="span" sx={{ display: { xs: "none", md: "inline" } }}>{label}</Box>
+      <Box component="span" sx={{ display: { xs: "none", lg: "inline" } }}>{label}</Box>
     </ButtonBase>
   );
 };
@@ -93,11 +109,15 @@ export const PosTopBar: React.FC<Props> = ({
   canSell = false,
   canHold = false,
   canSellCertificate = false,
+  sellCertificateDisabledReason,
   onSellCertificate,
   onScan,
+  searchMode = "dropdown",
+  autoFocusSearch = true,
 }) => {
   const theme = useTheme();
   const c = posColors(theme);
+  const showDropdown = searchMode === "dropdown" && Boolean(dropdown);
 
   return (
     <Box
@@ -122,18 +142,19 @@ export const PosTopBar: React.FC<Props> = ({
         <Typography sx={{ fontSize: 17, fontWeight: 800, color: c.text, whiteSpace: "nowrap" }}>Касса</Typography>
       </Stack>
 
+      {searchMode !== "hidden" && (
       <ClickAwayListener onClickAway={() => onDropdownClose?.()}>
         <Box sx={{ position: "relative", order: { xs: 3, md: 0 }, flex: { xs: "1 1 100%", md: "1 1 auto" }, maxWidth: { md: 720 }, minWidth: 0 }}>
           <Box
             sx={{
-              height: 42,
+              height: { xs: 48, md: 42 },
               pl: "12px",
               pr: "6px",
               display: "flex",
               alignItems: "center",
               gap: "8px",
               bgcolor: c.tile,
-              border: `1px solid ${dropdown ? c.accent : c.outline}`,
+              border: `1px solid ${showDropdown ? c.accent : c.outline}`,
               borderRadius: `${POS_RADIUS.control}px`,
               transition: "border-color .15s",
               "&:focus-within": { borderColor: c.accent },
@@ -142,7 +163,7 @@ export const PosTopBar: React.FC<Props> = ({
             <SearchOutlined sx={{ fontSize: 19, color: c.textDim, flexShrink: 0 }} />
             <InputBase
               inputRef={inputRef}
-              autoFocus
+              autoFocus={autoFocusSearch}
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
               onFocus={onSearchFocus}
@@ -154,7 +175,7 @@ export const PosTopBar: React.FC<Props> = ({
                 }
               }}
               placeholder="Название, артикул или штрихкод (F2)"
-              inputProps={{ "aria-label": "Поиск товара", autoComplete: "off" }}
+              inputProps={{ "aria-label": "Поиск товара", autoComplete: "off", enterKeyHint: "search" }}
               sx={{
                 flex: 1,
                 minWidth: 0,
@@ -164,7 +185,7 @@ export const PosTopBar: React.FC<Props> = ({
               }}
             />
             {search ? (
-              <IconButton size="small" aria-label="Очистить поиск" onClick={() => onSearchChange("")} sx={{ color: c.textDim }}>
+              <IconButton size="small" aria-label="Очистить поиск" onClick={() => onSearchChange("")} sx={{ color: c.textDim, width: { xs: 40, md: "auto" }, height: { xs: 40, md: "auto" } }}>
                 <ClearOutlined sx={{ fontSize: 18 }} />
               </IconButton>
             ) : null}
@@ -182,7 +203,7 @@ export const PosTopBar: React.FC<Props> = ({
                 renderValue={(value) => categories.find((item) => String(item.id) === String(value))?.name ?? "Категория"}
                 sx={{
                   flexShrink: 0,
-                  width: { xs: 118, md: 150 },
+                  width: { xs: 108, md: 150 },
                   pl: 1.25,
                   borderLeft: `1px solid ${c.outline}`,
                   color: categoryId == null ? c.textDim : c.accentText,
@@ -202,7 +223,7 @@ export const PosTopBar: React.FC<Props> = ({
             )}
           </Box>
 
-          {dropdown ? (
+          {showDropdown ? (
             <Box
               sx={{
                 position: "absolute",
@@ -223,12 +244,18 @@ export const PosTopBar: React.FC<Props> = ({
           ) : null}
         </Box>
       </ClickAwayListener>
+      )}
 
       <Stack direction="row" alignItems="center" gap="8px" sx={{ flexShrink: 0, ml: { md: "auto" } }}>
         {canSell && <TopBarButton label="Новый чек" icon={<AddOutlined />} onClick={onNewReceipt} />}
         {canHold && <TopBarButton label="Отложенные" icon={<PauseCircleOutlineOutlined />} onClick={onOpenHeldReceipts} />}
         {canSellCertificate && onSellCertificate && (
-          <TopBarButton label="Продать сертификат" icon={<CardGiftcardOutlined />} onClick={onSellCertificate} />
+          <TopBarButton
+            label="Продать сертификат"
+            icon={<CardGiftcardOutlined />}
+            onClick={onSellCertificate}
+            disabledReason={sellCertificateDisabledReason}
+          />
         )}
       </Stack>
     </Box>

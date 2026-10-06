@@ -89,8 +89,8 @@ const LineChip: React.FC<{
       onClick={onClick}
       aria-label={ariaLabel}
       sx={{
-        height: 24,
-        px: "8px",
+        height: { xs: 32, lg: 24 },
+        px: { xs: "10px", lg: "8px" },
         gap: "5px",
         flexShrink: 0,
         borderRadius: `${POS_RADIUS.pill}px`,
@@ -299,12 +299,14 @@ export const PosReceiptRow: React.FC<Props> = ({
     <Box
       sx={{
         display: "grid",
-        gridTemplateColumns: { xs: "auto minmax(0, 1fr) auto 28px", md: RECEIPT_GRID },
+        // Таблица — только на широком экране: в двух колонках планшета и на
+        // телефоне строка складывается в две строки с крупными кнопками.
+        gridTemplateColumns: { xs: "auto minmax(0, 1fr) auto 44px", lg: RECEIPT_GRID },
         gridTemplateAreas: {
           xs: `"info info info remove" "qty price sum sum"`,
-          md: `"info qty price sum remove"`,
+          lg: `"info qty price sum remove"`,
         },
-        columnGap: { xs: "10px", md: "12px" },
+        columnGap: { xs: "10px", lg: "12px" },
         rowGap: "8px",
         alignItems: "center",
         py: "10px",
@@ -376,16 +378,16 @@ export const PosReceiptRow: React.FC<Props> = ({
         )}
       </Stack>
 
-      <Box sx={{ gridArea: "qty", display: "flex", justifyContent: { xs: "flex-start", md: "center" } }}>
+      <Box sx={{ gridArea: "qty", display: "flex", justifyContent: { xs: "flex-start", lg: "center" } }}>
         <Stack
           direction="row"
           alignItems="center"
           sx={{
-            height: 32,
+            height: { xs: 44, lg: 32 },
             bgcolor: c.card,
             border: `1px solid ${c.hairline}`,
             borderRadius: `${POS_RADIUS.tile}px`,
-            "& .MuiIconButton-root": { width: 30, height: 30, color: c.textSoft },
+            "& .MuiIconButton-root": { width: { xs: 44, lg: 30 }, height: { xs: 42, lg: 30 }, color: c.textSoft },
           }}
         >
           <IconButton
@@ -405,9 +407,9 @@ export const PosReceiptRow: React.FC<Props> = ({
         </Stack>
       </Box>
 
-      <Box sx={{ gridArea: "price", minWidth: 0, textAlign: { xs: "left", md: "right" } }}>
-        <Typography noWrap sx={{ fontSize: { xs: 12, md: 14 }, fontWeight: { xs: 500, md: 700 }, color: { xs: c.textDim, md: c.textSoft } }}>
-          <Box component="span" sx={{ display: { md: "none" } }}>× </Box>
+      <Box sx={{ gridArea: "price", minWidth: 0, textAlign: { xs: "left", lg: "right" } }}>
+        <Typography noWrap sx={{ fontSize: { xs: 12, lg: 14 }, fontWeight: { xs: 500, lg: 700 }, color: { xs: c.textDim, lg: c.textSoft } }}>
+          <Box component="span" sx={{ display: { lg: "none" } }}>× </Box>
           <PosAmount value={line.price} />
         </Typography>
       </Box>
@@ -432,13 +434,13 @@ export const PosReceiptRow: React.FC<Props> = ({
         </Typography>
       </Stack>
 
-      <Box sx={{ gridArea: "remove", display: "flex", justifyContent: "flex-end", alignSelf: { xs: "flex-start", md: "center" } }}>
+      <Box sx={{ gridArea: "remove", display: "flex", justifyContent: "flex-end", alignSelf: { xs: "flex-start", lg: "center" } }}>
         {dimmed ? (
-          <IconButton size="small" disabled={readOnly} onClick={onRestore} sx={{ p: "4px", color: c.positive }} aria-label="Вернуть позицию">
+          <IconButton size="small" disabled={readOnly} onClick={onRestore} sx={{ p: "4px", width: { xs: 44, lg: 28 }, height: { xs: 44, lg: 28 }, color: c.positive }} aria-label="Вернуть позицию">
             <ReplayOutlined sx={{ fontSize: 18 }} />
           </IconButton>
         ) : (
-          <IconButton size="small" disabled={readOnly} onClick={onRemove} sx={{ p: "4px", color: c.textDim, "&:hover": { color: c.danger } }} aria-label="Удалить позицию">
+          <IconButton size="small" disabled={readOnly} onClick={onRemove} sx={{ p: "4px", width: { xs: 44, lg: 28 }, height: { xs: 44, lg: 28 }, color: c.textDim, "&:hover": { color: c.danger } }} aria-label="Удалить позицию">
             <CloseOutlined sx={{ fontSize: 18 }} />
           </IconButton>
         )}

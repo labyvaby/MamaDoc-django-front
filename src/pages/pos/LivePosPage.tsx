@@ -2,35 +2,36 @@ import React from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
+  BottomNavigation,
+  BottomNavigationAction,
   Box,
   Button,
+  ButtonBase,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   LinearProgress,
-  IconButton,
-  Chip,
   Snackbar,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import SearchOffOutlined from "@mui/icons-material/SearchOffOutlined";
-import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
-import PrintRounded from "@mui/icons-material/PrintRounded";
-import DownloadRounded from "@mui/icons-material/DownloadRounded";
-import QrCode2Rounded from "@mui/icons-material/QrCode2Rounded";
-import CloseRounded from "@mui/icons-material/CloseRounded";
-import { ApiError, apiRequest } from "../../api/client";
+import QrCodeScannerOutlined from "@mui/icons-material/QrCodeScannerOutlined";
+import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import { apiRequest } from "../../api/client";
 import { uploadClientPhoto, type CreateClientPayload, type DjangoClientStatus } from "../../api/clients";
-import { getDiscountKinds, type DiscountKind, type GiftCertificateDetail } from "../../api/promotions";
+import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
   checkoutPosCart,
   getPosBootstrap,
+  getPosClientCertificates,
   getPosProducts,
-  lookupPosCertificate,
   posRequest,
   promoCodesEnabled,
   quotePosCart,
@@ -55,17 +56,25 @@ import {
   emptyBenefits,
   inlineQuoteErrorField,
   type Benefits,
-  type CodeInfo,
 } from "./LivePaymentPanel";
 import { decimalForRequest, maxDiscountPercent } from "./discountInput";
-import { posColors } from "./layout";
+import { POS_RADIUS, posColors } from "./layout";
 import type { PosCatalogItem, PosClient, PosReceiptLine } from "./types";
 import { PosAmount } from "./ui";
 import { playScanFeedback, useBarcodeScanner } from "./barcodeScanner";
 import { formatPosError, posError, toPosUserError, type PosUserError } from "./errors";
 import { PosErrorNotice } from "./ErrorNotice";
 import { CertificateSellDialog } from "./CertificateSellDialog";
-import { certificateLookupMessage } from "../certificates/certificateMeta";
+import {
+  HOLD_BLOCKED_BY_CERTIFICATE,
+  certificateDraftsTotalCents,
+  giftCardExpiryLabel,
+  normalizeCheckoutResult,
+  toCertificateInputs,
+  type PosCertificateDraft,
+  type PosSaleResult,
+} from "./certificateCart";
+import { SaleDoneDialog } from "./SaleDoneDialog";
 
 type CartRow = {
   product: PosProduct;
@@ -81,7 +90,11 @@ type PosDraft = {
   benefits: Benefits;
   held: PosSavedReceipt | null;
   warehouseChoice: number | null;
+  /** Сертификаты, добавленные в чек, но ещё не оплаченные. */
+  certificates?: PosCertificateDraft[];
 };
+/** Вкладки кассы на телефоне. */
+type PhoneTab = "products" | "receipt" | "payment";
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Не удалось выполнить действие.";
 const colorHex = (label: string) =>
@@ -222,6 +235,14 @@ export default function LivePosPage() {
   const auth = usePermissions();
   const theme = useTheme();
   const c = posColors(theme);
+  // «Телефон» в теме — всё, что уже md (md = 768): там касса работает вкладками.
+  const phone = useMediaQuery(theme.breakpoints.down("md"));
+  const [tab, setTab] = React.useState<PhoneTab>("products");
+  // Вкладки делят одну прокрутку: новая вкладка открывается сверху.
+  const phoneContentRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    phoneContentRef.current?.scrollTo?.({ top: 0 });
+  }, [tab]);
   const cache = useQueryClient();
   const scope = {
     organizationId: auth.activeOrganization?.id ?? 0,
@@ -275,8 +296,8 @@ export default function LivePosPage() {
   const [clientEditorTarget, setClientEditorTarget] = React.useState<"receipt" | "certificate">("receipt");
   const [certificateSellOpen, setCertificateSellOpen] = React.useState(false);
   const [certificateBuyer, setCertificateBuyer] = React.useState<PosClient | null>(null);
-  const [certificateScan, setCertificateScan] = React.useState<{ code: string; key: number } | null>(null);
-  const [soldNotice, setSoldNotice] = React.useState<string | null>(null);
+  /** Сертификаты, проданные строками текущего чека (сертификаты v2). */
+  const [certificates, setCertificates] = React.useState<PosCertificateDraft[]>([]);
   const [benefits, setBenefits] = React.useState<Benefits>(emptyBenefits);
   const [held, setHeld] = React.useState<PosSavedReceipt | null>(null);
   const [holdOpen, setHoldOpen] = React.useState(false);
@@ -294,7 +315,7 @@ export default function LivePosPage() {
     []
   );
   const [addedNotice, setAddedNotice] = React.useState<{ key: number; text: string } | null>(null);
-  const [saved, setSaved] = React.useState<PosSavedReceipt | null>(null);
+  const [sale, setSale] = React.useState<PosSaleResult | null>(null);
   const [confirmRequest, setConfirmRequest] =
     React.useState<PosConfirmRequest | null>(null);
   const [returnTarget, setReturnTarget] =
@@ -321,6 +342,7 @@ export default function LivePosPage() {
       if (draft.benefits) setBenefits({ ...emptyBenefits, ...draft.benefits });
       if (draft.held) setHeld(draft.held);
       if (draft.warehouseChoice != null) setWarehouseChoice(draft.warehouseChoice);
+      if (Array.isArray(draft.certificates)) setCertificates(draft.certificates);
     }
     hydratedDraftKey.current = draftKey;
     skipDraftPersistKey.current = draftKey;
@@ -333,16 +355,16 @@ export default function LivePosPage() {
       return;
     }
     try {
-      if (!rows.length && !held) {
+      if (!rows.length && !held && !certificates.length) {
         window.localStorage.removeItem(draftKey);
         return;
       }
-      const draft: PosDraft = { rows, client, benefits, held, warehouseChoice };
+      const draft: PosDraft = { rows, client, benefits, held, warehouseChoice, certificates };
       window.localStorage.setItem(draftKey, JSON.stringify(draft));
     } catch {
       // localStorage can be unavailable in private mode or when the quota is full.
     }
-  }, [draftKey, rows, client, benefits, held, warehouseChoice]);
+  }, [draftKey, rows, client, benefits, held, warehouseChoice, certificates]);
 
   React.useEffect(() => {
     const id = window.setTimeout(() => {
@@ -475,33 +497,30 @@ export default function LivePosPage() {
     promoCode: canPromoCode ? benefits.promoCode.trim() : "",
     useBonuses: benefits.bonuses,
     certificateCode: benefits.certificateCode.trim(),
+    // Пустой список не отправляем: без сертификатов запрос остаётся прежним.
+    ...(certificates.length ? { certificates: toCertificateInputs(certificates) } : {}),
   };
+  /** В чеке есть что считать: товары или сертификаты. */
+  const hasCartContent = cart.lines.length > 0 || certificates.length > 0;
+  const certificatesTotal = certificateDraftsTotalCents(certificates) / 100;
   const quoteQuery = useQuery({
     queryKey: [...prefix, "quote", cart],
     queryFn: ({ signal }) => quotePosCart(scope, cart, signal),
-    enabled: ready && !!warehouseId && cart.lines.length > 0 && !held,
+    enabled: ready && !!warehouseId && hasCartContent && !held,
     staleTime: 0,
     retry: false,
     // Пока сервер пересчитывает, панель не мигает «—»: показываем оценку ниже.
     placeholderData: keepPreviousData,
   });
-  // Остаток и срок применённого сертификата — до расчёта чека и независимо от
-  // него: списание по-прежнему считает quote/ (`certificateAmount`).
-  const certificateCode = benefits.certificateCode.trim();
-  const certificateLookup = useQuery({
-    queryKey: [...prefix, "certificate-lookup", certificateCode],
-    queryFn: ({ signal }) => lookupPosCertificate(scope, certificateCode, signal),
-    enabled: ready && !!actions.certificate && Boolean(certificateCode) && !held,
-    retry: false,
+  // Сертификаты покупателя для способа оплаты «Сертификат» — грузим, когда
+  // открыто окно оплаты: список нужен только там.
+  const clientCertificates = useQuery({
+    queryKey: [...prefix, "client-certificates", client?.id ?? null],
+    queryFn: ({ signal }) => getPosClientCertificates(scope, Number(client?.id), signal),
+    enabled: ready && !!actions.certificate && !!client && checkoutOpen && !held,
     staleTime: 0,
+    retry: false,
   });
-  const certificateInfo: CodeInfo | null = !certificateCode
-    ? null
-    : certificateLookup.data
-      ? certificateLookupMessage(certificateLookup.data)
-      : certificateLookup.error instanceof ApiError && certificateLookup.error.status === 404
-        ? { tone: "error", text: "Сертификат с таким номером не найден." }
-        : null;
   const discountKindsQuery = useQuery({
     queryKey: ["django", "promotions", "discount-kinds", scope.branchId],
     queryFn: ({ signal }) => getDiscountKinds({ branchId: scope.branchId }, signal),
@@ -534,7 +553,7 @@ export default function LivePosPage() {
     : undefined;
   const serverQuote =
     heldQuote ??
-    (quoteQuery.isError || !cart.lines.length ? undefined : quoteQuery.data);
+    (quoteQuery.isError || !hasCartContent ? undefined : quoteQuery.data);
   const activeRows = rows.filter((row) => !row.removed);
   const localSubtotal = activeRows.reduce(
     (total, row) => total + Number(row.product.price) * row.quantity,
@@ -548,7 +567,7 @@ export default function LivePosPage() {
   // скидка на товар и количество отражались в панели сразу, а не после запроса.
   const quoteStale =
     !held &&
-    cart.lines.length > 0 &&
+    hasCartContent &&
     !quoteQuery.isError &&
     (quoteQuery.isPlaceholderData || (!quoteQuery.data && quoteQuery.isFetching));
   const estimateQuote = (previous: PosQuote | undefined): PosQuote => {
@@ -568,7 +587,7 @@ export default function LivePosPage() {
     const total = Math.max(0, localSubtotal - discount);
     const bonusesUsed =
       benefits.bonuses && previous ? Math.min(Number(previous.bonuses), total) : 0;
-    const certificate = previous
+    const certificate = previous && benefits.certificateCode.trim()
       ? Math.min(Number(previous.certificateAmount), total - bonusesUsed)
       : 0;
     return {
@@ -577,12 +596,20 @@ export default function LivePosPage() {
       total: total.toFixed(2),
       bonuses: bonusesUsed.toFixed(2),
       certificateAmount: certificate.toFixed(2),
-      due: (total - bonusesUsed - certificate).toFixed(2),
+      // Проданные сертификаты идут к оплате целиком: скидки на них не действуют.
+      due: (total - bonusesUsed - certificate + certificatesTotal).toFixed(2),
+      certificatesTotal: certificatesTotal.toFixed(2),
       promotionApplied: previous?.promotionApplied,
       lines: [],
     };
   };
   const quote = quoteStale ? estimateQuote(serverQuote) : serverQuote;
+  // Старый бэкенд молча отбросил бы сертификаты и взял деньги только за товары.
+  const certificatesUnsupported =
+    !held && certificates.length > 0 && !!serverQuote && !quoteStale && serverQuote.certificatesTotal === undefined;
+  const payDisabledReason = certificatesUnsupported
+    ? "Сервер кассы ещё не принимает сертификаты в чеке. Уберите сертификат из чека или обновите бэкенд."
+    : null;
   // Сервер без поддержки скидки на позицию молча её отбрасывает — не прячем это.
   const lineDiscountIgnored =
     !held &&
@@ -610,6 +637,7 @@ export default function LivePosPage() {
   const busy = pending || (!held && quoteQuery.isFetching);
   const reset = () => {
     setRows([]);
+    setCertificates([]);
     setHeld(null);
     setClient(null);
     setBenefits(emptyBenefits);
@@ -620,7 +648,7 @@ export default function LivePosPage() {
   };
   const newReceipt = () => {
     if (sending.current) return;
-    if (!rows.length) {
+    if (!rows.length && !certificates.length) {
       reset();
       return;
     }
@@ -680,7 +708,9 @@ export default function LivePosPage() {
     });
     setError(null);
     setSearch("");
-    searchInputRef.current?.focus();
+    // На телефоне фокус поднял бы клавиатуру поверх чека — там показываем подсказку.
+    if (phone) setAddedNotice({ key: Date.now(), text: `Добавлено: ${product.name}` });
+    else searchInputRef.current?.focus();
     if (product.modelId) {
       try {
         const result = await getPosProducts(scope, {
@@ -747,23 +777,9 @@ export default function LivePosPage() {
 
   /** Код со сканера — сразу в чек, при любом фокусе. */
   const handleScan = (code: string) => {
-    // Окно продажи сертификата: сканируют саму карту — номер идёт в его поле.
-    // Форма нового клиента поверх окна сканер не принимает.
-    if (certificateSellOpen && !clientEditorOpen) {
-      setCertificateScan({ code, key: Date.now() });
-      playScanFeedback(true);
-      return;
-    }
-    // Фокус в поле сертификата панели оплаты: это карта, а не товар.
-    const focused = document.activeElement;
-    if (
-      actions.certificate &&
-      !held &&
-      focused instanceof HTMLElement &&
-      focused.closest("[data-pos-scan-target='certificate']")
-    ) {
-      setBenefits((current) => ({ ...current, certificateCode: code.trim() }));
-      playScanFeedback(true);
+    // Окно продажи сертификата: номер выдаёт CRM, сканировать там нечего.
+    if (certificateSellOpen) {
+      playScanFeedback(false);
       return;
     }
     // Открыто окно (оплата, скидка, выбор варианта): товар в чек не кладём —
@@ -772,7 +788,7 @@ export default function LivePosPage() {
       checkoutOpen ||
       holdOpen ||
       list !== null ||
-      saved !== null ||
+      sale !== null ||
       returnTarget !== null ||
       confirmRequest !== null ||
       Boolean(document.querySelector(".MuiModal-root:not(.MuiModal-hidden)"));
@@ -821,27 +837,40 @@ export default function LivePosPage() {
       const fingerprint = JSON.stringify({ cart, payments, status, comment });
       if (fingerprint !== attempt.current.fingerprint)
         attempt.current = { fingerprint, key: crypto.randomUUID() };
-      const receipt = held
-        ? await posRequest<PosSavedReceipt>(
-            scope,
-            `receipts/${held.id}/complete/`,
-            { method: "POST", body: { payments } }
-          )
-        : await checkoutPosCart(scope, cart, {
-            payments,
-            status,
-            comment,
-            expectedTotal: quote.due,
-            idempotencyKey: attempt.current.key,
-          });
+      const result: PosSaleResult = held
+        ? {
+            receipt: await posRequest<PosSavedReceipt>(
+              scope,
+              `receipts/${held.id}/complete/`,
+              { method: "POST", body: { payments } }
+            ),
+            certificates: [],
+          }
+        : normalizeCheckoutResult(
+            await checkoutPosCart(scope, cart, {
+              payments,
+              status,
+              comment,
+              expectedTotal: quote.due,
+              idempotencyKey: attempt.current.key,
+            })
+          );
+      const soldCertificates = certificates.length > 0 || result.certificates.length > 0;
       reset();
       setCheckoutOpen(false);
       setHoldOpen(false);
-      setSaved(receipt);
+      if (phone) setTab("products");
+      setSale(result);
       invalidate();
+      if (soldCertificates) {
+        // Деньги за сертификат — операция кассы и смены, а не выручка чека.
+        void cache.invalidateQueries({ queryKey: ["django", "cashbox"] });
+        void cache.invalidateQueries({ queryKey: ["django", "shifts"] });
+        void cache.invalidateQueries({ queryKey: ["django", "promotions", "certificates"] });
+      }
     });
   const restore = (receipt: PosSavedReceipt) => {
-    if (!rows.length) {
+    if (!rows.length && !certificates.length) {
       void openHeld(receipt);
       return;
     }
@@ -855,6 +884,7 @@ export default function LivePosPage() {
   const openHeld = (receipt: PosSavedReceipt) =>
     act(async () => {
       setHeld(receipt);
+      setCertificates([]);
       setWarehouseChoice(receipt.warehouseId);
       setBenefits(emptyBenefits);
       setRows(
@@ -892,13 +922,13 @@ export default function LivePosPage() {
       }
       if (event.key === "F5") {
         event.preventDefault();
-        if (actions.sell && quote && !busy && !list && !lineDiscountIgnored && !certificateSellOpen)
+        if (actions.sell && quote && !busy && !list && !lineDiscountIgnored && !certificateSellOpen && !payDisabledReason)
           setCheckoutOpen(true);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [actions.sell, quote, busy, list, lineDiscountIgnored, certificateSellOpen]);
+  }, [actions.sell, quote, busy, list, lineDiscountIgnored, certificateSellOpen, payDisabledReason]);
 
   useBarcodeScanner(handleScan, ready && Boolean(data));
 
@@ -922,9 +952,15 @@ export default function LivePosPage() {
   if (!data) return <LinearProgress />;
   const quoteError =
     quoteQuery.isError && !held ? message(quoteQuery.error) : null;
+  const quoteErrorField = inlineQuoteErrorField(quoteError);
+  // Ошибку промокода и оплаты сертификатом панель показывает под своим блоком;
+  // остальное (в том числе ошибки продажи сертификата) — баннером.
+  const quoteErrorInline =
+    (quoteErrorField === "promo" && canPromoCode) ||
+    (quoteErrorField === "certificate" && Boolean(benefits.certificateCode.trim()));
   const visibleError: PosUserError | null =
     error ??
-    (quoteError && !inlineQuoteErrorField(quoteError)
+    (quoteError && !quoteErrorInline
       ? toPosUserError(quoteQuery.error)
       : products.isError
       ? toPosUserError(products.error)
@@ -932,17 +968,42 @@ export default function LivePosPage() {
       ? toPosUserError(clients.error)
       : null);
   const checkoutLines = quote
-    ? quote.lines.map((line) => ({
-        name: line.name,
-        quantity: line.quantity,
-        discountAmount: Number(line.discountAmount),
-        total: Number(line.subtotal) - Number(line.discountAmount),
-      }))
+    ? [
+        ...quote.lines.map((line) => ({
+          name: line.name,
+          quantity: line.quantity,
+          discountAmount: Number(line.discountAmount),
+          total: Number(line.subtotal) - Number(line.discountAmount),
+        })),
+        ...(held
+          ? []
+          : certificates.map((item) => ({
+              name: `Подарочный сертификат · ${item.client.name}`,
+              quantity: "1",
+              total: item.nominalCents / 100,
+              certificate: true,
+            }))),
+      ]
     : [];
   const checkoutBenefits = [
+    { label: "Оплата сертификатом", value: Number(quote?.certificateAmount ?? 0), tone: "certificate" as const },
     { label: "Бонусы", value: Number(quote?.bonuses ?? 0), tone: "bonus" as const },
-    { label: "Сертификат", value: Number(quote?.certificateAmount ?? 0), tone: "certificate" as const },
+    { label: "Подарочные сертификаты", value: held ? 0 : certificatesTotal, tone: undefined },
   ].filter((item) => item.value > 0);
+  const receiptCertificates = held
+    ? []
+    : certificates.map((item) => ({
+        key: item.key,
+        clientName: item.client.name,
+        amount: item.nominalCents / 100,
+        expiryLabel: giftCardExpiryLabel(item.noExpiry, item.expiresOn),
+        comment: item.comment,
+      }));
+  const due = quote ? Number(quote.due) : 0;
+  const canPay =
+    Boolean(actions.sell) && !!quote && !busy && !lineDiscountIgnored && !payDisabledReason;
+  const receiptCount =
+    rows.filter((row) => !row.removed).length + receiptCertificates.length;
 
   const dropdownVisible = !held && resultsOpen && canShowProducts;
   const dropdownLoading = isSearchPending || products.isFetching;
@@ -1001,6 +1062,159 @@ export default function LivePosPage() {
     </Stack>
   );
 
+  const receiptView = (
+    <PosReceipt
+      number={held?.number.slice(0, 8) ?? "новый"}
+      lines={rows.map((row) => {
+        const quoted = quoteStale
+          ? undefined
+          : serverQuote?.lines.find(
+              (line) => line.productId === row.product.id
+            );
+        const heldLine = held?.lines.find(
+          (line) => line.productId === row.product.id
+        );
+        return {
+          ...toLine(row, variants),
+          ...(heldLine
+            ? { discountAmount: Number(heldLine.discountAmount ?? 0) }
+            : {}),
+          total: held
+            ? Number(heldLine?.total ?? row.product.price)
+            : quoted
+            ? Number(quoted.subtotal) - Number(quoted.discountAmount)
+            : undefined,
+        };
+      })}
+      certificates={receiptCertificates}
+      onRemoveCertificate={(key) =>
+        setCertificates((current) => current.filter((item) => item.key !== key))
+      }
+      // Сервер не откладывает чек с сертификатом — кнопку не даём нажать.
+      canHold={actions.hold && !!quote && !held && !busy && !certificates.length}
+      holdHint={certificates.length ? HOLD_BLOCKED_BY_CERTIFICATE : undefined}
+      canDiscount={Boolean(actions.discount)}
+      readOnly={!actions.sell || !!held || pending}
+      onChangeColor={(id, value) => variant(id, "color", value)}
+      onChangeSize={(id, value) => variant(id, "size", value)}
+      onChangeQuantity={(id, quantity) => {
+        const row = rows.find((r) => String(r.product.id) === id);
+        if (row && quantity > Number(row.product.stock)) {
+          setError(posError("STOCK_LIMIT", { name: row.product.name, stock: Number(row.product.stock) }));
+          return;
+        }
+        update(id, { quantity });
+      }}
+      onChangeLineDiscount={(id, discountAmount, discountPercent) =>
+        update(id, { discountAmount, discountPercent })
+      }
+      onRemoveLine={(id) => update(id, { removed: true })}
+      onRestoreLine={(id) => update(id, { removed: false })}
+      onHold={() => setHoldOpen(true)}
+      onCancel={newReceipt}
+    />
+  );
+  const clientView = actions.clients ? (
+    <Box
+      sx={{
+        opacity: pending ? 0.6 : 1,
+        pointerEvents: pending || held ? "none" : "auto",
+      }}
+    >
+      <PosClientFooter
+        client={client}
+        query={clientQuery}
+        onQueryChange={setClientQuery}
+        results={clientSearch && !clients.isFetching ? clients.data ?? [] : null}
+        searching={Boolean(clientSearch) && clients.isFetching}
+        onSelectClient={(value) => {
+          setClient(value);
+          setClientQuery("");
+          setClientSearch("");
+          setBenefits(emptyBenefits);
+        }}
+        canRegister={actions.client_create}
+        canHistory={actions.history}
+        onCreateClient={(query) => {
+          setClientEditorTarget("receipt");
+          setClientEditorQuery(query);
+          setClientEditorOpen(true);
+        }}
+        onChangeClient={() => {
+          setClient(null);
+          setClientQuery("");
+          setClientSearch("");
+          setBenefits(emptyBenefits);
+        }}
+        onOpenHistory={() => {
+          setHistoryClient(client ? Number(client.id) : null);
+          setListOffset(0);
+          setList("history");
+        }}
+      />
+    </Box>
+  ) : null;
+  const paymentPanel = (
+    <LivePaymentPanel
+      actions={actions}
+      canPromoCode={canPromoCode}
+      benefits={benefits}
+      onChange={setBenefits}
+      quote={quote}
+      quoteError={quoteError}
+      busy={busy}
+      onCheckout={() => setCheckoutOpen(true)}
+      discountPercent={client?.discountPercent ?? 0}
+      bonuses={client?.bonuses ?? 0}
+      hasClient={!!client}
+      locked={!!held || pending}
+      discountKinds={discountKinds}
+      discountMode={discountMode}
+      maxPercent={maxDiscountPercent(data.rules)}
+      lineDiscounts={panelLineDiscounts}
+      lineDiscountIgnored={lineDiscountIgnored}
+      certificatesTotal={held ? 0 : Number(quote?.certificatesTotal ?? certificatesTotal)}
+      hidePayButton={phone}
+      payDisabledReason={payDisabledReason}
+    />
+  );
+  /** Телефон, вкладка «Товары»: найденные товары — списком во всю ширину. */
+  const productsPane = (
+    <Box sx={{ px: 1.5, py: 1.25 }}>
+      {dropdown ? (
+        <Box
+          sx={{
+            px: "4px",
+            bgcolor: c.card,
+            border: `1px solid ${c.outline}`,
+            borderRadius: `${POS_RADIUS.card}px`,
+          }}
+        >
+          {dropdown}
+        </Box>
+      ) : (
+        <Stack alignItems="center" gap={1} sx={{ py: 6, px: 2, textAlign: "center" }}>
+          <Box sx={{ width: 56, height: 56, borderRadius: "50%", display: "grid", placeItems: "center", bgcolor: c.tile }}>
+            <QrCodeScannerOutlined sx={{ fontSize: 28, color: c.textDim }} />
+          </Box>
+          <Typography sx={{ fontSize: 16, fontWeight: 800, color: c.text }}>
+            {held ? "Отложенный чек" : "Найдите товар"}
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: c.textDim, maxWidth: 300 }}>
+            {held
+              ? "Состав отложенного чека менять нельзя — откройте вкладку «Чек» или «Оплата»."
+              : "Название, артикул или штрихкод — в поле выше. Сканер тоже работает: товар сразу ляжет в чек."}
+          </Typography>
+          {receiptCount > 0 && (
+            <Button variant="outlined" onClick={() => setTab("receipt")} sx={{ mt: 1, minHeight: 44, borderRadius: `${POS_RADIUS.control}px` }}>
+              Открыть чек ({receiptCount})
+            </Button>
+          )}
+        </Stack>
+      )}
+    </Box>
+  );
+
   return (
     <Box
       sx={{
@@ -1009,10 +1223,12 @@ export default function LivePosPage() {
         flexDirection: "column",
         bgcolor: c.page,
         color: c.text,
-        overflow: "auto",
+        // Телефон: прокручивается только вкладка, шапка и нижняя панель на месте.
+        overflow: phone ? "hidden" : "auto",
+        overflowX: "hidden",
       }}
     >
-      <style>{`@media print { body * { visibility:hidden !important; } #pos-print, #pos-print * { visibility:visible !important; } #pos-print { position:fixed; left:0; top:0; width:80mm; background:white; color:black; padding:8mm; } }`}</style>
+      <style>{`@media print { body * { visibility:hidden !important; } #pos-print, #pos-print * { visibility:visible !important; } #pos-print { position:fixed; left:0; top:0; width:80mm; background:white; color:black; padding:8mm; max-height:none !important; overflow:visible !important; } }`}</style>
       <PosTopBar
         inputRef={searchInputRef}
         search={search}
@@ -1046,7 +1262,10 @@ export default function LivePosPage() {
           return false;
         }}
         dropdown={dropdown}
-        onDropdownClose={() => setResultsOpen(false)}
+        // На телефоне список — во вкладке под шапкой, а не поверх неё.
+        onDropdownClose={phone ? undefined : () => setResultsOpen(false)}
+        searchMode={phone ? (tab === "products" ? "inline" : "hidden") : "dropdown"}
+        autoFocusSearch={!phone}
         categories={data.categories}
         categoryId={selectedCategoryId}
         onCategoryChange={setSelectedCategoryId}
@@ -1058,9 +1277,12 @@ export default function LivePosPage() {
         canSell={actions.sell && !pending}
         canHold={actions.hold}
         canSellCertificate={Boolean(actions.certificate_sell)}
+        sellCertificateDisabledReason={
+          held ? "Сначала оплатите отложенный чек или начните новый" : pending ? "Подождите, чек сохраняется" : undefined
+        }
         onSellCertificate={() => {
-          setCertificateBuyer(null);
-          setCertificateScan(null);
+          // Чаще всего сертификат покупает тот же покупатель, что и в чеке.
+          setCertificateBuyer(client);
           setCertificateSellOpen(true);
         }}
         onScan={() => void addByCode(search, "manual")}
@@ -1080,171 +1302,141 @@ export default function LivePosPage() {
           оплатите его или начните новый чек.
         </Alert>
       )}
-      <Box
-        sx={{
-          flex: 1,
-          minHeight: { xs: "auto", lg: 0 },
-          display: "flex",
-          flexDirection: { xs: "column", lg: "row" },
-        }}
-      >
-        <Stack
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            minHeight: { xs: "auto", lg: 0 },
-            p: { xs: 1.25, md: 1.5 },
-          }}
-          gap={{ xs: 1.25, md: 1.5 }}
-        >
-          <Box sx={{ flex: 1, minHeight: { xs: 200, lg: 0 }, display: "flex" }}>
-            <PosReceipt
-              number={held?.number.slice(0, 8) ?? "новый"}
-              lines={rows.map((row) => {
-                const quoted = quoteStale
-                  ? undefined
-                  : serverQuote?.lines.find(
-                      (line) => line.productId === row.product.id
-                    );
-                const heldLine = held?.lines.find(
-                  (line) => line.productId === row.product.id
-                );
-                return {
-                  ...toLine(row, variants),
-                  ...(heldLine
-                    ? { discountAmount: Number(heldLine.discountAmount ?? 0) }
-                    : {}),
-                  total: held
-                    ? Number(heldLine?.total ?? row.product.price)
-                    : quoted
-                    ? Number(quoted.subtotal) - Number(quoted.discountAmount)
-                    : undefined,
-                };
-              })}
-              canHold={actions.hold && !!quote && !held && !busy}
-              canDiscount={Boolean(actions.discount)}
-              readOnly={!actions.sell || !!held || pending}
-              onChangeColor={(id, value) => variant(id, "color", value)}
-              onChangeSize={(id, value) => variant(id, "size", value)}
-              onChangeQuantity={(id, quantity) => {
-                const row = rows.find((r) => String(r.product.id) === id);
-                if (row && quantity > Number(row.product.stock)) {
-                  setError(posError("STOCK_LIMIT", { name: row.product.name, stock: Number(row.product.stock) }));
-                  return;
-                }
-                update(id, { quantity });
-              }}
-              onChangeLineDiscount={(id, discountAmount, discountPercent) =>
-                update(id, { discountAmount, discountPercent })
-              }
-              onRemoveLine={(id) => update(id, { removed: true })}
-              onRestoreLine={(id) => update(id, { removed: false })}
-              onHold={() => setHoldOpen(true)}
-              onCancel={newReceipt}
-            />
+      {phone ? (
+        <>
+          <Box ref={phoneContentRef} sx={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
+            {tab === "products" && productsPane}
+            {tab === "receipt" && (
+              <Stack gap={1.25} sx={{ p: 1.25 }}>
+                <Box sx={{ display: "flex", minHeight: 160 }}>{receiptView}</Box>
+                {clientView}
+              </Stack>
+            )}
+            {tab === "payment" && (
+              <Stack gap={0}>
+                {clientView ? <Box sx={{ px: 1.25, pt: 1.25 }}>{clientView}</Box> : null}
+                {paymentPanel}
+              </Stack>
+            )}
           </Box>
-          {actions.clients && (
-            <Box
+          <Box
+            sx={{
+              flexShrink: 0,
+              bgcolor: c.card,
+              borderTop: `1px solid ${c.outline}`,
+              pb: "env(safe-area-inset-bottom)",
+            }}
+          >
+            {actions.sell && (hasCartContent || held) && (
+              <Box sx={{ px: 1.25, pt: 1 }}>
+                <ButtonBase
+                  onClick={() => setCheckoutOpen(true)}
+                  disabled={!canPay}
+                  aria-label={`Оплатить ${quote ? quote.due : ""} сом`}
+                  sx={{
+                    width: "100%",
+                    minHeight: 52,
+                    px: 2.5,
+                    justifyContent: "space-between",
+                    borderRadius: `${POS_RADIUS.control}px`,
+                    bgcolor: c.accent,
+                    color: c.onAccent,
+                    fontSize: 16,
+                    fontWeight: 800,
+                    "&.Mui-disabled": { opacity: 0.45 },
+                  }}
+                >
+                  <span>{busy ? "Считаем…" : "Оплатить"}</span>
+                  <span>{quote ? <PosAmount value={due} /> : "—"}</span>
+                </ButtonBase>
+              </Box>
+            )}
+            <BottomNavigation
+              showLabels
+              value={tab}
+              onChange={(_, value: PhoneTab) => setTab(value)}
               sx={{
-                opacity: pending ? 0.6 : 1,
-                pointerEvents: pending || held ? "none" : "auto",
+                height: 60,
+                bgcolor: "transparent",
+                "& .MuiBottomNavigationAction-root": { minWidth: 0, color: c.textDim },
+                "& .Mui-selected": { color: c.accentText },
+                "& .MuiBottomNavigationAction-label": { fontSize: 12, fontWeight: 700 },
+                "& .MuiBottomNavigationAction-label.Mui-selected": { fontSize: 12 },
               }}
             >
-              <PosClientFooter
-                client={client}
-                query={clientQuery}
-                onQueryChange={setClientQuery}
-                results={clientSearch && !clients.isFetching ? clients.data ?? [] : null}
-                searching={Boolean(clientSearch) && clients.isFetching}
-                onSelectClient={(value) => {
-                  setClient(value);
-                  setClientQuery("");
-                  setClientSearch("");
-                  setBenefits(emptyBenefits);
-                }}
-                canRegister={actions.client_create}
-                canHistory={actions.history}
-                onCreateClient={(query) => {
-                  setClientEditorTarget("receipt");
-                  setClientEditorQuery(query);
-                  setClientEditorOpen(true);
-                }}
-                onChangeClient={() => {
-                  setClient(null);
-                  setClientQuery("");
-                  setClientSearch("");
-                  setBenefits(emptyBenefits);
-                }}
-                onOpenHistory={() => {
-                  setHistoryClient(client ? Number(client.id) : null);
-                  setListOffset(0);
-                  setList("history");
-                }}
+              <BottomNavigationAction value="products" label="Товары" icon={<Inventory2Outlined />} />
+              <BottomNavigationAction
+                value="receipt"
+                label={receiptCount ? `Чек (${receiptCount})` : "Чек"}
+                icon={<ReceiptLongOutlined />}
               />
-            </Box>
-          )}
-          <ClientEditorDrawer
-            open={clientEditorOpen}
-            organizationId={scope.organizationId || null}
-            client={null}
-            initialQuery={clientEditorQuery}
-            statuses={clientStatuses.data ?? []}
-            showPhoto={auth.hasPermission("clients.update") || auth.isSuperAdmin()}
-            // Поверх окна продажи сертификата: у Drawer слой ниже, чем у Dialog.
-            zIndex={clientEditorTarget === "certificate" ? theme.zIndex.modal + 1 : undefined}
-            onClose={() => setClientEditorOpen(false)}
-            onCreate={async (payload: CreateClientPayload, photoFile) => {
-              // Организацию касса передаёт заголовком (posRequest), а ФИО ручка
-              // кассы исторически принимает как `name`.
-              const fields: Partial<CreateClientPayload> = { ...payload };
-              delete fields.fullName;
-              delete fields.organizationId;
-              const result = await posRequest<PosClient>(scope, "clients/", {
-                method: "POST",
-                body: { ...fields, name: payload.fullName, branchId: scope.branchId },
-              });
-              if (clientEditorTarget === "certificate") {
-                setCertificateBuyer(result);
-              } else {
-                setClient(result);
-                setClientQuery("");
-                setClientSearch("");
-                setBenefits(emptyBenefits);
-              }
-              void cache.invalidateQueries({ queryKey: [...prefix, "clients"] });
-              void cache.invalidateQueries({ queryKey: ["clients", scope.organizationId] });
-              if (photoFile) {
-                try {
-                  await uploadClientPhoto(Number(result.id), photoFile);
-                } catch {
-                  setError(posError("CLIENT_PHOTO_NOT_SAVED"));
-                }
-              }
+              <BottomNavigationAction value="payment" label="Оплата" icon={<PaymentsOutlined />} />
+            </BottomNavigation>
+          </Box>
+        </>
+      ) : (
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "row",
+          }}
+        >
+          <Stack
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              p: 1.5,
             }}
-          />
-        </Stack>
-        <LivePaymentPanel
-          actions={actions}
-          canPromoCode={canPromoCode}
-          benefits={benefits}
-          onChange={setBenefits}
-          quote={quote}
-          quoteError={quoteError}
-          busy={busy}
-          onCheckout={() => setCheckoutOpen(true)}
-          discountPercent={client?.discountPercent ?? 0}
-          bonuses={client?.bonuses ?? 0}
-          hasClient={!!client}
-          locked={!!held || pending}
-          discountKinds={discountKinds}
-          discountMode={discountMode}
-          maxPercent={maxDiscountPercent(data.rules)}
-          lineDiscounts={panelLineDiscounts}
-          lineDiscountIgnored={lineDiscountIgnored}
-          certificateInfo={certificateInfo}
-          certificateInfoLoading={Boolean(certificateCode) && certificateLookup.isFetching && !certificateLookup.data}
-        />
-      </Box>
+            gap={1.5}
+          >
+            <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>{receiptView}</Box>
+            {clientView}
+          </Stack>
+          {paymentPanel}
+        </Box>
+      )}
+      <ClientEditorDrawer
+        open={clientEditorOpen}
+        organizationId={scope.organizationId || null}
+        client={null}
+        initialQuery={clientEditorQuery}
+        statuses={clientStatuses.data ?? []}
+        showPhoto={auth.hasPermission("clients.update") || auth.isSuperAdmin()}
+        // Поверх окна продажи сертификата: у Drawer слой ниже, чем у Dialog.
+        zIndex={clientEditorTarget === "certificate" ? theme.zIndex.modal + 1 : undefined}
+        onClose={() => setClientEditorOpen(false)}
+        onCreate={async (payload: CreateClientPayload, photoFile) => {
+          // Организацию касса передаёт заголовком (posRequest), а ФИО ручка
+          // кассы исторически принимает как `name`.
+          const fields: Partial<CreateClientPayload> = { ...payload };
+          delete fields.fullName;
+          delete fields.organizationId;
+          const result = await posRequest<PosClient>(scope, "clients/", {
+            method: "POST",
+            body: { ...fields, name: payload.fullName, branchId: scope.branchId },
+          });
+          if (clientEditorTarget === "certificate") {
+            setCertificateBuyer(result);
+          } else {
+            setClient(result);
+            setClientQuery("");
+            setClientSearch("");
+            setBenefits(emptyBenefits);
+          }
+          void cache.invalidateQueries({ queryKey: [...prefix, "clients"] });
+          void cache.invalidateQueries({ queryKey: ["clients", scope.organizationId] });
+          if (photoFile) {
+            try {
+              await uploadClientPhoto(Number(result.id), photoFile);
+            } catch {
+              setError(posError("CLIENT_PHOTO_NOT_SAVED"));
+            }
+          }
+        }}
+      />
       <Snackbar
         key={addedNotice?.key}
         open={addedNotice !== null}
@@ -1253,6 +1445,8 @@ export default function LivePosPage() {
         message={addedNotice?.text}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         ContentProps={{ sx: { fontWeight: 700 } }}
+        // На телефоне — над липкой кнопкой оплаты и вкладками.
+        sx={{ bottom: phone ? "calc(136px + env(safe-area-inset-bottom)) !important" : undefined }}
       />
       <PosConfirmDialog
         request={confirmRequest}
@@ -1267,8 +1461,8 @@ export default function LivePosPage() {
         <CertificateSellDialog
           open={certificateSellOpen}
           scope={scope}
-          bootstrap={{ ...data, actions }}
-          scan={certificateScan}
+          organizationName={data.organization.name}
+          canSearchClients={Boolean(actions.clients)}
           buyer={certificateBuyer}
           onBuyerChange={setCertificateBuyer}
           onCreateBuyer={
@@ -1281,29 +1475,22 @@ export default function LivePosPage() {
               : undefined
           }
           onClose={() => setCertificateSellOpen(false)}
-          onSold={(certificate: GiftCertificateDetail) => {
+          onAdd={(draft) => {
+            setCertificates((current) => [...current, draft]);
+            // Покупатель сертификата платит за чек: если покупателя чека ещё
+            // нет, им становится он (скидки и бонусы клиента — по кнопкам).
+            if (!client && certificateBuyer) {
+              setClient(certificateBuyer);
+              setBenefits(emptyBenefits);
+            }
             setCertificateSellOpen(false);
             setCertificateBuyer(null);
-            setSoldNotice(`Сертификат №${certificate.code} продан`);
-            // Деньги за карту — операция кассы и смены, а не чек: обновляем их
-            // вместе с данными кассы магазина и реестром сертификатов.
-            invalidate();
-            void cache.invalidateQueries({ queryKey: ["django", "cashbox"] });
-            void cache.invalidateQueries({ queryKey: ["django", "shifts"] });
-            void cache.invalidateQueries({ queryKey: ["django", "promotions", "certificates"] });
+            setError(null);
+            if (phone) setTab("receipt");
+            setAddedNotice({ key: Date.now(), text: "Сертификат добавлен в чек" });
           }}
         />
       )}
-      <Snackbar
-        open={soldNotice !== null}
-        autoHideDuration={5000}
-        onClose={() => setSoldNotice(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert severity="success" variant="filled" onClose={() => setSoldNotice(null)} sx={{ fontWeight: 700 }}>
-          {soldNotice}
-        </Alert>
-      </Snackbar>
       {quote && (
         <CheckoutDialog
           open={checkoutOpen}
@@ -1314,12 +1501,35 @@ export default function LivePosPage() {
           discount={Number(quote.discount)}
           benefits={checkoutBenefits}
           pending={pending}
+          recalculating={!held && quoteQuery.isFetching}
           error={error ? formatPosError(error) : null}
           onClose={() => setCheckoutOpen(false)}
           onPay={(payments) => void save(payments)}
+          certificate={
+            held
+              ? undefined
+              : {
+                  hasGoods: cart.lines.length > 0,
+                  clientName: client?.name ?? null,
+                  list: clientCertificates.data,
+                  loading: clientCertificates.isFetching,
+                  loadError: clientCertificates.isError
+                    ? formatPosError(toPosUserError(clientCertificates.error))
+                    : null,
+                  applied: benefits.certificateCode.trim(),
+                  appliedAmount: Number(quote.certificateAmount ?? 0),
+                  onApply: (code) =>
+                    setBenefits((current) => ({ ...current, certificateCode: code })),
+                  onPickClient: () => {
+                    setCheckoutOpen(false);
+                    if (phone) setTab("receipt");
+                  },
+                }
+          }
         />
       )}
       <Dialog
+        fullScreen={phone}
         open={list !== null}
         onClose={() => setList(null)}
         maxWidth="md"
@@ -1339,7 +1549,8 @@ export default function LivePosPage() {
                 key={receipt.id}
                 direction="row"
                 alignItems="center"
-                gap={2}
+                flexWrap={{ xs: "wrap", md: "nowrap" }}
+                gap={{ xs: 1, md: 2 }}
                 sx={{
                   p: 1.5,
                   border: "1px solid",
@@ -1347,7 +1558,7 @@ export default function LivePosPage() {
                   borderRadius: 2,
                 }}
               >
-                <Box sx={{ flex: 1 }}>
+                <Box sx={{ flex: { xs: "1 1 100%", md: 1 }, minWidth: 0 }}>
                   <Typography fontWeight={700}>
                     №{receipt.number.slice(0, 8)} ·{" "}
                     {receipt.status === "held"
@@ -1398,7 +1609,7 @@ export default function LivePosPage() {
                   </Button>
                 )}
                 {list === "history" && (
-                  <Button onClick={() => setSaved(receipt)}>Чек</Button>
+                  <Button onClick={() => setSale({ receipt, certificates: [] })}>Чек</Button>
                 )}
                 {list === "history" &&
                   actions.return &&
@@ -1437,46 +1648,16 @@ export default function LivePosPage() {
           <Button onClick={() => setList(null)}>Закрыть</Button>
         </DialogActions>
       </Dialog>
+      <SaleDoneDialog
+        sale={sale}
+        organizationName={data.organization.name}
+        branchName={data.branch.name}
+        cashier={data.cashier}
+        canPrint={Boolean(actions.print)}
+        onClose={() => setSale(null)}
+      />
       <Dialog
-        open={!!saved}
-        onClose={() => setSaved(null)}
-        fullWidth
-        maxWidth="lg"
-        PaperProps={{ sx: { borderRadius: { xs: 0, sm: 3 }, bgcolor: c.page, color: c.text, backgroundImage: "none", overflow: "hidden" } }}
-      >
-        {saved && <>
-          <DialogTitle sx={{ px: { xs: 2, sm: 3 }, py: 1.5, borderBottom: `1px solid ${c.hairline}`, bgcolor: c.card }}>
-            <Stack direction="row" alignItems="center" gap={1}>
-              <Typography fontWeight={800}>Оплата</Typography>
-              <Typography variant="caption" color="text.secondary">{saved.lines.length} товаров</Typography>
-              <Typography variant="caption" color="text.secondary">· Чек №{saved.number.slice(0, 8)}</Typography>
-              <IconButton onClick={() => setSaved(null)} size="small" sx={{ ml: "auto", color: "text.secondary" }}><CloseRounded fontSize="small" /></IconButton>
-            </Stack>
-          </DialogTitle>
-          <DialogContent sx={{ p: { xs: 1.5, sm: 3 } }}>
-          <Stack direction={{ xs: "column", md: "row" }} gap={{ xs: 2, md: 3 }}>
-            <Box sx={{ width: { xs: "100%", md: 320 }, flexShrink: 0 }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}><Typography sx={{ fontSize: 10, letterSpacing: ".1em", fontWeight: 800, color: c.textDim }}>ПЕЧАТНАЯ ФОРМА ЧЕКА</Typography><Typography sx={{ fontSize: 10, color: c.textDim }}>прокрутите</Typography></Stack>
-              <Box id="pos-print" sx={{ bgcolor: "#fff", color: "#141722", p: { xs: 2, sm: 2.5 }, borderRadius: 1.5, boxShadow: "0 18px 50px rgba(0,0,0,.35)", minHeight: { md: 470 } }}>
-                <Stack alignItems="center" gap={.25} mb={2}><Typography fontWeight={900} letterSpacing=".12em">{data.organization.name.toUpperCase()}</Typography><Typography variant="caption">{data.branch.name}</Typography><Typography variant="caption" color="#6e7280">Товарный чек · не фискальный</Typography></Stack>
-                <Stack direction="row" justifyContent="space-between" mb={1}><Typography variant="caption">ЧЕК №{saved.number.slice(0, 8)}</Typography><Typography variant="caption">{new Date(saved.createdAt).toLocaleDateString("ru-RU")}</Typography></Stack>
-                <Box sx={{ borderTop: "1px dashed #adb0ba", borderBottom: "1px dashed #adb0ba", py: 1 }}>{saved.lines.map((line) => <Stack key={line.id} direction="row" justifyContent="space-between" gap={1} py={.55}><Box sx={{ minWidth: 0 }}><Typography fontSize={12} fontWeight={600} noWrap>{line.productName}</Typography><Typography fontSize={10} color="#6e7280">{line.quantity} × {Number(line.unitPrice).toLocaleString("ru-RU")} сом{Number(line.discountAmount ?? 0) > 0 ? ` · скидка −${Number(line.discountAmount).toLocaleString("ru-RU")} сом` : ""}</Typography></Box><Typography fontSize={12} fontWeight={700} whiteSpace="nowrap">{Number(line.total).toLocaleString("ru-RU")} сом</Typography></Stack>)}</Box>
-                <Stack gap={.5} mt={1.5}><Stack direction="row" justifyContent="space-between"><Typography variant="caption">Подытог</Typography><Typography variant="caption">{Number(saved.subtotal).toLocaleString("ru-RU")} сом</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography variant="caption">Скидка</Typography><Typography variant="caption">− {Number(saved.discountTotal).toLocaleString("ru-RU")} сом</Typography></Stack><Stack direction="row" justifyContent="space-between" mt={.5}><Typography fontWeight={800}>ИТОГО</Typography><Typography fontWeight={900}>{Number(saved.totalAmount).toLocaleString("ru-RU")} сом</Typography></Stack></Stack>
-                <Stack alignItems="center" mt={2}><QrCode2Rounded sx={{ fontSize: 76, color: "#191c26" }} /><Typography fontSize={9} color="#777">Проверить чек</Typography></Stack>
-              </Box>
-            </Box>
-            <Box sx={{ flex: 1, minWidth: 0, pt: { md: 3 } }}>
-              <Box sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2.5, bgcolor: theme.palette.success.lighter, border: `1px solid ${alpha(theme.palette.success.main, 0.35)}` }}><Stack direction="row" gap={1.25} alignItems="flex-start"><CheckCircleRounded sx={{ color: c.positive, fontSize: 28 }} /><Box sx={{ minWidth: 0, flex: 1 }}><Stack direction="row" justifyContent="space-between" gap={1}><Box><Typography fontWeight={800} color={c.positive}>Оплата прошла успешно</Typography><Typography variant="caption" color={c.textDim}>Чек №{saved.number.slice(0, 8)} · {new Date(saved.createdAt).toLocaleString("ru-RU")}</Typography></Box><Chip size="small" label={saved.payments[0]?.method === "cash" ? "Оплата наличными" : "Оплата картой"} sx={{ bgcolor: alpha(theme.palette.success.main, 0.15), color: c.positive, fontSize: 10, fontWeight: 700 }} /></Stack><Typography variant="h4" fontWeight={900} sx={{ mt: 1, color: c.text }}>{Number(saved.totalAmount).toLocaleString("ru-RU")} сом</Typography></Box></Stack></Box>
-              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" }, gap: 1, mt: 1.5 }}>{[{ label: "Позиций", value: `${saved.lines.length} шт.` }, { label: "Способ оплаты", value: saved.payments.map((payment) => payment.method === "cash" ? "Наличные" : payment.method === "card" ? "Карта" : "Безналичные").join(", ") }, { label: "Клиент", value: saved.clientId ? `#${saved.clientId}` : "Без клиента" }, { label: "Кассир", value: data.cashier }].map((item) => <Box key={item.label} sx={{ p: 1.25, borderRadius: 1.5, bgcolor: c.card, border: `1px solid ${c.hairline}`, minWidth: 0 }}><Typography variant="caption" color={c.textDim} noWrap>{item.label}</Typography><Typography fontWeight={700} noWrap>{item.value}</Typography></Box>)}</Box>
-              <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1, mt: 1 }}><Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: c.card, border: `1px solid ${c.hairline}` }}><Typography variant="caption" color={c.textDim}>Печатный чек</Typography><Typography fontWeight={700} color={c.positive}>Готов к печати</Typography></Box><Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: c.card, border: `1px solid ${c.hairline}` }}><Typography variant="caption" color={c.textDim}>Электронный чек</Typography><Typography fontWeight={700} color={c.positive}>Не отправлен</Typography></Box></Box>
-              <Button fullWidth variant="contained" onClick={() => setSaved(null)} sx={{ mt: 1.5, minHeight: 46, borderRadius: 2, fontWeight: 800 }}>Новый чек <Box component="span" sx={{ ml: 1, opacity: .65, fontSize: 11 }}>Enter</Box></Button>
-              <Stack direction={{ xs: "column", sm: "row" }} gap={1} mt={1}><Button fullWidth startIcon={<DownloadRounded />} sx={{ borderRadius: 2, bgcolor: c.card, color: c.accentText, border: `1px solid ${c.hairline}` }} onClick={() => window.print()}>Скачать чек</Button>{actions.print && <Button fullWidth startIcon={<PrintRounded />} sx={{ borderRadius: 2, bgcolor: c.card, color: c.accentText, border: `1px solid ${c.hairline}` }} onClick={() => window.print()}>Повторная печать</Button>}</Stack>
-            </Box>
-          </Stack>
-          </DialogContent>
-        </>}
-      </Dialog>
-      <Dialog
+        fullScreen={phone}
         open={!!returnTarget}
         onClose={() => setReturnTarget(null)}
         maxWidth="sm"
