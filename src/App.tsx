@@ -106,6 +106,8 @@ const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPag
 const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
 const EstateDashboardPage = lazy(() => import("./pages/estate-dashboard"));
 const RealtyTodayPage = lazy(() => import("./pages/estate-dashboard/TodayPage"));
+const CrmAnalyticsPage = lazy(() => import("./pages/estate-analytics/CrmAnalyticsPage"));
+const EstateBiPage = lazy(() => import("./pages/estate-analytics/BiPage"));
 const RealtyFunnelPage = lazy(() => import("./pages/realty-sales/FunnelPage"));
 const RealtyLeadsPage = lazy(() => import("./pages/realty-sales/LeadsPage"));
 const RealtyCallsPage = lazy(() => import("./pages/realty-sales/CallsPage"));
@@ -1320,6 +1322,25 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {/* Аналитика застройщика (AIVIO): отчёт отдела продаж — /api/v2/realty/analytics/, сводная — /api/v2/estate-dashboard/bi/. */}
+                            {(
+                              [
+                                ["realestate/analytics", CrmAnalyticsPage, PAGE_PERMISSIONS.realtySales],
+                                ["realestate/bi", EstateBiPage, PAGE_PERMISSIONS.estateDashboard],
+                              ] as const
+                            ).map(([path, Page, permission]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={permission}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
                             {/* Продажи застройщика (AIVIO) на /api/v2/realty/: воронка и лиды (не MamaDoc /deals и /patients), звонки, показы, брони, каталог, ипотека, партнёры, маркетинг. */}
                             {(
                               [

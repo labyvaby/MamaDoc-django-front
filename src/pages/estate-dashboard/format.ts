@@ -57,6 +57,12 @@ export function estateHref(view: string, objectId?: number | null): string | nul
       return objectId ? `/ops/residents?request=${objectId}` : "/ops/residents";
     case "mobileapp":
       return "/ops/mobileapp";
+    case "analytics":
+      return "/realestate/analytics";
+    case "bi":
+      return "/realestate/bi";
+    case "dashboard":
+      return "/realestate/dashboard";
     case "smeta":
       return "/supply/estimates";
     case "procurement":

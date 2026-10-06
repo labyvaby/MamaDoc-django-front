@@ -136,6 +136,16 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.ESTATE_DASHBOARD_VIEW],
   },
 
+  // Аналитика застройщика: отчёт отдела продаж (realty), сводная (estate_dashboard)
+  {
+    path: '/realestate/analytics',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/bi',
+    requiredPermissions: [PERMISSIONS.ESTATE_DASHBOARD_VIEW],
+  },
+
   // Продажи застройщика (realty): воронка, лиды, звонки, показы, брони, каталог, ипотека, партнёры, маркетинг
   {
     path: '/realestate/funnel',

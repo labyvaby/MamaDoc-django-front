@@ -1,0 +1,164 @@
+{
+  "common": {
+    "millions": "{{value}} млн",
+    "billions": "{{value}} млрд",
+    "loadError": "Не удалось загрузить аналитику",
+    "empty": "Нет данных за период",
+    "vsPrevious": "{{value}} к прошлому периоду",
+    "noPrevious": "прошлый период пуст",
+    "pp": "{{value}} п.п.",
+    "open": "Открыть"
+  },
+  "crm": {
+    "title": "Аналитика CRM",
+    "subtitle": "Отдел продаж за период: воронка, задачи, активность, менеджеры, ЖК, источники",
+    "range": "{{from}} — {{to}}",
+    "period": {
+      "1": "Сегодня",
+      "-1": "Вчера",
+      "7": "Неделя",
+      "30": "Месяц",
+      "90": "Квартал",
+      "custom": "Период"
+    },
+    "customTitle": "Свой период",
+    "from": "С",
+    "to": "По",
+    "apply": "Показать",
+    "badRange": "Дата «с» позже даты «по»",
+    "team": "Вся команда",
+    "mine": "Мои",
+    "export": "Отчёт",
+    "exportFailed": "Не удалось выгрузить отчёт",
+    "kpi": {
+      "leads": "Новых заявок",
+      "showRate": "Конверсия в показ",
+      "deals": "Продано квартир",
+      "revenue": "Выручка"
+    },
+    "funnel": {
+      "title": "Движение по воронке",
+      "conversion": "Конверсия {{value}}%",
+      "stageValue": "{{count}} · {{amount}}",
+      "advanced": "Перешло",
+      "lost": "Потеряно",
+      "delta": "За период",
+      "hint": "Клик по этапу — список сделок"
+    },
+    "tasks": {
+      "title": "Задачи",
+      "overdue": "Просрочено",
+      "done": "Выполнено",
+      "open": "Открыто",
+      "leadsWithoutTask": "Заявок без задачи",
+      "openTasks": "Открыть задачи"
+    },
+    "activity": {
+      "title": "Активность отдела",
+      "calls": "Звонков",
+      "shows": "Показов",
+      "bookings": "Броней",
+      "contracts": "Договоров",
+      "proposals": "КП отправлено"
+    },
+    "managers": {
+      "title": "Продажи по менеджерам",
+      "name": "Менеджер",
+      "leads": "Заявки",
+      "deals": "Сделки",
+      "revenue": "Выручка",
+      "calls": "Звонки",
+      "summary": "{{deals}} сделок · {{amount}}"
+    },
+    "dynamics": {
+      "title": "Динамика продаж",
+      "leads": "Заявки",
+      "contracts": "Договоры"
+    },
+    "stages": {
+      "title": "Конверсия этапов"
+    },
+    "projects": {
+      "title": "Продажи по ЖК",
+      "sold": "Продано",
+      "reserved": "В брони",
+      "revenue": "{{amount}} выручки"
+    },
+    "sources": {
+      "title": "Источники продаж",
+      "source": "Источник",
+      "leads": "Лиды",
+      "deals": "Сделки",
+      "conversion": "Конверсия"
+    },
+    "units": {
+      "title": "Квартиры по неделям",
+      "sold": "Продано",
+      "reserved": "Бронь",
+      "free": "Свободно",
+      "week": "Неделя {{week}}"
+    }
+  },
+  "bi": {
+    "title": "Сводная аналитика",
+    "subtitle": "Деньги, продажи, стройка и сигналы компании на одном экране",
+    "asOf": "на {{date}}",
+    "denied": "Нет доступа к разделам: {{list}}",
+    "module": {
+      "treasury": "Финансы",
+      "realty": "Продажи",
+      "construction": "Стройка",
+      "edo": "ЭДО",
+      "supply": "Снабжение",
+      "estate_ops": "Эксплуатация",
+      "salary": "Зарплата"
+    },
+    "kpi": {
+      "revenue30": "Поступления · 30 дн.",
+      "revenue30Hint_one": "{{count}} платёж",
+      "revenue30Hint_few": "{{count}} платежа",
+      "revenue30Hint_many": "{{count}} платежей",
+      "revenue30Hint_other": "{{count}} платежа",
+      "sold": "Продано квартир",
+      "soldHint": "{{amount}} · бронь {{reserved}}",
+      "readiness": "Средняя готовность",
+      "readinessHint_one": "{{count}} объект",
+      "readinessHint_few": "{{count}} объекта",
+      "readinessHint_many": "{{count}} объектов",
+      "readinessHint_other": "{{count}} объекта",
+      "margin": "Маржа портфеля",
+      "marginHint": "{{amount}} · бюджет освоен {{pct}}%"
+    },
+    "weeks": {
+      "title": "Поступления по неделям",
+      "inflow": "Поступило"
+    },
+    "sales": {
+      "title": "Продажи по объектам",
+      "sold": "Продано",
+      "reserved": "Бронь",
+      "free": "Свободно",
+      "line": "{{sold}} из {{total}} · {{amount}}"
+    },
+    "readiness": {
+      "title": "Готовность объектов",
+      "deadline": "сдача {{label}}"
+    },
+    "budgets": {
+      "title": "Бюджеты: план / факт",
+      "line": "{{fact}} из {{plan}}"
+    },
+    "forecast": {
+      "title": "Прогноз денег · 30 дн.",
+      "today": "Сегодня",
+      "end": "Через 30 дней",
+      "gap": "Кассовый разрыв {{date}}: {{sum}}",
+      "noGap": "Разрыва в ближайшие 30 дней нет",
+      "balance": "Остаток"
+    },
+    "signals": {
+      "title": "Здоровье компании",
+      "empty": "Сигналов нет"
+    }
+  }
+}

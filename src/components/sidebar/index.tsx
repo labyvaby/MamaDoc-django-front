@@ -444,6 +444,9 @@ const RealEstateSidebarMenu: React.FC = () => {
   const seen = (screen: string) => estateNav?.(screen) ?? true;
 
   const canDashboard = can(PAGE_PERMISSIONS.estateDashboard) && seen("dashboard");
+  // «Аналитика» AIVIO (гайд frontend-dashboard-analytics §5–6): пункты — по canSee матрицы (в макете у ceo и cfo).
+  const canCrmAnalytics = can(PAGE_PERMISSIONS.realtySales) && seen("analytics");
+  const canBi = can(PAGE_PERMISSIONS.estateDashboard) && seen("bi");
   const canChessboard = moduleGate("realty") && seen("inventory");
   const canFunnel = can(PAGE_PERMISSIONS.realtySales) && seen("funnel");
   const canLeads = can(PAGE_PERMISSIONS.realtySales) && seen("leads");
@@ -687,6 +690,10 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canHandover && <SidebarMenuItem to="/ops/handover" icon={<KeyOutlined />} label="Приёмка и ключи" collapsed={siderCollapsed} badgeCount={handoversToday ?? 0} badgeColor="primary" />}
       {canResidents && <SidebarMenuItem to="/ops/residents" icon={<SupportAgentOutlined />} label="Сервис жильцов" collapsed={siderCollapsed} badgeCount={newResidentRequests ?? 0} badgeColor="error" />}
       {canMobileApp && <SidebarMenuItem to="/ops/mobileapp" icon={<PhoneIphoneOutlined />} label="Мобильное приложение" collapsed={siderCollapsed} />}
+
+      {(canBi || canCrmAnalytics) && sectionLabel("Аналитика")}
+      {canBi && <SidebarMenuItem to="/realestate/bi" icon={<QueryStatsOutlined />} label="Сводная аналитика" collapsed={siderCollapsed} />}
+      {canCrmAnalytics && <SidebarMenuItem to="/realestate/analytics" icon={<AnalyticsOutlined />} label="Аналитика CRM" collapsed={siderCollapsed} />}
 
       {canSettings && sectionLabel("Компания")}
       {canSettings && (
