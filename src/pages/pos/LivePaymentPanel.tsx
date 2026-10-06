@@ -308,6 +308,7 @@ const amount = (value: string | undefined) => (value === undefined ? 0 : Number(
 
 export function LivePaymentPanel({
   actions,
+  canPromoCode,
   benefits,
   onChange,
   quote,
@@ -325,6 +326,11 @@ export function LivePaymentPanel({
   lineDiscountIgnored = false,
 }: {
   actions: Record<string, boolean>;
+  /**
+   * Поле промокода: право «Акции» и правило организации `promo_codes`.
+   * Не передано — решает только `actions.promotions`, как раньше.
+   */
+  canPromoCode?: boolean;
   benefits: Benefits;
   onChange: (value: Benefits) => void;
   quote?: PosQuote;
@@ -602,7 +608,7 @@ export function LivePaymentPanel({
           )}
         </Stack>
 
-        {actions.promotions && (
+        {(canPromoCode ?? actions.promotions) && (
           <CodeField
             label="Промокод"
             placeholder="Введите промокод"

@@ -31,6 +31,7 @@ import {
   getPosBootstrap,
   getPosProducts,
   posRequest,
+  promoCodesEnabled,
   quotePosCart,
   type PosCart,
   type PosProduct,
@@ -240,6 +241,10 @@ export default function LivePosPage() {
       allowed && Boolean(auth.canAccess?.(`pos.${key}`)),
     ])
   );
+  // Промокод — часть права «Акции», но организация может выключить только
+  // его. Тогда поле скрыто, а код из черновика чека не уходит на сервер.
+  const canPromoCode =
+    Boolean(actions.promotions) && promoCodesEnabled(data?.rules);
   const [warehouseChoice, setWarehouseChoice] = React.useState<number | null>(
     null
   );
@@ -457,7 +462,7 @@ export default function LivePosPage() {
     discountKindId: benefits.discountKindId ?? undefined,
     clientDiscount: benefits.clientDiscount,
     promotions: benefits.promotions,
-    promoCode: benefits.promoCode.trim(),
+    promoCode: canPromoCode ? benefits.promoCode.trim() : "",
     useBonuses: benefits.bonuses,
     certificateCode: benefits.certificateCode.trim(),
   };
@@ -1161,6 +1166,7 @@ export default function LivePosPage() {
         </Stack>
         <LivePaymentPanel
           actions={actions}
+          canPromoCode={canPromoCode}
           benefits={benefits}
           onChange={setBenefits}
           quote={quote}
