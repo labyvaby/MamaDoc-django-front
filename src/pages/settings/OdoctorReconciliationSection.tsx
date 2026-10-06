@@ -242,6 +242,11 @@ export function OdoctorReconciliationSection({
               } сом`}
             />
           </Stack>
+          {!!report.review && (
+            <Typography variant="body2" color="text.secondary">
+              {t("odoctor.reconciliation.commissionHint")}
+            </Typography>
+          )}
           <Typography variant="body2">
             {t("odoctor.reconciliation.saved")}: {report.saved};{" "}
             {t("odoctor.reconciliation.unchanged")}: {report.unchanged};{" "}
