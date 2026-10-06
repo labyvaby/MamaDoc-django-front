@@ -637,6 +637,14 @@ export interface DjangoAppointment {
   // Payment fields — included in list/detail responses by backend
   paymentStatus?: import("./payments").PaymentStatus;
   paidTotal?: string;
+  /**
+   * Сумма возвратов по приёму. ⚠ В списке /appointments/ поля пока НЕТ (тикет
+   * `docs/backend_ticket_appointments_list_refunds.md`), а `paidTotal` там —
+   * сумма ДО возврата. Журнал реестров подставляет его сам из ленты кассы
+   * (`useRegistryRefunds`); когда бэк начнёт отдавать поле, оно пройдёт через
+   * normalizeAppointment как есть и станет главным источником.
+   */
+  refundedTotal?: string;
   discountAmount?: string;
   payableAmount?: string;
   debt?: string;

@@ -24,7 +24,7 @@ import { useT } from "../../../../i18n/VerticalProvider";
 import { linePriceChanges, serviceLineTotal, type LinePriceChange } from "../listFilters";
 import { isAppointmentClosedForPayment } from "../paymentCancelGuard";
 import { formatAmount, formatSom } from "./registryFormat";
-import { moneyOf, productsTotal } from "./registryStats";
+import { isFullyRefunded, moneyOf, productsTotal, refundedAmount } from "./registryStats";
 import { hasAcceptedPayment } from "../../../../components/appointments/appointmentInvoice";
 
 export interface RegistryRowActions {
@@ -116,6 +116,7 @@ export const RegistryRowDetails: React.FC<Props> = ({
 
   const money = moneyOf(appt, lines, withProducts);
   const goods = productsTotal(appt);
+  const refundTotal = refundedAmount(appt);
   const priceChanges = linePriceChanges(appt);
   const charged = parseFloat(appt.totalAmount ?? "") || 0;
   const discount = parseFloat(appt.discountAmount ?? "") || 0;
@@ -262,10 +263,21 @@ export const RegistryRowDetails: React.FC<Props> = ({
               <MoneyRow label={t("journal.details.discount")} value={`−${formatSom(discount)}`} />
             )}
             <MoneyRow label={t("journal.details.paid")} value={formatSom(paid)} />
+            {refundTotal > 0 && (
+              <MoneyRow label={t("journal.details.refunded")} value={`−${formatSom(refundTotal)}`} />
+            )}
             <Divider sx={{ my: 0.5 }} />
+            {/* После возврата итог — сколько у клиники осталось, а не сумма
+                чека: «Итого 500» при вернувшихся 500 читалось как выручка. */}
             <MoneyRow
-              label={rest > 0 ? t("journal.details.rest") : t("journal.details.total")}
-              value={formatSom(rest > 0 ? rest : payable)}
+              label={
+                rest > 0
+                  ? t("journal.details.rest")
+                  : refundTotal > 0
+                  ? t("journal.details.netAfterRefund")
+                  : t("journal.details.total")
+              }
+              value={formatSom(rest > 0 ? rest : refundTotal > 0 ? Math.max(0, paid - refundTotal) : payable)}
               strong
               accent={rest > 0 ? "warning.main" : undefined}
             />
@@ -319,8 +331,9 @@ export const RegistryRowDetails: React.FC<Props> = ({
                 {t("journal.actions.edit")}
               </Button>
             )}
-            {/* Чек — по факту принятых денег: до оплаты печатать нечего. */}
-            {canViewFinance && hasAcceptedPayment(appt) && (
+            {/* Чек — по факту принятых денег: до оплаты печатать нечего, а
+                после полного возврата чек на «оплачено» вводил бы в заблуждение. */}
+            {canViewFinance && hasAcceptedPayment(appt) && !isFullyRefunded(appt) && (
               <Button
                 variant="outlined"
                 size="small"

@@ -6,7 +6,16 @@ import { getStatusAccent } from "../../../../config/appointmentStatuses";
 import type { AppointmentMoneyFlag } from "../listFilters";
 
 /** Фильтр по статусу оплаты: плитки сводки и чипы над лентой. */
-export type PaymentFilter = "all" | PaymentStatus;
+/**
+ * Фильтр ленты: статус оплаты либо «Долг».
+ *
+ * «Долг» — не статус `partial`, а то же правило, что у плитки «Долг»
+ * (isDebtBearing): незакрытый остаток по прошедшему визиту, в том числе
+ * совсем не оплаченному. Раньше плитка показывала 5 400 сом долга, а клик по
+ * ней фильтровал `partial` — на проде все должники были «не оплачено», и
+ * лента оставалась пустой (06.10.2026).
+ */
+export type PaymentFilter = "all" | "debt" | PaymentStatus;
 
 /** Режим просмотра одного и того же среза. */
 export type RegistryViewMode = "feed" | "table" | "insights";
@@ -18,7 +27,7 @@ export type RegistryViewMode = "feed" | "table" | "insights";
 export type FeedGrouping = "days" | "courses";
 
 /** Порядок чипов оплаты: от закрытых чеков к проблемным. */
-export const PAYMENT_FILTERS: PaymentFilter[] = ["all", "paid", "partial", "unpaid", "refunded"];
+export const PAYMENT_FILTERS: PaymentFilter[] = ["all", "paid", "debt", "unpaid", "refunded"];
 
 /**
  * Ключ кликабельной плитки сводки: статус оплаты либо флаг оси цены.
@@ -47,6 +56,7 @@ export function paymentAccent(value: RegistryTileKey, theme: Theme): string | nu
       return getStatusAccent("paid", theme).main;
     case "discount":
       return getStatusAccent("discounted", theme).main;
+    case "debt":
     case "partial":
       return getStatusAccent("debt", theme).main;
     default:

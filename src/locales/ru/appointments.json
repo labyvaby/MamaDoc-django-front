@@ -898,7 +898,11 @@
       "materialsHint": "списано со склада",
       "units": "ед.",
       "patients": "{{patient.nomPl, capitalize}}",
-      "perPatientHint": "по {{value}} на {{patient.acc}}"
+      "perPatientHint": "по {{value}} на {{patient.acc}}",
+      "refunds": "Возвраты",
+      "refundsHint_one": "{{count}} возврат",
+      "refundsHint_few": "{{count}} возврата",
+      "refundsHint_many": "{{count}} возвратов"
     },
     "grouping": {
       "days": "По дням",
@@ -925,8 +929,9 @@
     "payFilter": {
       "all": "Все",
       "paid": "Оплачено",
+      "debt": "Долг",
       "discounted": "Со скидкой",
-      "partial": "Долг",
+      "partial": "Частично",
       "unpaid": "Не оплачено",
       "refunded": "Возврат"
     },
@@ -968,7 +973,8 @@
       "showMore_few": "Показать ещё {{count}} записи",
       "showMore_many": "Показать ещё {{count}} записей",
       "priceUpBy": "Цена повышена на {{amount}} сом",
-      "priceDownBy": "Цена снижена на {{amount}} сом"
+      "priceDownBy": "Цена снижена на {{amount}} сом",
+      "refund": "возврат"
     },
     "details": {
       "composition": "Состав {{visit.gen}}",
@@ -986,7 +992,9 @@
       "actions": "Действия",
       "priceRaised": "↑ было {{before}}, стало {{after}}",
       "priceLowered": "↓ было {{before}}, стало {{after}}",
-      "goodsExcluded": "Товары на {{amount}} в сумму журнала не входят"
+      "goodsExcluded": "Товары на {{amount}} в сумму журнала не входят",
+      "refunded": "Возвращено",
+      "netAfterRefund": "Осталось после возврата"
     },
     "actions": {
       "pay": "Принять оплату",
@@ -1008,7 +1016,8 @@
       "debt": "Остаток",
       "totalsTitle_one": "Итого по срезу · {{count}} запись",
       "totalsTitle_few": "Итого по срезу · {{count}} записи",
-      "totalsTitle_many": "Итого по срезу · {{count}} записей"
+      "totalsTitle_many": "Итого по срезу · {{count}} записей",
+      "refunded": "Возврат"
     },
     "insights": {
       "performers": "Исполнители",
@@ -1034,7 +1043,8 @@
       "description": "Снимите условие поиска, фильтр оплаты или выберите другой период"
     },
     "cancelledFilter": "Отменённые",
-    "withProducts": "С товарами"
+    "withProducts": "С товарами",
+    "withRefunds": "С возвратами"
   },
   "registry": {
     "noSelection": "Выберите {{record.acc}} для просмотра деталей",

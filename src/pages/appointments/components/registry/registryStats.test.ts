@@ -97,7 +97,19 @@ describe("moneyOf", () => {
 
   it("отменённый приём в деньги не идёт", () => {
     const a = joint({ status: "canceled", paymentStatus: "unpaid", paidTotal: "0.00" });
-    expect(moneyOf(a, allLines(a))).toEqual({ accrued: 0, paid: 0, debt: 0 });
+    expect(moneyOf(a, allLines(a))).toEqual({ accrued: 0, paid: 0, debt: 0, refunded: 0 });
+  });
+
+  // Список отдаёт paidTotal ДО возврата (test, 05.10.2026) — в выручку не пускаем.
+  it("полный возврат в выручку не идёт, виден только суммой возврата", () => {
+    const a = joint({ paymentStatus: "refunded", paidTotal: "1250.00", debt: "0.00" });
+    expect(moneyOf(a, allLines(a))).toEqual({ accrued: 0, paid: 0, debt: 0, refunded: 1250 });
+  });
+
+  it("возврат по отменённому приёму тоже виден суммой", () => {
+    const a = joint({ status: "canceled", paymentStatus: "refunded", payableAmount: "1250.00", paidTotal: "1000.00" });
+    expect(moneyOf(a, allLines(a)).refunded).toBe(1000);
+    expect(moneyOf(a, allLines(a)).paid).toBe(0);
   });
 
   it("товары приёма не идут в сумму, пока не включена галочка", () => {
@@ -114,6 +126,21 @@ describe("moneyOf", () => {
     expect(moneyOf(a, allLines(a)).paid).toBe(1250);
     // Отменённая строка товара в деньги не идёт.
     expect(moneyOf(a, allLines(a), true).accrued).toBe(1750);
+  });
+
+  it("частичный возврат: выручка за вычетом возврата, долга не появляется", () => {
+    // Чек 1250 оплачен целиком, вернули 250 (сумма из кассы).
+    const a = joint({ refundedTotal: "250.00" });
+    const money = moneyOf(a, allLines(a));
+    expect(money.accrued).toBe(1250);
+    expect(money.paid).toBe(1000);
+    expect(money.refunded).toBe(250);
+    expect(money.debt).toBe(0);
+  });
+
+  it("возврат всей оплаты из кассы без смены статуса — полный возврат", () => {
+    const a = joint({ refundedTotal: "1250.00" });
+    expect(moneyOf(a, allLines(a))).toEqual({ accrued: 0, paid: 0, debt: 0, refunded: 1250 });
   });
 
   it("частичная оплата даёт остаток в долг", () => {
@@ -162,7 +189,8 @@ describe("summarize", () => {
 
   it("считает выручку, долг и незакрытые счета", () => {
     const summary = summarize(items, allLines);
-    expect(summary.visits).toBe(3);
+    // Отменённый в счётчик приёмов не идёт.
+    expect(summary.visits).toBe(2);
     expect(summary.paid).toBe(1500); // 1250 + 250
     expect(summary.debt).toBe(1000);
     expect(summary.debtors).toBe(1);

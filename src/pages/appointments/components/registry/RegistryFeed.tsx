@@ -220,10 +220,25 @@ const RegistryRow: React.FC<RowProps> = React.memo(
             </Box>
           ) : canViewFinance ? (
             <Box sx={{ textAlign: "right", gridColumn: { xs: 4, md: "auto" }, gridRow: { xs: 1, md: "auto" } }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-                {hasMoney ? formatAmount(money.accrued) : "—"}
+              <Typography
+                variant="body2"
+                color={money.refunded > 0 ? "text.secondary" : undefined}
+                sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}
+              >
+                {hasMoney
+                  ? formatAmount(money.accrued)
+                  : money.refunded > 0
+                  ? `−${formatAmount(money.refunded)}`
+                  : "—"}
               </Typography>
-              {hasMoney && money.debt > 0 ? (
+              {money.refunded > 0 ? (
+                <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem" }}>
+                  {/* Частичный возврат: сумма приёма осталась, подписываем, сколько вернули. */}
+                  {hasMoney
+                    ? `${t("journal.feed.refund")} −${formatAmount(money.refunded)}`
+                    : t("journal.feed.refund")}
+                </Typography>
+              ) : hasMoney && money.debt > 0 ? (
                 <Typography variant="caption" color="warning.main" sx={{ fontSize: "0.65rem" }}>
                   {t("journal.feed.debtOf", { amount: formatAmount(money.debt) })}
                 </Typography>
@@ -392,6 +407,14 @@ export const RegistryFeed: React.FC<Props> = ({
                       {t("journal.feed.dayDebt")}{" "}
                       <Box component="span" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
                         {formatAmount(group.money.debt)}
+                      </Box>
+                    </Typography>
+                  )}
+                  {canViewFinance && group.money.refunded > 0 && (
+                    <Typography variant="caption" color="text.secondary">
+                      {t("journal.feed.refund")}{" "}
+                      <Box component="span" sx={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                        −{formatAmount(group.money.refunded)}
                       </Box>
                     </Typography>
                   )}

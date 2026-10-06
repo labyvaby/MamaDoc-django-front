@@ -28,6 +28,8 @@ const PARAM = {
   cancelled: "cancelled",
   /** `1` — прибавлять к суммам приёма проданные в нём товары. */
   products: "products",
+  /** `1` — режим «С возвратами»: возвраты видны в ленте и отдельной плиткой. */
+  refunds: "refunds",
 } as const;
 
 export interface RegistryPeriod {
@@ -63,7 +65,8 @@ function parseRange(raw: string): RegistryPeriod | null {
   };
 }
 
-function parsePeriod(raw: string | null): RegistryPeriod {
+/** Экспорт — для тестов: ссылку на срез правят руками, разбор должен быть строгим. */
+export function parsePeriod(raw: string | null): RegistryPeriod {
   const fallback = { year: dayjs().year(), month: dayjs().month() };
   if (!raw) return fallback;
   if (raw.includes("_")) return parseRange(raw) ?? fallback;
@@ -105,6 +108,8 @@ export function useRegistryFilters() {
   );
   const paymentFilter = React.useMemo<PaymentFilter>(() => {
     const raw = searchParams.get(PARAM.payment);
+    // Старые ссылки `?pay=partial` вели в фильтр «Долг» — ведём туда же.
+    if (raw === "partial") return "debt";
     return raw && (PAYMENT_FILTERS as string[]).includes(raw) ? (raw as PaymentFilter) : "all";
   }, [searchParams]);
   const moneyFlags = React.useMemo(
@@ -113,6 +118,7 @@ export function useRegistryFilters() {
   );
   const showCancelled = searchParams.get(PARAM.cancelled) === "1";
   const withProducts = searchParams.get(PARAM.products) === "1";
+  const withRefunds = searchParams.get(PARAM.refunds) === "1";
 
   /**
    * ⚠ Правка нескольких параметров — одним вызовом: react-router отдаёт двум
@@ -168,6 +174,20 @@ export function useRegistryFilters() {
     [setParams],
   );
 
+  /**
+   * Выход из режима возвратов снимает и фильтр «Возврат» (плитка режима):
+   * иначе лента осталась бы пустой без видимой причины. Одним вызовом — см.
+   * setParams.
+   */
+  const setWithRefunds = React.useCallback(
+    (value: boolean) =>
+      setParams({
+        [PARAM.refunds]: value ? "1" : null,
+        ...(!value && paymentFilter === "refunded" ? { [PARAM.payment]: null } : null),
+      }),
+    [setParams, paymentFilter],
+  );
+
   const resetFilters = React.useCallback(
     () => setParams({ [PARAM.payment]: null, [PARAM.money]: null }),
     [setParams],
@@ -184,6 +204,8 @@ export function useRegistryFilters() {
     setShowCancelled,
     withProducts,
     setWithProducts,
+    withRefunds,
+    setWithRefunds,
     resetFilters,
   };
 }

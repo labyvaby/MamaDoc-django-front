@@ -38,6 +38,14 @@ export async function buildRegistryXlsx(input: RegistryExportInput): Promise<Blo
   workbook.created = new Date();
   const sheet = workbook.addWorksheet(input.sheetName);
 
+  // Деньги строк считаем заранее: от них зависит, нужна ли колонка «Возврат»
+  // (в обычном месяце она пустая во всю высоту листа).
+  const moneyByAppt = input.items.map((appt) => moneyOf(appt, input.linesOf(appt), input.withProducts));
+  const withRefunds = input.withMoney && moneyByAppt.some((money) => money.refunded > 0);
+  const moneyHeaders = input.withMoney
+    ? ["Начислено", "Оплачено", "Остаток", ...(withRefunds ? ["Возврат"] : [])]
+    : [];
+
   const headers = [
     "Дата",
     "Время",
@@ -47,7 +55,7 @@ export async function buildRegistryXlsx(input: RegistryExportInput): Promise<Blo
     input.servicesHeader,
     "Статус визита",
     "Статус оплаты",
-    ...(input.withMoney ? ["Начислено", "Оплачено", "Остаток"] : []),
+    ...moneyHeaders,
   ];
 
   sheet.columns = [
@@ -59,7 +67,7 @@ export async function buildRegistryXlsx(input: RegistryExportInput): Promise<Blo
     { width: 38 },
     { width: 16 },
     { width: 16 },
-    ...(input.withMoney ? [{ width: 13 }, { width: 13 }, { width: 13 }] : []),
+    ...moneyHeaders.map(() => ({ width: 13 })),
   ];
 
   const titleRow = sheet.addRow([input.title]);
@@ -73,16 +81,20 @@ export async function buildRegistryXlsx(input: RegistryExportInput): Promise<Blo
     cell.border = { bottom: { style: "thin" } };
   });
 
-  let accrued = 0;
-  let paid = 0;
-  let debt = 0;
+  const moneyCells = (money: { accrued: number; paid: number; debt: number; refunded: number }) =>
+    input.withMoney
+      ? [money.accrued, money.paid, money.debt, ...(withRefunds ? [-money.refunded] : [])]
+      : [];
+  const firstMoneyColumn = headers.length - moneyHeaders.length + 1;
+  const total = { accrued: 0, paid: 0, debt: 0, refunded: 0 };
 
-  for (const appt of input.items) {
+  input.items.forEach((appt, index) => {
     const lines = input.linesOf(appt);
-    const money = moneyOf(appt, lines, input.withProducts);
-    accrued += money.accrued;
-    paid += money.paid;
-    debt += money.debt;
+    const money = moneyByAppt[index];
+    total.accrued += money.accrued;
+    total.paid += money.paid;
+    total.debt += money.debt;
+    total.refunded += money.refunded;
 
     const at = dayjs(appt.scheduledAt);
     const row = sheet.addRow([
@@ -96,15 +108,13 @@ export async function buildRegistryXlsx(input: RegistryExportInput): Promise<Blo
       lines.map((line) => line.service?.name).filter(Boolean).join(", "),
       input.statusLabel(appt),
       input.paymentLabel(appt),
-      ...(input.withMoney ? [money.accrued, money.paid, money.debt] : []),
+      ...moneyCells(money),
     ]);
 
-    if (input.withMoney) {
-      for (let column = headers.length - 2; column <= headers.length; column += 1) {
-        row.getCell(column).numFmt = MONEY_FORMAT;
-      }
+    for (let column = firstMoneyColumn; column <= headers.length; column += 1) {
+      row.getCell(column).numFmt = MONEY_FORMAT;
     }
-  }
+  });
 
   if (input.withMoney) {
     const totalRow = sheet.addRow([
@@ -116,15 +126,13 @@ export async function buildRegistryXlsx(input: RegistryExportInput): Promise<Blo
       "",
       "",
       "",
-      accrued,
-      paid,
-      debt,
+      ...moneyCells(total),
     ]);
     totalRow.eachCell((cell) => {
       cell.font = { bold: true };
       cell.border = { top: { style: "thin" } };
     });
-    for (let column = headers.length - 2; column <= headers.length; column += 1) {
+    for (let column = firstMoneyColumn; column <= headers.length; column += 1) {
       totalRow.getCell(column).numFmt = MONEY_FORMAT;
     }
   }

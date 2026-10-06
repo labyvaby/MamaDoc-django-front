@@ -74,6 +74,7 @@ import RegistryTable from "./RegistryTable";
 import RegistryInsights from "./RegistryInsights";
 import { applySearch, narrowLinesOf, type RegistryToken } from "./registryFilters";
 import { useRegistryFilters } from "./useRegistryFilters";
+import { useRegistryRefunds } from "./useRegistryRefunds";
 import {
   MONEY_FLAG_LABEL_KEY,
   MONEY_FLAG_OPTIONS,
@@ -88,6 +89,9 @@ import {
   consumedUnits,
   groupByDay,
   groupByPatient,
+  hasRefund,
+  isFullyRefunded,
+  moneyOf,
   pulseByDay,
   pulseByMonth,
   sliceRegistry,
@@ -168,6 +172,8 @@ export const RegistryJournalView: React.FC<Props> = ({
     setShowCancelled,
     withProducts,
     setWithProducts,
+    withRefunds,
+    setWithRefunds,
   } = useRegistryFilters();
   const [view, setView] = React.useState<RegistryViewMode>("feed");
   // Раскладка ленты: по дням (общая) или по пациентам и курсам (процедуры).
@@ -238,16 +244,34 @@ export const RegistryJournalView: React.FC<Props> = ({
   const {
     data: rawAppointments = [],
     isLoading: loading,
+    isPlaceholderData,
     refetch,
   } = useAppointmentsList({ dateFrom, dateTo, employeeId });
 
-  const isLoading = loading || extraLoading;
+  // ⚠ Refine ставит всем запросам `placeholderData: keepPreviousData`
+  // (@refinedev/core, defaultOptions). При смене периода в данных ещё лежит
+  // прошлый: подпись уже «Август», а плитки и разрезы — сентябрьские. Пока так,
+  // лента показывает загрузку, а сводка приглушена.
+  const isStale = isPlaceholderData;
+  const isLoading = loading || isStale || extraLoading;
+
+  // Возвраты из ленты кассы — пока бэк не отдаёт refundedTotal в списке.
+  const refundsByAppointment = useRegistryRefunds({ periodFrom, enabled: canViewFinance });
 
   // ── Срез ───────────────────────────────────────────────────────────────────
-  const scoped = React.useMemo(
-    () => (isVisible ? rawAppointments.filter(isVisible) : rawAppointments),
-    [rawAppointments, isVisible],
-  );
+  const scoped = React.useMemo(() => {
+    const visible = isVisible ? rawAppointments.filter(isVisible) : rawAppointments;
+    if (!refundsByAppointment || refundsByAppointment.size === 0) return visible;
+    // Новый объект только у приёмов с возвратом: строки ленты мемоизированы по
+    // ссылке на приём, остальные не перерисовываются. Поле бэка, когда оно
+    // появится, главнее кассы.
+    return visible.map((appt) => {
+      const refunded = refundsByAppointment.get(appt.id);
+      return refunded != null && appt.refundedTotal == null
+        ? { ...appt, refundedTotal: refunded.toFixed(2) }
+        : appt;
+    });
+  }, [rawAppointments, isVisible, refundsByAppointment]);
 
   // Условие исполнителя/услуги сужает не только список, но и деньги: сумма
   // считается по выбранным строкам, а не по всему чеку (см. narrowLinesOf).
@@ -265,14 +289,33 @@ export const RegistryJournalView: React.FC<Props> = ({
    * разрезы. Посмотреть их можно отдельным чипом «Отменённые» — тогда в ленте
    * только они, а сводка по-прежнему считает состоявшиеся.
    */
-  const { searched, cancelledItems } = React.useMemo(() => {
+  /**
+   * Возвраты — два режима (решение заказчика 05.10.2026). По умолчанию
+   * («без возвратов») приём с полным возвратом скрыт и в деньги не идёт, а с
+   * частичным остаётся в ленте с выручкой за вычетом возврата. В
+   * режиме «С возвратами» он виден в ленте — даже если приём отменён: возврат
+   * почти всегда идёт вместе с отменой, иначе режим был бы пустым, — а сумма
+   * возврата выходит отдельной плиткой. Выручка в обоих режимах одна: деньги,
+   * которые вернули, выручкой не считаются (см. moneyOf).
+   */
+  const { searched, cancelledItems, refundCount } = React.useMemo(() => {
     const active: DjangoAppointment[] = [];
     const cancelled: DjangoAppointment[] = [];
+    let refunds = 0;
     for (const appt of searchedAll) {
-      (isCancelledStatus(appt.status) ? cancelled : active).push(appt);
+      if (hasRefund(appt)) refunds += 1;
+      const isCancelled = isCancelledStatus(appt.status);
+      // Отмена с возвратом — тоже «возврат»: денег по ней не осталось.
+      const fullRefund = isFullyRefunded(appt) || (hasRefund(appt) && isCancelled);
+      if (fullRefund && withRefunds) active.push(appt);
+      // Без режима возврат по отмене живёт под «Отменёнными», а возврат по
+      // неотменённому приёму просто скрыт: в «Отменённые» он не годится
+      // (на проде 06.10 так и вышло — приём 20322, scheduled + refunded).
+      else if (isCancelled) cancelled.push(appt);
+      else if (!fullRefund) active.push(appt);
     }
-    return { searched: active, cancelledItems: cancelled };
-  }, [searchedAll]);
+    return { searched: active, cancelledItems: cancelled, refundCount: refunds };
+  }, [searchedAll, withRefunds]);
   const base = showCancelled ? cancelledItems : searched;
 
   // Товары приёма — по галочке и только в «Всех приёмах»: товар привязан к
@@ -285,11 +328,23 @@ export const RegistryJournalView: React.FC<Props> = ({
     [variant, searched],
   );
 
+  // Должник — у кого в срезе есть незакрытый остаток: та же функция денег,
+  // что считает плитку «Долг», поэтому число на плитке и в ленте совпадает.
+  const isInDebt = React.useCallback(
+    (appt: DjangoAppointment) => moneyOf(appt, sliceLines(appt), includeProducts).debt > 0,
+    [sliceLines, includeProducts],
+  );
+
   const paymentCounts = React.useMemo(() => {
     const counts = new Map<RegistryTileKey, number>([["all", base.length]]);
     for (const appt of base) {
       const status = appt.paymentStatus;
-      if (status) counts.set(status, (counts.get(status) ?? 0) + 1);
+      // «Возврат» — по факту возврата, а не по статусу: частичный возврат
+      // статус не меняет (см. hasRefund).
+      if (status && status !== "refunded") counts.set(status, (counts.get(status) ?? 0) + 1);
+      if (hasRefund(appt)) counts.set("refunded", (counts.get("refunded") ?? 0) + 1);
+      // «Долг» — по деньгам, тем же правилом, что плитка (см. PaymentFilter).
+      if (isInDebt(appt)) counts.set("debt", (counts.get("debt") ?? 0) + 1);
       // Флаги цены живут в той же карте: приём попадает и в «Оплачено», и в
       // «Со скидкой», поэтому сумма счётчиков больше числа записей среза.
       for (const flag of appointmentMoneyFlags(appt)) {
@@ -297,12 +352,18 @@ export const RegistryJournalView: React.FC<Props> = ({
       }
     }
     return counts;
-  }, [base]);
+  }, [base, isInDebt]);
 
   const displayed = React.useMemo(() => {
     let list = base;
     if (paymentFilter !== "all") {
-      list = list.filter((appt) => appt.paymentStatus === paymentFilter);
+      list = list.filter((appt) =>
+        paymentFilter === "refunded"
+          ? hasRefund(appt)
+          : paymentFilter === "debt"
+          ? isInDebt(appt)
+          : appt.paymentStatus === paymentFilter,
+      );
     }
     if (moneyFlags.length > 0) {
       list = list.filter((appt) => matchesMoneyFlags(appt, moneyFlags));
@@ -311,7 +372,7 @@ export const RegistryJournalView: React.FC<Props> = ({
       list = list.filter((appt) => dayjs(appt.scheduledAt).format("YYYY-MM-DD") === bucket);
     }
     return list;
-  }, [base, paymentFilter, moneyFlags, bucket, dayBuckets]);
+  }, [base, paymentFilter, isInDebt, moneyFlags, bucket, dayBuckets]);
 
   // Сводка и пульс считаются до фильтра по оплате и дню: иначе выбор «Долга»
   // обнулял бы «Выручку», по которой этот выбор и делают.
@@ -319,12 +380,16 @@ export const RegistryJournalView: React.FC<Props> = ({
     () => summarize(searched, sliceLines, includeProducts),
     [searched, sliceLines, includeProducts],
   );
+  // Один день — один столбик: пульс ничего не сообщает, карточку прячем.
+  const singleDay = periodFrom.isSame(periodTo, "day");
   const pulse = React.useMemo(
     () =>
-      dayBuckets
+      singleDay
+        ? []
+        : dayBuckets
         ? pulseByDay(searched, sliceLines, periodFrom, periodTo, includeProducts)
         : pulseByMonth(searched, sliceLines, periodFrom, periodTo, includeProducts),
-    [searched, sliceLines, dayBuckets, periodFrom, periodTo, includeProducts],
+    [searched, sliceLines, singleDay, dayBuckets, periodFrom, periodTo, includeProducts],
   );
   const groups = React.useMemo(
     () => groupByDay(displayed, sliceLines, includeProducts),
@@ -402,8 +467,8 @@ export const RegistryJournalView: React.FC<Props> = ({
           hint: t("journal.summary.ofTotal", { total: summary.visits }),
         },
         {
-          key: "partial",
-          label: t("journal.payFilter.partial"),
+          key: "debt",
+          label: t("journal.payFilter.debt"),
           value: String(summary.debtors),
           hint: t("journal.summary.ofTotal", { total: summary.visits }),
           accent: "debt",
@@ -448,22 +513,33 @@ export const RegistryJournalView: React.FC<Props> = ({
       visitsTile,
       revenueTile,
       {
-        key: "partial",
+        key: "debt",
         label: t("journal.summary.debt"),
         value: formatCompactAmount(summary.debt),
         unit: t("journal.summary.som"),
         hint: t("journal.summary.debtorsHint", { count: summary.debtors }),
         accent: "debt",
       },
-      {
-        key: null,
-        label: t("journal.summary.averageCheck"),
-        value: formatCompactAmount(summary.averageCheck),
-        unit: t("journal.summary.som"),
-        hint: t("journal.summary.discountedHint", { count: summary.discounted }),
-      },
+      // В режиме «С возвратами» четвёртая плитка — возвраты: средний чек
+      // ради них никто не открывает, а сумма возврата — то, что смотрят.
+      withRefunds
+        ? {
+            key: "refunded",
+            label: t("journal.summary.refunds"),
+            value: summary.refunded > 0 ? `−${formatCompactAmount(summary.refunded)}` : "0",
+            unit: t("journal.summary.som"),
+            hint: t("journal.summary.refundsHint", { count: summary.refunds }),
+            accent: "debt",
+          }
+        : {
+            key: null,
+            label: t("journal.summary.averageCheck"),
+            value: formatCompactAmount(summary.averageCheck),
+            unit: t("journal.summary.som"),
+            hint: t("journal.summary.discountedHint", { count: summary.discounted }),
+          },
     ];
-  }, [summary, listLabel, canViewFinance, materialsProfile, consumed, patients, t]);
+  }, [summary, listLabel, canViewFinance, materialsProfile, consumed, patients, withRefunds, t]);
 
   const periodLabel = period.range
     ? formatRangeLabel(periodFrom, periodTo)
@@ -822,6 +898,7 @@ export const RegistryJournalView: React.FC<Props> = ({
           />
 
           <RegistrySummaryBar
+            stale={isStale}
             tiles={tiles}
             pulse={pulse}
             isTileActive={isTileActive}
@@ -899,6 +976,32 @@ export const RegistryJournalView: React.FC<Props> = ({
                   color: showCancelled ? "text.primary" : "text.disabled",
                   bgcolor: showCancelled ? subtleBg(t) : "transparent",
                   "&:hover": { bgcolor: subtleBg(t, true) },
+                })}
+              />
+            )}
+
+            {/* Режим возвратов: по умолчанию скрыты, с галочкой — в ленте
+                и отдельной плиткой (в выручку не идут ни в каком режиме). */}
+            {(refundCount > 0 || withRefunds) && (
+              <Chip
+                size="small"
+                clickable
+                icon={withRefunds ? <CheckOutlined sx={{ fontSize: 15 }} /> : undefined}
+                onClick={() => {
+                  setOpenId(null);
+                  setWithRefunds(!withRefunds);
+                }}
+                label={`${t("journal.withRefunds")} · ${refundCount}`}
+                variant="outlined"
+                sx={(t) => ({
+                  height: 26,
+                  borderRadius: "7px",
+                  fontWeight: 500,
+                  borderColor: withRefunds ? alpha(t.palette.primary.main, 0.4) : "divider",
+                  color: withRefunds ? "text.primary" : "text.secondary",
+                  bgcolor: withRefunds
+                    ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08)
+                    : "transparent",
                 })}
               />
             )}

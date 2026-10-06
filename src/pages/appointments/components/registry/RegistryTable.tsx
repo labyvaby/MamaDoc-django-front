@@ -45,6 +45,7 @@ interface Row {
   accrued: number;
   paid: number;
   debt: number;
+  refunded: number;
 }
 
 export const RegistryTable: React.FC<Props> = ({
@@ -81,10 +82,15 @@ export const RegistryTable: React.FC<Props> = ({
           accrued: money.accrued,
           paid: money.paid,
           debt: money.debt,
+          refunded: money.refunded,
         };
       }),
     [items, linesOf, withProducts],
   );
+
+  // Колонка «Возврат» — только когда в срезе есть возвраты: в обычном месяце
+  // она была бы пустой во всю высоту таблицы.
+  const hasRefunds = React.useMemo(() => rows.some((row) => row.refunded > 0), [rows]);
 
   const columns = React.useMemo<GridColDef<Row>[]>(() => {
     // На телефоне девять колонок живут за горизонтальным скроллом, и сверять
@@ -143,6 +149,11 @@ export const RegistryTable: React.FC<Props> = ({
               {params.row.debt > 0 && (
                 <Typography variant="caption" sx={{ color: "warning.main", fontVariantNumeric: "tabular-nums" }}>
                   {formatAmount(params.row.debt)}
+                </Typography>
+              )}
+              {params.row.refunded > 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                  −{formatAmount(params.row.refunded)}
                 </Typography>
               )}
             </Box>
@@ -223,8 +234,20 @@ export const RegistryTable: React.FC<Props> = ({
           </Typography>
         ),
       },
+      ...(hasRefunds
+        ? [
+            {
+              field: "refunded",
+              headerName: t("journal.table.refunded"),
+              width: 118,
+              align: "right",
+              headerAlign: "right",
+              valueFormatter: (value: number) => (value > 0 ? `−${formatAmount(value)}` : "—"),
+            } satisfies GridColDef<Row>,
+          ]
+        : []),
     ];
-  }, [canViewFinance, isMobile, performerHeader, servicesHeader, t]);
+  }, [canViewFinance, isMobile, hasRefunds, performerHeader, servicesHeader, t]);
 
   return (
     <Stack gap={1.5}>
@@ -256,6 +279,14 @@ export const RegistryTable: React.FC<Props> = ({
                 {formatAmount(summary.debt)}
               </Box>
             </Typography>
+            {summary.refunded > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                {t("journal.table.refunded")}:{" "}
+                <Box component="span" sx={{ fontWeight: 600, color: "text.primary", fontVariantNumeric: "tabular-nums" }}>
+                  −{formatAmount(summary.refunded)}
+                </Box>
+              </Typography>
+            )}
           </Stack>
         )}
       </Paper>

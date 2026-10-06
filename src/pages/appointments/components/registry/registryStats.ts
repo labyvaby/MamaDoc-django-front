@@ -19,7 +19,7 @@ import type {
 } from "../../../../api/appointments";
 import type { PaymentStatus } from "../../../../api/payments";
 import { isCancelledStatus } from "../slotAvailability";
-import { discountFactor, hasDiscount, paidShare, serviceLineTotal } from "../listFilters";
+import { discountFactor, hasDiscount, paidShare, payableTotal, serviceLineTotal } from "../listFilters";
 
 /** Строки приёма, попадающие в срез (для процедур — только медсестринские). */
 export type LinesOf = (appt: DjangoAppointment) => AppointmentServiceLine[];
@@ -31,9 +31,44 @@ export interface RegistryMoney {
   paid: number;
   /** Незакрытый остаток — только там, где деньги реально ждут (см. isDebtBearing). */
   debt: number;
+  /** Сколько по строкам среза приняли и вернули (полный возврат). */
+  refunded: number;
 }
 
-const ZERO_MONEY: RegistryMoney = { accrued: 0, paid: 0, debt: 0 };
+const ZERO_MONEY: RegistryMoney = { accrued: 0, paid: 0, debt: 0, refunded: 0 };
+
+/** Пустой счётчик денег — новый объект на каждый вызов (addMoney его мутирует). */
+const emptyMoney = (): RegistryMoney => ({ accrued: 0, paid: 0, debt: 0, refunded: 0 });
+
+/**
+ * Сколько по приёму вернули.
+ *
+ * ⚠ Список /appointments/ после возврата отдаёт `paidTotal` ДО возврата
+ * (проверено на test 05.10.2026: paidTotal 100 при refundedTotal 100), а своего
+ * `refundedTotal` в списке нет. Журнал подставляет его из ленты кассы
+ * (useRegistryRefunds); без кассы (нет права, ошибка) знаем только полный
+ * возврат — по статусу `refunded`, тогда вернули всё оплаченное.
+ */
+export function refundedAmount(appt: DjangoAppointment): number {
+  const known = parseFloat(appt.refundedTotal ?? "");
+  if (Number.isFinite(known) && known > 0) return known;
+  return appt.paymentStatus === "refunded" ? parseFloat(appt.paidTotal ?? "") || 0 : 0;
+}
+
+/** Был ли по приёму возврат — полный или частичный. */
+export const hasRefund = (appt: DjangoAppointment): boolean =>
+  appt.paymentStatus === "refunded" || refundedAmount(appt) > 0;
+
+/**
+ * Вернули всё, что приняли: от приёма в выручке ничего не осталось. Такие
+ * приёмы журнал без режима «С возвратами» не показывает; частичный возврат
+ * остаётся в ленте с выручкой за вычетом возврата.
+ */
+export function isFullyRefunded(appt: DjangoAppointment): boolean {
+  if (appt.paymentStatus === "refunded") return true;
+  const refunded = refundedAmount(appt);
+  return refunded > 0 && refunded >= (parseFloat(appt.paidTotal ?? "") || 0) - 0.005;
+}
 
 /**
  * Ждут ли по этому приёму денег.
@@ -87,24 +122,43 @@ export function moneyOf(
   lines: AppointmentServiceLine[],
   withProducts = false,
 ): RegistryMoney {
-  if (isCancelledStatus(appt.status)) return ZERO_MONEY;
+  const cancelled = isCancelledStatus(appt.status);
+  const refundTotal = refundedAmount(appt);
+  const full = isFullyRefunded(appt);
+  if (cancelled && refundTotal <= 0) return ZERO_MONEY;
 
   const lineSum =
     lines.reduce((sum, line) => sum + serviceLineTotal(line), 0) +
     (withProducts ? productsTotal(appt) : 0);
   if (lineSum <= 0) return ZERO_MONEY;
 
-  const accrued = lineSum * discountFactor(appt);
-  const paid = accrued * paidShare(appt);
-  const rest = accrued - paid;
+  const gross = lineSum * discountFactor(appt);
+  // Возврат разносим по строкам так же, как оплату, — долей от чека.
+  const payable = payableTotal(appt);
+  const refundShare = payable > 0 ? Math.min(1, refundTotal / payable) : 0;
+  const refunded = gross * refundShare;
 
-  return { accrued, paid, debt: isDebtBearing(appt) && rest > 0 ? rest : 0 };
+  // Полный возврат и возврат по отмене: деньги приняли и отдали — в выручку,
+  // начисления и долг не идут ни в каком режиме, видна только сумма возврата.
+  if (full || cancelled) return { ...ZERO_MONEY, refunded };
+
+  // Частичный возврат: выручка — за вычетом возврата, а долгом возврат не
+  // становится (остаток считаем от принятого, а не от оставшегося).
+  const paidGross = gross * paidShare(appt);
+  const rest = gross - paidGross;
+  return {
+    accrued: gross,
+    paid: Math.max(0, paidGross - refunded),
+    debt: isDebtBearing(appt) && rest > 0 ? rest : 0,
+    refunded,
+  };
 }
 
 function addMoney(target: RegistryMoney, add: RegistryMoney): void {
   target.accrued += add.accrued;
   target.paid += add.paid;
   target.debt += add.debt;
+  target.refunded += add.refunded;
 }
 
 // ── Сводка периода ───────────────────────────────────────────────────────────
@@ -120,6 +174,8 @@ export interface RegistrySummary extends RegistryMoney {
   discounted: number;
   /** Оплаченных полностью (paid + discounted). */
   closed: number;
+  /** Записей с возвратом. */
+  refunds: number;
 }
 
 export function summarize(
@@ -128,20 +184,25 @@ export function summarize(
   withProducts = false,
 ): RegistrySummary {
   const total: RegistrySummary = {
-    accrued: 0,
-    paid: 0,
-    debt: 0,
-    visits: items.length,
+    ...emptyMoney(),
+    // Отменённые в счётчик приёмов не идут, даже когда видны (возврат по
+    // отмене в режиме «С возвратами»).
+    visits: 0,
     debtors: 0,
     averageCheck: 0,
     discounted: 0,
     closed: 0,
+    refunds: 0,
   };
 
   let paidVisits = 0;
   for (const appt of items) {
     const money = moneyOf(appt, linesOf(appt), withProducts);
     addMoney(total, money);
+    // Счётчик приёмов одинаков в обоих режимах возвратов: приём, по которому
+    // вернули всё, в нём не считается, даже когда виден в ленте.
+    if (!isCancelledStatus(appt.status) && !isFullyRefunded(appt)) total.visits += 1;
+    if (hasRefund(appt)) total.refunds += 1;
     if (money.debt > 0) total.debtors += 1;
     if (money.paid > 0) paidVisits += 1;
     // Скидку считаем по сумме на чеке, а не по статусу `discounted`: статус
@@ -195,7 +256,7 @@ function fill(
     const bucket = buckets.get(keyOf(at));
     if (!bucket) continue;
     const money = moneyOf(appt, linesOf(appt), withProducts);
-    bucket.visits += 1;
+    if (!isCancelledStatus(appt.status) && !isFullyRefunded(appt)) bucket.visits += 1;
     bucket.paid += money.paid;
     bucket.debt += money.debt;
   }
@@ -271,7 +332,7 @@ export function groupByDay(
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([iso, dayItems]) => {
       const sorted = [...dayItems].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
-      const money: RegistryMoney = { accrued: 0, paid: 0, debt: 0 };
+      const money = emptyMoney();
       for (const appt of sorted) addMoney(money, moneyOf(appt, linesOf(appt), withProducts));
       return { iso, items: sorted, money };
     });
@@ -351,7 +412,7 @@ export function groupByPatient(items: DjangoAppointment[], linesOf: LinesOf): Pa
         visits: 0,
         firstIso: iso,
         lastIso: iso,
-        money: { accrued: 0, paid: 0, debt: 0 },
+        money: emptyMoney(),
         courses: [],
       };
       groups.set(key, group);
@@ -372,7 +433,7 @@ export function groupByPatient(items: DjangoAppointment[], linesOf: LinesOf): Pa
           count: 0,
           firstIso: iso,
           lastIso: iso,
-          money: { accrued: 0, paid: 0, debt: 0 },
+          money: emptyMoney(),
           items: [],
         };
         group.courses.push(course);
@@ -436,8 +497,10 @@ export function sliceRegistry(items: DjangoAppointment[], linesOf: LinesOf): Reg
 
   for (const appt of items) {
     const lines = linesOf(appt);
-    const factor = isCancelledStatus(appt.status) ? 0 : discountFactor(appt);
-    const share = paidShare(appt);
+    // Разрезы — по выручке за вычетом возвратов, как плитки сводки.
+    const factor = isCancelledStatus(appt.status) || isFullyRefunded(appt) ? 0 : discountFactor(appt);
+    const payable = payableTotal(appt);
+    const share = Math.max(0, paidShare(appt) - (payable > 0 ? refundedAmount(appt) / payable : 0));
 
     for (const line of lines) {
       const lineSum = serviceLineTotal(line) * factor;
@@ -448,9 +511,7 @@ export function sliceRegistry(items: DjangoAppointment[], linesOf: LinesOf): Reg
           id: employee.id,
           name: employee.fullName,
           visits: 0,
-          accrued: 0,
-          paid: 0,
-          debt: 0,
+          ...emptyMoney(),
         };
         slice.visits += 1;
         slice.accrued += lineSum;

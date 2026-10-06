@@ -333,6 +333,20 @@ describe("employeeMoneyTotals", () => {
     expect(employeeMoneyTotals(list, 31).accrued).toBe(400);
   });
 
+  // Список отдаёт paidTotal ДО возврата (прод 06.10.2026, приём 20322).
+  it("приём с полным возвратом в деньги врача не идёт", () => {
+    const list = [
+      appt({
+        status: "scheduled",
+        services: [line({ employee: { id: 20, fullName: "А" }, lineTotal: "500.00" })],
+        payableAmount: "500.00",
+        paidTotal: "500.00",
+        paymentStatus: "refunded",
+      }),
+    ];
+    expect(employeeMoneyTotals(list, 20)).toEqual({ accrued: 0, paid: 0 });
+  });
+
   it("разносит частичную оплату пропорционально суммам строк", () => {
     const list = [
       appt({
