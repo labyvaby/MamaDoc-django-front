@@ -4,6 +4,7 @@ import {
   Avatar,
   Box,
   Chip,
+  Divider,
   FormControl,
   FormControlLabel,
   FormLabel,
@@ -48,6 +49,7 @@ import {
 } from "../../i18n/glossaryOverrides";
 import type { Vertical } from "../../i18n/types";
 import TerminologyDrawer from "./terminology/TerminologyDrawer";
+import BakaiPaymentSection from "./BakaiPaymentSection";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -595,6 +597,15 @@ const OrganizationSettingsPage: React.FC = () => {
                 </AppButton>
               </Box>
             </CanAccess>
+
+            {/* Онлайн-оплата Bakai сохраняется своими кнопками, поэтому стоит
+                под общей «Сохранить»; эндпоинт вебхуков требует organization.update */}
+            {canUpdate && (
+              <>
+                <Divider />
+                <BakaiPaymentSection org={org} onOrgUpdated={setOrg} disabled={busy} />
+              </>
+            )}
           </>
         )}
       </Stack>
