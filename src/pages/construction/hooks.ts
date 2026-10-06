@@ -2,6 +2,8 @@ import React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { constructionKeys, getContractors, getProjectsOverview, getStageGroups } from "../../api/construction";
+import { getNomenclature, getWarehouses, supplyKeys } from "../../api/supply";
+import { treasuryKeys } from "../../api/treasury";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 
 /** ЖК, видимые стройке (тот же список, что «Сводка по объектам»). */
@@ -44,4 +46,37 @@ export function useStageGroups(enabled = true) {
 export function useRefreshConstruction() {
   const queryClient = useQueryClient();
   return React.useCallback(() => void queryClient.invalidateQueries({ queryKey: constructionKeys.all }), [queryClient]);
+}
+
+/**
+ * После действия в снабжении перечитать снабжение и склад, а также финансы:
+ * приёмка заказа заводит кредиторку, списание на объект — факт бюджета.
+ */
+export function useRefreshSupply() {
+  const queryClient = useQueryClient();
+  return React.useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: supplyKeys.all });
+    void queryClient.invalidateQueries({ queryKey: treasuryKeys.all });
+  }, [queryClient]);
+}
+
+/** Номенклатура — общий справочник организации. */
+export function useNomenclature(enabled = true) {
+  const scope = useRealtyScope();
+  return useQuery({
+    queryKey: supplyKeys.nomenclature(scope),
+    queryFn: ({ signal }) => getNomenclature(scope, signal),
+    enabled: enabled && scope.orgReady !== false,
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function useWarehouses(enabled = true) {
+  const scope = useRealtyScope();
+  return useQuery({
+    queryKey: supplyKeys.warehouses(scope),
+    queryFn: ({ signal }) => getWarehouses(scope, signal),
+    enabled: enabled && scope.orgReady !== false,
+    staleTime: 60_000,
+  });
 }

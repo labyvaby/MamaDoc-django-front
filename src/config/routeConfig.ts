@@ -212,6 +212,20 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.CONSTRUCTION_VIEW],
   },
 
+  // Сметы, снабжение, склад застройщика (supply)
+  {
+    path: '/supply/estimates',
+    requiredPermissions: [PERMISSIONS.SUPPLY_VIEW],
+  },
+  {
+    path: '/supply/procurement',
+    requiredPermissions: [PERMISSIONS.SUPPLY_VIEW],
+  },
+  {
+    path: '/supply/warehouse',
+    requiredPermissions: [PERMISSIONS.SUPPLY_VIEW],
+  },
+
   // Финансы застройщика: касса и банк, платёжный календарь, бюджеты, долги (treasury)
   {
     path: '/finance/cashbank',

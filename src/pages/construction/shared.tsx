@@ -3,6 +3,7 @@ import { Box, Typography } from "@mui/material";
 
 import type { HistoryEntry } from "../../api/construction";
 import { subtleBg } from "../../theme/uiHelpers";
+import { SubPill } from "../realty-finance/shared";
 import type { Tone } from "./format";
 
 /** Статус-пилюля с точкой: цвет — по тону статуса, фон нейтральный. */
@@ -62,6 +63,17 @@ export function HistoryList({ items, empty }: { items: HistoryEntry[]; empty: st
             {h.by && <Typography sx={{ fontSize: "0.72rem", color: "text.secondary" }}>{h.by}</Typography>}
           </Box>
         </Box>
+      ))}
+    </Box>
+  );
+}
+
+/** Ряд мелких переключателей (режим импорта, тип движения). */
+export function SubPillRow({ value, onChange, options }: { value: string; onChange: (key: string) => void; options: { key: string; label: string }[] }) {
+  return (
+    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+      {options.map((o) => (
+        <SubPill key={o.key} active={value === o.key} onClick={() => onChange(o.key)} label={o.label} />
       ))}
     </Box>
   );

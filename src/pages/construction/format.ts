@@ -37,6 +37,11 @@ export const stageTone = (status: string): Tone => (status === "late" ? "error" 
 export const actTone = (status: string): Tone => (status === "check" ? "warning" : status === "accepted" ? "info" : status === "paid" ? "success" : status === "rejected" ? "error" : null);
 export const defectTone = (status: string): Tone => (status === "open" ? "error" : status === "fixing" ? "warning" : status === "verify" ? "info" : status === "closed" ? "success" : null);
 export const severityTone = (severity: string): Tone => (severity === "critical" ? "error" : severity === "major" ? "warning" : null);
+export const requestTone = (status: string): Tone =>
+  status === "new" ? "warning" : status === "approved" ? "info" : status === "tender" || status === "ordered" ? "primary" : status === "delivered" ? "success" : status === "rejected" ? "error" : null;
+export const orderTone = (status: string, overdue = false): Tone =>
+  overdue ? "error" : status === "in_transit" ? "info" : status === "delivered" || status === "closed" ? "success" : status === "ordered" ? "primary" : null;
+export const tenderTone = (status: string): Tone => (status === "open" || status === "collecting" ? "info" : status === "evaluation" ? "warning" : status === "awarded" || status === "closed" ? "success" : null);
 export const inspectionTone = (result: string): Tone => (result === "ok" ? "success" : result === "warn" ? "warning" : result === "fail" ? "error" : null);
 
 export const shortDate = (iso: string | null | undefined) => (iso ? dayjs(iso).format("DD.MM.YY") : "—");
