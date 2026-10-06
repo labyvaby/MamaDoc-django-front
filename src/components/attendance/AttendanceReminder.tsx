@@ -3,7 +3,6 @@ import {
   Box,
   CircularProgress,
   IconButton,
-  Portal,
   Stack,
   Tooltip,
   Typography,
@@ -12,13 +11,14 @@ import { alpha } from "@mui/material/styles";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import LoginOutlined from "@mui/icons-material/LoginOutlined";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import dayjs from "dayjs";
 
 import { AppButton, AppCard } from "../ui";
 import { useCan } from "../../hooks/useCan";
 import { useDjangoSkudActions } from "../../hooks/useDjangoSkud";
 import { usePermissions } from "../../hooks/usePermissions";
+import { MyAttendanceDialog } from "./MyAttendanceDialog";
 
 const MotionBox = motion(Box);
 
@@ -41,6 +41,8 @@ function hasReminderBeenShown(storageKey: string | null): boolean {
  */
 export const AttendanceReminder: React.FC = () => {
   const canShowReminder = useCan("attendance.reminder");
+  const canSeeAttendance = useCan(["timesheet.view_own", "timesheet.view"]);
+  const [attendanceOpen, setAttendanceOpen] = React.useState(false);
   const { activeEmployee } = usePermissions();
   const today = dayjs().format("YYYY-MM-DD");
   const historyFrom = dayjs().subtract(1, "day").format("YYYY-MM-DD");
@@ -203,6 +205,26 @@ export const AttendanceReminder: React.FC = () => {
                     >
                       Отметьте приход, чтобы рабочее время учлось автоматически.
                     </Typography>
+                    {canSeeAttendance && (
+                      <Typography
+                        component="button"
+                        type="button"
+                        variant="caption"
+                        onClick={() => setAttendanceOpen(true)}
+                        sx={{
+                          mt: 0.5,
+                          p: 0,
+                          border: 0,
+                          bgcolor: "transparent",
+                          color: "primary.main",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          "&:hover": { textDecoration: "underline" },
+                        }}
+                      >
+                        Моя посещаемость
+                      </Typography>
+                    )}
                   </Box>
 
                   <Stack
@@ -266,6 +288,9 @@ export const AttendanceReminder: React.FC = () => {
                   </IconButton>
                 </Tooltip>
       </AppCard>
+      {canSeeAttendance && (
+        <MyAttendanceDialog open={attendanceOpen} onClose={() => setAttendanceOpen(false)} />
+      )}
     </MotionBox>
   );
 };

@@ -31,6 +31,11 @@ export const PAGE_PERMISSIONS = {
   schedule: "schedule.view",
   attendance: "attendance.view",
   attendanceSettings: "attendance.manage",
+  // Табель: сетка всех сотрудников — timesheet.view; свой табель — view_own
+  // (или view: кто видит всех, видит и себя). Действия внутри страницы —
+  // свои коды, см. TIMESHEET_PERMISSIONS в api/timesheet.ts.
+  timesheet: "timesheet.view",
+  myTimesheet: ["timesheet.view_own", "timesheet.view"],
   cashbox: "finance.view",
   reports: "reports.view",
   payroll: ["payroll.view", "payroll.view_own"],

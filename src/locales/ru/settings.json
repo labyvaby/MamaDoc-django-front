@@ -786,6 +786,7 @@
       "targets": "Планы и цели",
       "tasks": "Задачи",
       "tenancy": "Модули",
+      "timesheet": "Табель",
       "vaccinations": "{{vaccine.nomPl, capitalize}}"
     },
     "row": {
@@ -857,6 +858,8 @@
         "warehouses": "Остатки",
         "pos": "Касса и продажи",
         "skud": "СКУД",
+        "timesheet": "Табель",
+        "myTimesheet": "Мой табель",
         "cashbox": "Касса",
         "payroll": "Отчёт по ЗП",
         "reports": "Отчёты",

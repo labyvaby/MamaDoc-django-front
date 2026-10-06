@@ -89,6 +89,8 @@ const DjangoLabPage = lazy(() => import("./pages/lab/django"));
 const LoginPage = lazy(() => import("./pages/auth/login"));
 const DjangoSchedulePage = lazy(() => import("./pages/schedule/ScheduleRouter"));
 const DjangoWorkShiftsPage = lazy(() => import("./pages/work-shifts/django"));
+const TimesheetPage = lazy(() => import("./pages/timesheet"));
+const MyTimesheetPage = lazy(() => import("./pages/my-timesheet"));
 const AccessDeniedPage = lazy(() => import("./pages/AccessDenied"));
 const DjangoSkudSettingsPage = lazy(() => import("./pages/settings/django/SkudSettingsPage"));
 const ConclusionPrintPage = lazy(() => import("./pages/print/ConclusionPrintPage").then(module => ({ default: module.ConclusionPrintPage }))); // New Print Page
@@ -395,6 +397,16 @@ function App() {
                         name: "work-shifts",
                         list: "/work-shifts",
                         meta: { label: "СКУД" }
+                      },
+                      {
+                        name: "timesheet",
+                        list: "/timesheet",
+                        meta: { label: "Табель" }
+                      },
+                      {
+                        name: "my-timesheet",
+                        list: "/my-timesheet",
+                        meta: { label: "Мой табель" }
                       },
                       {
                         name: "cashbox",
@@ -1035,6 +1047,26 @@ function App() {
                             <RequirePermission permission={PAGE_PERMISSIONS.attendance}>
                               <Suspense fallback={<LinearProgress />}>
                                 <DjangoWorkShiftsPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="timesheet"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.timesheet}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <TimesheetPage />
+                              </Suspense>
+                            </RequirePermission>
+                          }
+                        />
+                        <Route
+                          path="my-timesheet"
+                          element={
+                            <RequirePermission permission={PAGE_PERMISSIONS.myTimesheet}>
+                              <Suspense fallback={<LinearProgress />}>
+                                <MyTimesheetPage />
                               </Suspense>
                             </RequirePermission>
                           }
