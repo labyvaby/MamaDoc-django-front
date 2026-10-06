@@ -205,7 +205,7 @@ function MobileAppScreen() {
               <Box key={e.id} sx={{ px: 2.25, py: 1, display: "flex", alignItems: "baseline", gap: 1.5, borderTop: 1, borderColor: "divider", "&:first-of-type": { borderTop: 0 } }}>
                 <Typography sx={{ width: 110, flexShrink: 0, fontSize: "0.75rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{e.at ? dayjs(e.at).format("DD.MM HH:mm") : "—"}</Typography>
                 <Typography sx={{ flex: 1, minWidth: 0, fontSize: "0.8125rem" }}>{[e.who, e.text].filter(Boolean).join(" · ") || "—"}</Typography>
-                <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{[e.deviceName, e.via].filter(Boolean).join(" · ")}</Typography>
+                <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{[e.projectName, e.deviceName, e.via].filter(Boolean).join(" · ")}</Typography>
               </Box>
             ))
           )}

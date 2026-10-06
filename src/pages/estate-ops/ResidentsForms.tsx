@@ -77,7 +77,7 @@ export function RequestDrawer({ id, preview, canManage, onClose }: { id: number 
     setReply("");
   }, [id]);
 
-  const actions = r && canManage ? requestActions(r.status) : [];
+  const actions = r && canManage ? requestActions(r.status, r.defectId != null) : [];
   const busy = run.isPending;
 
   return (

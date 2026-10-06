@@ -53,6 +53,7 @@ describe("сервис жильцов", () => {
     expect(requestActions("new")).toEqual(["take", "assign", "toQuality"]);
     expect(requestActions("done")).toEqual(["close"]);
     expect(requestActions("closed")).toEqual([]);
+    expect(requestActions("in_progress", true)).toEqual(["done", "assign"]);
   });
 
   it("query без пустых", () => {

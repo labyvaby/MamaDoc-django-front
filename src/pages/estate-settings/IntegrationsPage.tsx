@@ -450,7 +450,7 @@ function Webhooks() {
     mutationFn: (hook: Webhook) => testWebhook(hook.id, scope),
     onSuccess: (delivery) => {
       refresh();
-      enqueueSnackbar(t("integrations.webhooks.tested", { status: [delivery.status, delivery.simulated ? t("integrations.webhooks.simulated") : null].filter(Boolean).join(", ") }), { variant: "success" });
+      enqueueSnackbar(t("integrations.webhooks.tested", { status: [t(`integrations.webhooks.delivery_${delivery.status}`, { defaultValue: delivery.status }), delivery.simulated ? t("integrations.webhooks.simulated") : null].filter(Boolean).join(", ") }), { variant: "success" });
     },
     onError,
   });
@@ -494,7 +494,7 @@ function Webhooks() {
                     {h.url}
                   </Typography>
                   <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
-                    {[h.events.join(", "), h.description, h.lastDeliveryAt ? `${t("integrations.webhooks.lastDelivery")}: ${when(h.lastDeliveryAt)}${h.lastDeliveryStatus ? ` · ${h.lastDeliveryStatus}` : ""}` : null].filter(Boolean).join(" · ")}
+                    {[h.events.join(", "), h.description, h.lastDeliveryAt ? `${t("integrations.webhooks.lastDelivery")}: ${when(h.lastDeliveryAt)}${h.lastDeliveryStatus ? ` · ${t(`integrations.webhooks.delivery_${h.lastDeliveryStatus}`, { defaultValue: h.lastDeliveryStatus })}` : ""}` : null].filter(Boolean).join(" · ")}
                   </Typography>
                 </Box>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>

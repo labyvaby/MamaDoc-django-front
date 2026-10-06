@@ -298,6 +298,7 @@ export function WebhookDrawer({ open, onClose, onCreated }: { open: boolean; onC
       ) : (
         <Autocomplete
           multiple
+          openOnFocus
           size="small"
           loading={events.isLoading}
           options={options.map((o) => o.code)}
@@ -379,7 +380,7 @@ export function DeliveriesDrawer({ hook, onClose }: { hook: Webhook | null; onCl
                 {[d.at && dayjs(d.at).format("DD.MM.YYYY HH:mm"), d.responseCode != null ? `HTTP ${d.responseCode}` : null, d.simulated ? t("integrations.webhooks.simulated") : null].filter(Boolean).join(" · ")}
               </Typography>
             </Box>
-            <StatusPill label={d.status || "—"} tone={d.status === "delivered" ? "success" : d.status === "failed" || d.status === "error" ? "error" : "warning"} />
+            <StatusPill label={d.status ? t(`integrations.webhooks.delivery_${d.status}`, { defaultValue: d.status }) : "—"} tone={d.status === "delivered" ? "success" : d.status === "failed" || d.status === "error" ? "error" : "warning"} />
           </Box>
         ))
       )}

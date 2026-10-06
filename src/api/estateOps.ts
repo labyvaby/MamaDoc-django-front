@@ -500,13 +500,14 @@ export async function requestToQuality(id: number, body: { contractorId: number 
   return fromRawRequest(await post(scope, `/requests/${id}/to-quality/`, payload));
 }
 
-/** Кнопки обращения по статусу (гайд §5 «Действия»). */
-export function requestActions(status: string): ("take" | "assign" | "done" | "close" | "toQuality")[] {
+/** Кнопки обращения по статусу (гайд §5 «Действия»); дефект уже заведён — «В стройконтроль» не повторяем. */
+export function requestActions(status: string, hasDefect = false): ("take" | "assign" | "done" | "close" | "toQuality")[] {
+  const quality = hasDefect ? [] : (["toQuality"] as const);
   switch (status) {
     case "new":
-      return ["take", "assign", "toQuality"];
+      return ["take", "assign", ...quality];
     case "in_progress":
-      return ["done", "assign", "toQuality"];
+      return ["done", "assign", ...quality];
     case "done":
       return ["close"];
     default:

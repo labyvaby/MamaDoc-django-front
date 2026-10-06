@@ -214,7 +214,7 @@ export async function getPushes(scope?: RealtyScope, signal?: AbortSignal): Prom
   }));
 }
 
-/** Журнал доступа — форма строки в гайде не описана, разбираем защитно. */
+/** Журнал доступа. Форма сверена на test2 07.10: `{id, who, projectName, device, via, viaLabel, at}`; запасные имена полей оставлены. */
 export async function getAppAccessLog(scope?: RealtyScope, signal?: AbortSignal): Promise<AccessEvent[]> {
   return list(await app(scope, "/access-log/?limit=40", { signal })).map((e, i) => ({
     id: e.id ?? i,

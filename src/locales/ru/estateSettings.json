@@ -295,7 +295,11 @@
       "secretNone": "Бэкенд не вернул секрет",
       "toggledOn": "Вебхук включён",
       "toggledOff": "Вебхук выключен",
-      "empty": "Вебхуков нет"
+      "empty": "Вебхуков нет",
+      "delivery_delivered": "доставлено",
+      "delivery_pending": "ожидает",
+      "delivery_failed": "ошибка",
+      "delivery_error": "ошибка"
     }
   },
   "audit": {
