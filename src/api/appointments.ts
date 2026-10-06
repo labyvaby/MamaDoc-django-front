@@ -1207,9 +1207,11 @@ export function getAppointment(id: number): Promise<DjangoAppointment> {
 export function getAppointmentsLastUpdate(
   branchId?: number,
   signal?: AbortSignal,
+  organizationId?: number,
 ): Promise<string | null> {
   const query = new URLSearchParams();
   if (branchId) query.set("branchId", String(branchId));
+  if (organizationId != null) query.set("organizationId", String(organizationId));
   const qs = query.toString();
   return apiRequest<{ lastUpdate: string | null; count?: number }>(
     `/appointments/last-update/${qs ? `?${qs}` : ""}`,

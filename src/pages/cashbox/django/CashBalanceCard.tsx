@@ -46,6 +46,7 @@ const CashBalanceCard: React.FC<Props> = ({ branchId, branchName, organizationId
     enabled,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     refetchInterval: enabled ? 60_000 : false,
+    refetchOnWindowFocus: "always",
   });
 
   // Движение наличных строго за СЕГОДНЯ — однодневное окно открыто любому
@@ -62,6 +63,7 @@ const CashBalanceCard: React.FC<Props> = ({ branchId, branchName, organizationId
     enabled,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     refetchInterval: enabled ? 60_000 : false,
+    refetchOnWindowFocus: "always",
   });
 
   const balance = balanceQuery.data ? cashNet(balanceQuery.data) : null;

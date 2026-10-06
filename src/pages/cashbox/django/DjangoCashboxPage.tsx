@@ -5,7 +5,7 @@ import ShieldOutlined from "@mui/icons-material/ShieldOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   DateRangeField,
@@ -27,6 +27,7 @@ import CashBalanceCard from "./CashBalanceCard";
 import CashFlowFeed from "./CashFlowFeed";
 import ShiftSection from "./shifts/ShiftSection";
 import { useT } from "../../../i18n/VerticalProvider";
+import { useRealtimeRefetch } from "../../../hooks/useRealtimeRefetch";
 
 // ── Period presets ────────────────────────────────────────────────────────────
 
@@ -112,13 +113,22 @@ const DjangoCashboxPage: React.FC = () => {
 
   const scopeFilters = React.useMemo(
     () => ({
-      organizationId: isSuper ? (activeOrganization?.id ?? undefined) : undefined,
+      organizationId: orgRequired ? (activeOrganization?.id ?? undefined) : undefined,
       branchId: activeBranch?.id ?? undefined,
     }),
-    [isSuper, activeOrganization?.id, activeBranch?.id],
+    [orgRequired, activeOrganization?.id, activeBranch?.id],
   );
 
   const queriesEnabled = !permLoading && canView && !needsOrg;
+  const queryClient = useQueryClient();
+  useRealtimeRefetch({
+    entities: ["appointment", "expense", "sale", "product"],
+    enabled: queriesEnabled,
+    onEvent: () => {
+      void queryClient.invalidateQueries({ queryKey: ["django", "cashbox"] });
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.shifts.all });
+    },
+  });
 
   // Единственный summary-запрос — поток за выбранное окно. Накопительных
   // запросов «с начала учёта» больше нет: остаток наличных живёт в смене.
@@ -129,6 +139,7 @@ const DjangoCashboxPage: React.FC = () => {
     enabled: queriesEnabled,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
     refetchInterval: queriesEnabled ? 60_000 : (false as const),
+    refetchOnWindowFocus: "always",
   });
 
   const baseFeedFilters = React.useMemo(

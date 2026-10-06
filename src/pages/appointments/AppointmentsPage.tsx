@@ -144,7 +144,10 @@ function useHomeDashboard(params: {
       ),
     // Увеличиваем staleTime до 5 минут. Любое изменение в клинике спровоцирует
     // инвалидацию кэша через useAppointmentsAutoSync, а до тех пор данные верны.
-    staleTime: 5 * 60 * 1000, 
+    staleTime: 5 * 60 * 1000,
+    // Возврат к экрану перечитывает список даже при потерянном push-событии.
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
     placeholderData: (previousData, previousQuery) => {
       if (!previousData || !previousQuery) return undefined;
       const prevParams = previousQuery.queryKey[3] as typeof queryParams | undefined;
@@ -619,11 +622,12 @@ const AppointmentsPage: React.FC<AppointmentsPageProps> = ({ scope }) => {
   // Синхронизация с изменениями коллег: WebSocket /ws/changes/ как мгновенный
   // триггер + лёгкий timestamp-polling как страховка (частый, когда сокет
   // недоступен; редкий, пока он жив). Тяжёлый список перезапрашивается только
-  // при реальном изменении. Пауза, пока открыт любой дровер/диалог — чтобы не
-  // мешать вводу (изменения за время паузы подтянутся сразу после закрытия).
+  // при реальном изменении, включая время работы в форме. Формы хранят свой
+  // снимок приёма отдельно от списка, поэтому ввод при обновлении сохраняется.
   useAppointmentsAutoSync({
     branchId,
-    paused: createOpen || editTarget !== null || paymentTarget !== null || confirm !== null,
+    organizationId: activeOrganization?.id,
+    enabled: activeScope.isReady && activeScope.orgReady,
     onChange: () => {
       // Сбрасываем кэш всех запросов по приёмам (включая неактивные даты/кабинеты),
       // чтобы при переходе на них отображались актуальные данные.

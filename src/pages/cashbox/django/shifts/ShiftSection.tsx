@@ -59,6 +59,8 @@ const ShiftSection: React.FC<Props> = ({
       getCurrentShift({ branchId: branchId!, organizationId }, signal),
     enabled,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    refetchInterval: enabled ? 60_000 : false,
+    refetchOnWindowFocus: "always",
   });
 
   const shift = currentQuery.data ?? null;
@@ -70,6 +72,8 @@ const ShiftSection: React.FC<Props> = ({
     queryFn: ({ signal }) => getCashboxShiftSummary(shift!.id, organizationId, signal),
     enabled: enabled && shift !== null,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    refetchInterval: enabled && shift?.status === "open" ? 60_000 : false,
+    refetchOnWindowFocus: "always",
   });
 
   const invalidate = () => {
