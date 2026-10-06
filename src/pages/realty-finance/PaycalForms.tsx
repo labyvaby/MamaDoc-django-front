@@ -77,7 +77,8 @@ export function PlannedDrawer({ id, preview, canManage, onClose }: { id: number 
   const refresh = useRefreshTreasury();
   const { enqueueSnackbar } = useSnackbar();
   const [settling, setSettling] = React.useState<CalendarItem | null>(null);
-  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  // Удаление и отмена — через подтверждение: оба необратимы с экрана.
+  const [confirm, setConfirm] = React.useState<"delete" | "cancel" | null>(null);
   const query = useQuery({
     queryKey: treasuryKeys.planned(scope, id ?? 0),
     queryFn: ({ signal }) => getPlannedPayment(id as number, scope, signal),
@@ -97,24 +98,25 @@ export function PlannedDrawer({ id, preview, canManage, onClose }: { id: number 
   const cancel = useMutation({
     mutationFn: () => cancelPlannedPayment(id as number, scope),
     onSuccess: () => {
+      setConfirm(null);
       refresh();
       enqueueSnackbar(t("paycal.planned.cancelled"), { variant: "success" });
       onClose();
     },
-    onError,
   });
   const remove = useMutation({
     mutationFn: () => deletePlannedPayment(id as number, scope),
     onSuccess: () => {
-      setConfirmDelete(false);
+      setConfirm(null);
       refresh();
       enqueueSnackbar(t("paycal.planned.deleted"), { variant: "success" });
       onClose();
     },
   });
   React.useEffect(() => {
-    setConfirmDelete(false);
+    setConfirm(null);
     remove.reset();
+    cancel.reset();
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps -- новый платёж — новое подтверждение
 
   const action = item ? calendarAction(item) : null;
@@ -169,10 +171,10 @@ export function PlannedDrawer({ id, preview, canManage, onClose }: { id: number 
             </Button>
           )}
           <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
-            <Button color="error" onClick={() => setConfirmDelete(true)} disabled={busy} sx={{ mr: "auto" }}>
+            <Button color="error" onClick={() => setConfirm("delete")} disabled={busy} sx={{ mr: "auto" }}>
               {t("paycal.planned.delete")}
             </Button>
-            <Button onClick={() => cancel.mutate()} disabled={busy}>
+            <Button onClick={() => setConfirm("cancel")} disabled={busy}>
               {t("paycal.planned.cancelPayment")}
             </Button>
             <Button onClick={() => move.mutate()} disabled={busy}>
@@ -183,15 +185,15 @@ export function PlannedDrawer({ id, preview, canManage, onClose }: { id: number 
       )}
       <SettleDialog item={settling} onClose={() => setSettling(null)} onDone={onClose} />
       <ConfirmDialog
-        open={confirmDelete}
-        title={t("paycal.planned.deleteTitle")}
-        text={t("paycal.planned.deleteText", { title: item?.title ?? "" })}
-        confirmLabel={t("paycal.planned.delete")}
-        busy={remove.isPending}
-        error={remove.error}
+        open={confirm != null}
+        title={confirm === "cancel" ? t("paycal.planned.cancelTitle") : t("paycal.planned.deleteTitle")}
+        text={t(confirm === "cancel" ? "paycal.planned.cancelText" : "paycal.planned.deleteText", { title: item?.title ?? "" })}
+        confirmLabel={confirm === "cancel" ? t("paycal.planned.cancelConfirm") : t("paycal.planned.delete")}
+        busy={confirm === "cancel" ? cancel.isPending : remove.isPending}
+        error={confirm === "cancel" ? cancel.error : remove.error}
         danger
-        onConfirm={() => remove.mutate()}
-        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => (confirm === "cancel" ? cancel.mutate() : remove.mutate())}
+        onClose={() => setConfirm(null)}
       />
     </Drawer>
   );

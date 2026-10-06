@@ -35,6 +35,7 @@ import { CardHeader, KpiCards, ScreenError, SearchBox } from "../realty-sales/sh
 import { useIdParam } from "../realty-sales/useLeadParam";
 import { EscrowDialog, NewOperationDrawer, OperationDrawer, TransferDrawer } from "./CashForms";
 import { compactSum, shortDate, signedSum } from "./format";
+import { useAccountCurrency } from "./hooks";
 import { AmountBars, EmptyNote, PillTabs, SubPill, TwoLines } from "./shared";
 
 type Tab = "operations" | "accounts" | "articles";
@@ -304,6 +305,7 @@ function CashbankScreen() {
 const accountAmount = (a: TreasuryAccount) => (a.currency === "KGS" ? formatKGS(a.balance) : `${a.fx.toLocaleString("ru-RU")} ${a.currency === "USD" ? "$" : a.currency}`);
 
 function OperationsGrid({ rows, loading, empty, onOpen }: { rows: CashOperation[]; loading: boolean; empty: string; onOpen: (row: CashOperation) => void }) {
+  const currencyOf = useAccountCurrency();
   const { t } = useT("realtyFinance");
   const columns: GridColDef<CashOperation>[] = [
     { field: "date", headerName: t("cashbank.table.date"), width: 104, renderCell: ({ row }) => <TwoLines top={shortDate(row.date)} bottom={row.number} /> },
@@ -342,7 +344,7 @@ function OperationsGrid({ rows, loading, empty, onOpen }: { rows: CashOperation[
             textDecoration: row.status === "cancelled" ? "line-through" : "none",
           }}
         >
-          {signedSum(row.type, row.amount)}
+          {signedSum(row.type, row.amount, currencyOf(row.accountId))}
         </Typography>
       ),
     },
