@@ -158,6 +158,14 @@ export const posRequest = <T>(
 };
 export const getPosBootstrap = (scope: PosScope, signal?: AbortSignal) =>
   posRequest<PosBootstrap>(scope, "", { signal });
+/**
+ * Правило организации `promo_codes` (настройки «Магазин»): выключает только
+ * промокоды — автоакции, скидка уровня, ваучеры и сертификаты работают.
+ * Своего права у него нет. Ключа нет (старый бэкенд) — промокоды включены.
+ */
+export const promoCodesEnabled = (
+  rules?: Record<string, boolean | number | string>
+) => rules?.promo_codes !== false;
 export const getPosProducts = (
   scope: PosScope,
   params: Record<string, string | number>,
