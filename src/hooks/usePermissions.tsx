@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { getCurrentUser, switchAuthContext, userHasPassword } from "../api";
+import { getCurrentUser, switchAuthContext, userHasPassword, setRolePreview } from "../api";
 import type { DjangoUser, MeResponse, RbacMembership, RbacOrganization, RbacBranch, ActiveEmployee, SwitchContextPayload } from "../api/auth";
 import { ApiError } from "../api/client";
 import { clearAccessEnded } from "../api/accessEnded";
@@ -36,6 +36,8 @@ type GlobalState = {
   viewAsOrganization: boolean;
   /** Пользователь из того же /auth/me/ — чтобы виджеты не запрашивали его повторно. */
   user: DjangoUser | null;
+  canPreviewRoles: boolean;
+  rolePreview: MeResponse["rolePreview"];
 };
 
 let globalState: GlobalState = {
@@ -44,6 +46,7 @@ let globalState: GlobalState = {
   activeOrganization: null, activeBranch: null, activeEmployee: null,
   switching: false, enabledModules: [], authStatus: "loading", authError: null, hasPassword: null,
   isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false, user: null,
+  canPreviewRoles: false, rolePreview: null,
 };
 let inFlight: Promise<void> | null = null;
 const listeners = new Set<(state: GlobalState) => void>();
@@ -64,7 +67,7 @@ export function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     branches: Array.isArray(activeMembership.branches) ? activeMembership.branches : [],
     permissions: Array.isArray(activeMembership.permissions) ? activeMembership.permissions : [],
   } : null;
-  const roleName: RoleName = user.isSuperuser ? "superadmin" : normalizedMembership?.isOwner ? "owner" : (normalizedMembership?.role?.code as RoleName | undefined) ?? (user.isStaff ? "admin" : "registrator");
+  const roleName: RoleName = meData.rolePreview ? (meData.rolePreview.code || "preview") as RoleName : user.isSuperuser ? "superadmin" : normalizedMembership?.isOwner ? "owner" : (normalizedMembership?.role?.code as RoleName | undefined) ?? (user.isStaff ? "admin" : "registrator");
   const role: Role = {
     id: String(normalizedMembership?.id ?? user.id), name: roleName,
     display_name: normalizedMembership?.role?.name ?? roleName,
@@ -87,6 +90,8 @@ export function buildStateFromMe(meData: MeResponse): Partial<GlobalState> {
     isPlatformAdmin: Boolean(user.isSuperuser),
     organizationModules: meData.organizationModules ?? null,
     user,
+    canPreviewRoles: Boolean(meData.canPreviewRoles),
+    rolePreview: meData.rolePreview ?? null,
   };
 }
 
@@ -119,19 +124,21 @@ async function fetchPermissions(options: { force?: boolean; fresh?: boolean } = 
       const meData = await getCurrentUser();
       if (epoch !== authEpoch) return;
       if (!meData?.user) {
-        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false, user: null });
+        setGlobal({ role: null, employee: null, permissions: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false, user: null, canPreviewRoles: false, rolePreview: null });
       } else {
+        const previewChanged = globalState.rolePreview?.id !== meData.rolePreview?.id;
         setGlobal({
           ...buildStateFromMe(meData),
           viewAsOrganization: keepsClinicView(globalState.viewAsOrganization, globalState.employeeId, meData),
           lastFetchedAt: Date.now(),
         });
+        if (previewChanged) window.dispatchEvent(new Event("mamadoc:django-context-switched"));
       }
     } catch (error) {
       if (epoch !== authEpoch) return;
       const status = error instanceof ApiError ? error.status : -1;
       if (status === 401) {
-        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false, user: null });
+        setGlobal({ role: null, employee: null, permissions: [], memberships: [], activeMembership: null, activeOrganization: null, activeBranch: null, activeEmployee: null, enabledModules: [], loading: false, loaded: true, authStatus: "unauthenticated", authError: null, hasPassword: null, isPlatformAdmin: false, organizationModules: null, viewAsOrganization: false, user: null, canPreviewRoles: false, rolePreview: null });
       } else {
         const message = error instanceof ApiError ? `Сервер недоступен (${status || "сеть"})` : "Сетевая ошибка";
         const authenticated = globalState.authStatus === "authenticated";
@@ -173,6 +180,20 @@ export async function switchContext(payload: SwitchContextPayload): Promise<MeRe
       switching: false,
       lastFetchedAt: Date.now(),
     });
+    window.dispatchEvent(new Event("mamadoc:django-context-switched"));
+    return meData;
+  } catch (error) {
+    setGlobal({ switching: false });
+    throw error;
+  }
+}
+
+export async function switchRolePreview(roleId: number | null): Promise<MeResponse> {
+  setGlobal({ switching: true });
+  try {
+    const meData = await setRolePreview(roleId);
+    authEpoch += 1;
+    setGlobal({ ...buildStateFromMe(meData), switching: false, lastFetchedAt: Date.now() });
     window.dispatchEvent(new Event("mamadoc:django-context-switched"));
     return meData;
   } catch (error) {
@@ -253,6 +274,9 @@ export const usePermissions = (): UserPermissions & PermissionCheck => {
     viewAsOrganization: state.viewAsOrganization,
     setViewAsOrganization,
     user: state.user,
+    canPreviewRoles: state.canPreviewRoles,
+    rolePreview: state.rolePreview,
+    switchRolePreview,
   };
 };
 
