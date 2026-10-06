@@ -33,6 +33,7 @@ import construction from "../locales/ru/construction.json";
 import personnel from "../locales/ru/personnel.json";
 import estateOps from "../locales/ru/estateOps.json";
 import estateAnalytics from "../locales/ru/estateAnalytics.json";
+import estateSettings from "../locales/ru/estateSettings.json";
 import { capitalize, genderForm, lower, prepForm } from "./formatters";
 
 /**
@@ -41,7 +42,7 @@ import { capitalize, genderForm, lower, prepForm } from "./formatters";
  * Новый модуль: добавить JSON в src/locales/ru/ и ключ сюда.
  */
 export const resources = {
-  ru: { common, patients, appointments, settings, employees, salaryReports, sales, vaccinations, reviews, cashbox, load, doctor, reports, sidebar, bookings, client, publicBooking, landing, print, services, waitlist, deals, realestate, billing, edo, estateDashboard, realtySales, realtyFinance, construction, personnel, estateOps, estateAnalytics },
+  ru: { common, patients, appointments, settings, employees, salaryReports, sales, vaccinations, reviews, cashbox, load, doctor, reports, sidebar, bookings, client, publicBooking, landing, print, services, waitlist, deals, realestate, billing, edo, estateDashboard, realtySales, realtyFinance, construction, personnel, estateOps, estateAnalytics, estateSettings },
 } as const;
 
 export type Namespace = keyof (typeof resources)["ru"];

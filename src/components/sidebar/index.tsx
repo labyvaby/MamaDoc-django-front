@@ -102,6 +102,7 @@ import { getStockSummary, getSupplySummary, supplyKeys } from "../../api/supply"
 import { hasPendingPayroll, payrollKeys } from "../../api/salaryPayroll";
 import { acsKeys, getMyShift } from "../../api/acs";
 import { estateOpsKeys, getHandoverSummary, getRequestsSummary } from "../../api/estateOps";
+import { estateSettingsKeys, getIntegrationsSummary } from "../../api/estateSettings";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -132,6 +133,8 @@ import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 import KeyOutlined from "@mui/icons-material/KeyOutlined";
 import SupportAgentOutlined from "@mui/icons-material/SupportAgentOutlined";
 import PhoneIphoneOutlined from "@mui/icons-material/PhoneIphoneOutlined";
+import SyncAltOutlined from "@mui/icons-material/SyncAltOutlined";
+import ListAltOutlined from "@mui/icons-material/ListAltOutlined";
 
 type NavGroup = "all" | "my-work" | "org" | "storage" | "management";
 
@@ -492,6 +495,12 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canHandover = can(PAGE_PERMISSIONS.estateOps) && seen("handover");
   const canResidents = can(PAGE_PERMISSIONS.estateOps) && seen("residents");
   const canMobileApp = can(PAGE_PERMISSIONS.residentApp) && seen("mobileapp");
+  // «Настройки» AIVIO (гайд frontend-settings §2–5): всё на integrations.view, «Роли и права» — ещё rbac.*.
+  const canEstateSettings = can(PAGE_PERMISSIONS.estateSettings);
+  const canRoles = canEstateSettings && (can("rbac.roles.view") || can("rbac.memberships.view")) && seen("roles");
+  const canDictionaries = canEstateSettings && seen("dictionaries");
+  const canIntegrations = canEstateSettings && seen("integrations");
+  const canAudit = canEstateSettings && seen("audit");
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
     ? ([
@@ -601,6 +610,14 @@ const RealEstateSidebarMenu: React.FC = () => {
     staleTime: 5 * 60_000,
     retry: false,
   }).data?.new;
+  // Бейдж «Интеграции и 1С» — ошибки обмена (гайд settings §4.1: `summary.queueErrors`, 0 — не показывать).
+  const integrationErrors = useQuery({
+    queryKey: estateSettingsKeys.summary(realtyScope),
+    queryFn: ({ signal }) => getIntegrationsSummary(realtyScope, signal),
+    enabled: canIntegrations && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.queueErrors;
   const tasksBadgeColor: "error" | "primary" = todayTasks?.some((task) => task.overdue && !task.done) ? "error" : "primary";
 
   const sectionLabel = (text: string) =>
@@ -695,7 +712,13 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canBi && <SidebarMenuItem to="/realestate/bi" icon={<QueryStatsOutlined />} label="Сводная аналитика" collapsed={siderCollapsed} />}
       {canCrmAnalytics && <SidebarMenuItem to="/realestate/analytics" icon={<AnalyticsOutlined />} label="Аналитика CRM" collapsed={siderCollapsed} />}
 
-      {canSettings && sectionLabel("Компания")}
+      {(canSettings || canRoles || canDictionaries || canIntegrations || canAudit) && sectionLabel("Настройки")}
+      {canRoles && <SidebarMenuItem to="/company/roles" icon={<ManageAccountsOutlined />} label="Роли и права" collapsed={siderCollapsed} />}
+      {canDictionaries && <SidebarMenuItem to="/company/dictionaries" icon={<ListAltOutlined />} label="Справочники" collapsed={siderCollapsed} />}
+      {canIntegrations && (
+        <SidebarMenuItem to="/company/integrations" icon={<SyncAltOutlined />} label="Интеграции и 1С" collapsed={siderCollapsed} badgeCount={integrationErrors ?? 0} badgeColor="error" />
+      )}
+      {canAudit && <SidebarMenuItem to="/company/audit" icon={<HistoryOutlined />} label="Аудит" collapsed={siderCollapsed} />}
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
       )}

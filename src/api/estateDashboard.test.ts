@@ -46,6 +46,8 @@ describe("estateHref", () => {
     expect(estateHref("residents")).toBe("/ops/residents");
     expect(estateHref("bi")).toBe("/realestate/bi");
     expect(estateHref("analytics")).toBe("/realestate/analytics");
+    expect(estateHref("audit")).toBe("/company/audit");
+    expect(estateHref("integrations")).toBe("/company/integrations");
     // Экрана нет — без перехода.
     expect(estateHref("unknown-screen")).toBeNull();
   });

@@ -75,6 +75,9 @@ export const PAGE_PERMISSIONS = {
   estateOps: "estate_ops.view",
   // Мобильное приложение жильца — /api/v2/resident-app/, действия — resident_app.manage (по умолчанию ни у одной роли).
   residentApp: "resident_app.view",
+  // Настройки застройщика: роли и права, справочники, интеграции и 1С, аудит — /api/v2/integrations/,
+  // кнопки — integrations.manage (+ rbac.* у ролей и пользователей).
+  estateSettings: "integrations.view",
   // Рабочий стол застройщика: экран и его панели — estate_dashboard.view,
   // остальные панели бэк режет правами своих модулей сам.
   estateDashboard: "estate_dashboard.view",

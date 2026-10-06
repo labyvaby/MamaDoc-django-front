@@ -63,6 +63,14 @@ export function estateHref(view: string, objectId?: number | null): string | nul
       return "/realestate/bi";
     case "dashboard":
       return "/realestate/dashboard";
+    case "roles":
+      return "/company/roles";
+    case "dictionaries":
+      return "/company/dictionaries";
+    case "integrations":
+      return "/company/integrations";
+    case "audit":
+      return "/company/audit";
     case "smeta":
       return "/supply/estimates";
     case "procurement":

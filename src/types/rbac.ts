@@ -257,6 +257,9 @@ export const PERMISSIONS = {
   ESTATE_OPS_MANAGE: 'estate_ops.manage',
   RESIDENT_APP_VIEW: 'resident_app.view',
   RESIDENT_APP_MANAGE: 'resident_app.manage',
+  // Настройки застройщика (AIVIO): справочники, интеграции, аудит — integrations.*; роли и пользователи — ещё rbac.*.
+  INTEGRATIONS_VIEW: 'integrations.view',
+  INTEGRATIONS_MANAGE: 'integrations.manage',
 
   // ЭДО и документы застройщика (AIVIO, 04.10.2026)
   EDO_VIEW: 'edo.view',

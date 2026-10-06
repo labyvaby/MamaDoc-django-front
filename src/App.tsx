@@ -133,6 +133,10 @@ const PersonnelAcsPage = lazy(() => import("./pages/personnel/AcsPage"));
 const OpsHandoverPage = lazy(() => import("./pages/estate-ops/HandoverPage"));
 const OpsResidentsPage = lazy(() => import("./pages/estate-ops/ResidentsPage"));
 const OpsMobileAppPage = lazy(() => import("./pages/estate-ops/MobileAppPage"));
+const EstateRolesPage = lazy(() => import("./pages/estate-settings/RolesPage"));
+const EstateDictionariesPage = lazy(() => import("./pages/estate-settings/DictionariesPage"));
+const EstateIntegrationsPage = lazy(() => import("./pages/estate-settings/IntegrationsPage"));
+const EstateAuditPage = lazy(() => import("./pages/estate-settings/AuditPage"));
 const PaycalPage = lazy(() => import("./pages/realty-finance/PaycalPage"));
 const BudgetPage = lazy(() => import("./pages/realty-finance/BudgetPage"));
 const ReceivablesPage = lazy(() => import("./pages/realty-finance/ReceivablesPage"));
@@ -1462,6 +1466,11 @@ function App() {
                                 ["ops/handover", OpsHandoverPage, PAGE_PERMISSIONS.estateOps],
                                 ["ops/residents", OpsResidentsPage, PAGE_PERMISSIONS.estateOps],
                                 ["ops/mobileapp", OpsMobileAppPage, PAGE_PERMISSIONS.residentApp],
+                                // Настройки застройщика (AIVIO): /api/v2/integrations/ — не путать с /settings MamaDoc.
+                                ["company/roles", EstateRolesPage, PAGE_PERMISSIONS.estateSettings],
+                                ["company/dictionaries", EstateDictionariesPage, PAGE_PERMISSIONS.estateSettings],
+                                ["company/integrations", EstateIntegrationsPage, PAGE_PERMISSIONS.estateSettings],
+                                ["company/audit", EstateAuditPage, PAGE_PERMISSIONS.estateSettings],
                               ] as const
                             ).map(([path, Page, permission]) => (
                               <Route

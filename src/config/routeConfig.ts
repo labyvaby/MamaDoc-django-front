@@ -254,6 +254,24 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.RESIDENT_APP_VIEW],
   },
 
+  // Настройки застройщика: роли и права, справочники, интеграции и 1С, аудит (integrations)
+  {
+    path: '/company/roles',
+    requiredPermissions: [PERMISSIONS.INTEGRATIONS_VIEW],
+  },
+  {
+    path: '/company/dictionaries',
+    requiredPermissions: [PERMISSIONS.INTEGRATIONS_VIEW],
+  },
+  {
+    path: '/company/integrations',
+    requiredPermissions: [PERMISSIONS.INTEGRATIONS_VIEW],
+  },
+  {
+    path: '/company/audit',
+    requiredPermissions: [PERMISSIONS.INTEGRATIONS_VIEW],
+  },
+
   // Сметы, снабжение, склад застройщика (supply)
   {
     path: '/supply/estimates',
