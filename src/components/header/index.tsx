@@ -33,6 +33,7 @@ import { UserAvatar } from "../ui";
 import { subtleBg } from "../../theme";
 import { InstallAppButton } from "../../pwa";
 import SetPasswordButton from "./SetPasswordButton";
+import RolePreviewSwitcher from "./RolePreviewSwitcher";
 
 /** Строка-инфо в стандартном стиле: плиточная иконка + подпись/значение. */
 const ProfileInfoRow: React.FC<{
@@ -250,6 +251,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
           spacing={{ xs: 0.5, sm: 1 }}
           sx={{ ml: "auto", justifySelf: "end", minWidth: 0 }}
         >
+          <RolePreviewSwitcher />
           <IconButton
             color="inherit"
             onClick={() => {

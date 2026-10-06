@@ -122,7 +122,27 @@ export type MeResponse = {
    *  суперпользователя может быть уже enabledModules (он видит всё). Старый бэк
    *  поле не шлёт. */
   organizationModules?: string[];
+  /** The original account may select a session-only organization role. */
+  canPreviewRoles?: boolean;
+  /** Effective role during a preview; null restores the account's rights. */
+  rolePreview?: RbacRole;
 };
+
+export type RolePreviewOptions = { roles: NonNullable<RbacRole>[]; csrfToken: string };
+
+export function getRolePreviewOptions(): Promise<RolePreviewOptions> {
+  return apiRequest<RolePreviewOptions>("/auth/role-preview/");
+}
+
+export async function setRolePreview(roleId: number | null): Promise<MeResponse> {
+  // The cookie is HttpOnly; GET returns a masked CSRF token and also
+  // allows a revoked administrator to exit an existing preview.
+  const { csrfToken } = await getRolePreviewOptions();
+  return apiRequest<MeResponse>("/auth/role-preview/", {
+    method: "POST", body: { roleId },
+    headers: { "X-CSRFToken": csrfToken },
+  });
+}
 
 /** Payload accepted by POST /api/auth/context/. */
 export type SwitchContextPayload = {
