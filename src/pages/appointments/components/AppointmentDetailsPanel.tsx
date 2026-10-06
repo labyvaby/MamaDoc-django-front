@@ -35,7 +35,6 @@ import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DirectionsWalkOutlined from "@mui/icons-material/DirectionsWalkOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
-import StarOutlineRounded from "@mui/icons-material/StarOutlineRounded";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useNotification } from "@refinedev/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -90,7 +89,6 @@ import AppointmentPriceHistory from "./details/AppointmentPriceHistory";
 import AppointmentPaymentHistory from "./details/AppointmentPaymentHistory";
 import { appointmentNetPaid } from "./paymentCancelGuard";
 import { knownPaymentPhase } from "../../../utility/paymentPhase";
-import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
 
 /** Действие шапки карточки — рисуется кнопкой или пунктом меню. */
 interface HeaderAction {
@@ -394,11 +392,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     [dueDoses],
   );
 
-
-  // Запрос отзыва — статус виден в AppointmentWhenBlock, кнопка живёт в
-  // общем списке действий шапки (см. ниже, actions.push key "review").
-  const review = useAppointmentReview(appt.id);
-
   const pay = payQuery.data;
   const isCancelled =
     appt.status === "canceled" ||
@@ -433,8 +426,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const hasRefund = !!(refundedTotal && refundedTotal !== "0.00" && refundedTotal !== "0");
 
   // Оплату приняли — визит де-факто состоялся: «Подтвердить» и «Пациент здесь»
-  // больше не нужны, а запрос отзыва, наоборот, доступен только с этого
-  // момента (см. actions ниже). Смотрим на деньги,
+  // больше не нужны. Смотрим на деньги,
   // а не на статус приёма: бэк оставляет его scheduled/confirmed и после оплаты.
   // «discounted» без внесённых сумм — скидка 100%, тоже закрытый расчёт.
   const isPaymentAccepted = hasPaid || payStatus === "paid" || payStatus === "discounted";
@@ -787,23 +779,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       label: t("details.edit"),
       icon: <EditOutlined fontSize="small" />,
       onClick: () => onEdit(appt),
-    });
-  }
-
-  // Запросить отзыв — только после принятой оплаты: до расчёта просить отзыв
-  // не о чем. Низкоприоритетное действие, обычно уходит в меню «⋯»;
-  // если запрос уже был, кнопка предлагает переотправить.
-  if (review.showButton && isPaymentAccepted) {
-    actions.push({
-      key: "review",
-      label: review.latest ? "Переотправить отзыв" : "Запросить отзыв",
-      icon: review.isPending ? (
-        <CircularProgress size={14} color="inherit" />
-      ) : (
-        <StarOutlineRounded fontSize="small" />
-      ),
-      disabled: review.isPending,
-      onClick: review.requestReview,
     });
   }
 
