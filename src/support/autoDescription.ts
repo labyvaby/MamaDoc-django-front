@@ -26,6 +26,7 @@ const PAGE_NAMES: [prefix: string, name: string][] = [
   ["/tasks", "Задачи"],
   ["/deals", "Воронка продаж"],
   ["/cashbox", "Касса"],
+  ["/certificates", "Сертификаты"],
   ["/pos/history", "История продаж"],
   ["/pos", "Касса магазина"],
   ["/sales", "Продажи"],

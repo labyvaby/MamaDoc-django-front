@@ -215,6 +215,9 @@ const DiscountField: React.FC<{
   );
 };
 
+/** Что известно о введённом коде до расчёта чека: остаток сертификата или причина отказа. */
+export type CodeInfo = { tone: "ok" | "error"; text: string };
+
 /** Поле-«таблетка» с кнопкой «Применить»: промокод, сертификат. */
 const CodeField: React.FC<{
   label: string;
@@ -223,7 +226,12 @@ const CodeField: React.FC<{
   disabled?: boolean;
   error: string | null;
   onApply: (value: string) => void;
-}> = ({ label, placeholder, applied, disabled, error, onApply }) => {
+  /** Строка под применённым кодом — остаток сертификата или почему он не принят. */
+  info?: CodeInfo | null;
+  infoLoading?: boolean;
+  /** Метка поля для сканера кассы: код со сканера при фокусе здесь идёт в это поле. */
+  scanTarget?: string;
+}> = ({ label, placeholder, applied, disabled, error, onApply, info, infoLoading, scanTarget }) => {
   const c = posColors(useTheme());
   const [input, setInput] = React.useState(applied);
   React.useEffect(() => {
@@ -231,10 +239,19 @@ const CodeField: React.FC<{
   }, [applied]);
   const submit = () => onApply(input.trim());
   return (
-    <Stack gap="6px">
+    <Stack gap="6px" data-pos-scan-target={scanTarget}>
       <Typography sx={{ fontSize: 12, lineHeight: 1.2, textTransform: "uppercase", color: c.textDim }}>{label}</Typography>
       {applied && !error ? (
-        <AppliedChip label={applied} disabled={disabled} onClear={() => onApply("")} />
+        <Stack gap="5px">
+          <AppliedChip label={applied} disabled={disabled} onClear={() => onApply("")} />
+          {infoLoading ? (
+            <Typography sx={{ fontSize: 12, lineHeight: 1.3, color: c.textDim }}>Проверяем сертификат…</Typography>
+          ) : info?.tone === "error" ? (
+            <FieldError text={info.text} />
+          ) : info ? (
+            <Typography sx={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3, color: c.positive }}>{info.text}</Typography>
+          ) : null}
+        </Stack>
       ) : (
         <Stack gap="5px">
           <Stack direction="row" gap="5px">
@@ -324,6 +341,8 @@ export function LivePaymentPanel({
   maxPercent = 100,
   lineDiscounts = [],
   lineDiscountIgnored = false,
+  certificateInfo = null,
+  certificateInfoLoading = false,
 }: {
   actions: Record<string, boolean>;
   /**
@@ -350,6 +369,9 @@ export function LivePaymentPanel({
   lineDiscounts?: Array<{ id: string; name: string; label: string; amount: number }>;
   /** Сервер вернул итог без скидок на позиции (старый бэкенд) — предупреждаем. */
   lineDiscountIgnored?: boolean;
+  /** Остаток применённого сертификата (lookup/) или причина, почему он не принят. */
+  certificateInfo?: CodeInfo | null;
+  certificateInfoLoading?: boolean;
 }) {
   const c = posColors(useTheme());
   const [kindsOpen, setKindsOpen] = React.useState(false);
@@ -627,6 +649,9 @@ export function LivePaymentPanel({
             disabled={locked}
             error={certificateError}
             onApply={(certificateCode) => patch({ certificateCode })}
+            info={certificateInfo}
+            infoLoading={certificateInfoLoading}
+            scanTarget="certificate"
           />
         )}
       </Stack>

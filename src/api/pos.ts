@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { GiftCertificateDetail, GiftCertificateStatus } from "./promotions";
 
 export type PosScope = { organizationId: number; branchId: number };
 export type PosProduct = {
@@ -234,3 +235,60 @@ export const getPosHistorySummary = (
   signal?: AbortSignal,
 ) =>
   posRequest<PosHistorySummary>(scope, withQuery("history/summary/", historyQuery(params)), { signal });
+
+// ── Gift certificates at the till (docs/certificates-contract.md §2) ──────────
+
+/** GET workspace/certificates/lookup/?code= — balance and whether it can pay now. */
+export type PosCertificateLookup = {
+  id: number;
+  code: string;
+  nominal: string;
+  balance: string;
+  status: GiftCertificateStatus | string;
+  usable: boolean;
+  /** Why it cannot pay (Russian, ready to show); empty when usable. */
+  reason: string;
+  /** Start of the day after the last valid day; null — no expiry. */
+  expiresAt: string | null;
+  soldBranchName: string;
+};
+
+/** POST workspace/certificates/sell/ body. Payments must add up to the nominal exactly. */
+export type PosCertificateSale = {
+  code: string;
+  nominal: string;
+  payments: PosTender[];
+  /** Last valid day, YYYY-MM-DD. Omitted — the organization's default. */
+  expiresOn?: string;
+  noExpiry?: boolean;
+  clientId?: number;
+  recipientName: string;
+  recipientPhone: string;
+  comment: string;
+  branchId: number;
+};
+
+/** 404 means the number is free — the sell dialog relies on that. */
+export const lookupPosCertificate = (scope: PosScope, code: string, signal?: AbortSignal) =>
+  posRequest<PosCertificateLookup>(
+    scope,
+    `certificates/lookup/?code=${encodeURIComponent(code.trim())}`,
+    { signal },
+  );
+
+export const sellPosCertificate = (
+  scope: PosScope,
+  body: PosCertificateSale,
+  idempotencyKey: string,
+) =>
+  apiRequest<GiftCertificateDetail>(
+    `/v2/pos/workspace/certificates/sell/?branchId=${scope.branchId}`,
+    {
+      method: "POST",
+      body,
+      headers: {
+        "X-Organization-Id": String(scope.organizationId),
+        "Idempotency-Key": idempotencyKey,
+      },
+    },
+  );

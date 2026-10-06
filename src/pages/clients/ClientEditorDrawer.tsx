@@ -51,6 +51,8 @@ type Props = {
   initialQuery?: string;
   showPhoto?: boolean;
   statuses: DjangoClientStatus[];
+  /** Raise the drawer above an open Dialog (a Drawer's layer is below a Dialog's). */
+  zIndex?: number;
 };
 
 type Draft = {
@@ -130,7 +132,7 @@ function toDraft(client: DjangoClient | null, initialQuery = ""): Draft {
   };
 }
 
-export default function ClientEditorDrawer({ open, organizationId, client, onClose, onSaved, onCreate, initialQuery = "", showPhoto = true, statuses }: Props) {
+export default function ClientEditorDrawer({ open, organizationId, client, onClose, onSaved, onCreate, initialQuery = "", showPhoto = true, statuses, zIndex }: Props) {
   const [draft, setDraft] = React.useState<Draft>(() => toDraft(client, initialQuery));
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -236,6 +238,7 @@ export default function ClientEditorDrawer({ open, organizationId, client, onClo
       anchor="right"
       open={open}
       onClose={busy ? undefined : onClose}
+      sx={zIndex != null ? { zIndex } : undefined}
       PaperProps={{
         sx: {
           width: { xs: 320, sm: 480, md: 520 },

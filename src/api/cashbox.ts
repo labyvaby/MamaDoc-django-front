@@ -52,11 +52,36 @@ export interface CashlessMethodBreakdownRow {
    * товаров» в кассе показывается без разреза.
    */
   salesIncome?: string;
+  /**
+   * Продано подарочных сертификатов через этот терминал и возвращено при их
+   * аннулировании. Не входят в `income`/`salesIncome`: аванс, не выручка
+   * (docs/certificates-contract.md §4). Нет у старого бэка.
+   */
+  certificateIncome?: string;
+  certificateRefunds?: string;
   /** Операции всех видов: оплаты + возвраты + расходы + закупки. */
   count: number;
 }
 
-export interface CashboxSummary {
+/**
+ * Продажа подарочных сертификатов в сводке кассы и смены. Деньги за карту —
+ * аванс: двигают ящик и безнал (бэк включает их в `netCashFlow` и
+ * `expectedCash`), но не входят в выручку (`grossIncome`, `salesTotal`).
+ * Все поля необязательны — старый бэк их не отдаёт.
+ */
+export interface CertificateCashFields {
+  certificateCashIncome?: string;
+  certificateCardIncome?: string;
+  /** Возвращено из кассы при аннулировании сертификата. */
+  certificateCashRefunds?: string;
+  certificateCardRefunds?: string;
+  /** Итог блока: приход − возвраты. */
+  certificateTotal?: string;
+  certificateCount?: number;
+  certificateRefundCount?: number;
+}
+
+export interface CashboxSummary extends CertificateCashFields {
   dateFrom: string;
   dateTo: string;
   organizationId: number | null;
@@ -79,7 +104,7 @@ export interface CashboxSummary {
   cashExpenses: string;
   cardExpenses: string;
   totalExpenses: string;
-  /** netIncome + salesTotal − totalExpenses − supplyTotal */
+  /** netIncome + salesTotal + certificateTotal − totalExpenses − supplyTotal */
   netCashFlow: string;
   expenseCount: number;
   // Продажи товаров (приход кассы)
@@ -137,6 +162,15 @@ export interface CashboxEntry {
   isPrepayment?: boolean;
   /** Current date of the appointment the prepayment is attached to. */
   targetAppointmentDate?: string | null;
+  /**
+   * Откуда операция: приём, старая продажа склада, чек кассы магазина или
+   * `certificate` — продажа подарочного сертификата (`sale`) либо возврат
+   * денег при его аннулировании (`refund`, причина — в `reason`). У разных
+   * источников id могут совпасть — ключ строки строится и по нему.
+   */
+  source?: "certificate" | string;
+  certificateId?: number | null;
+  certificateCode?: string | null;
 }
 
 export interface CashboxEntriesResponse {

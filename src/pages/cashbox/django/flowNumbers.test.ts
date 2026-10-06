@@ -294,6 +294,54 @@ describe("cashFlowNumbers — наличные", () => {
   });
 });
 
+describe("подарочные сертификаты — касса, но не выручка", () => {
+  it("без продаж сертификатов строки нет", () => {
+    const { breakdown } = cardFlowNumbers(summary({ cardIncome: "1000.00" }));
+    expect(breakdown.some((r) => r.key === "certificate")).toBe(false);
+  });
+
+  it("безнал: нетто-строка с разрезом по терминалам и приход с ней", () => {
+    const { breakdown, inflow } = cardFlowNumbers(
+      summary({
+        cardIncome: "1000.00",
+        certificateCardIncome: "5000.00",
+        certificateCardRefunds: "2000.00",
+        byCashlessMethod: [
+          {
+            cashlessMethodId: 4,
+            cashlessMethodName: "Терминал 1",
+            income: "1000.00",
+            refunds: "0.00",
+            expenses: "0.00",
+            supplyExpenses: "0.00",
+            certificateIncome: "5000.00",
+            certificateRefunds: "2000.00",
+            count: 3,
+          },
+        ],
+      }),
+    );
+    const certificate = row(breakdown, "certificate");
+    expect(certificate).toMatchObject({ amount: 3000, direction: 1 });
+    expect(certificate.hint).toMatch(/не выручка/i);
+    expect(certificate.children).toEqual([
+      expect.objectContaining({ label: "Терминал 1", amount: 3000, note: "продано 5 000 · возврат −2 000" }),
+    ]);
+    expect(inflow).toBe(4000);
+  });
+
+  it("наличные: продажа сертификата входит в остаток ящика", () => {
+    const s = summary({ cashIncome: "1000.00", certificateCashIncome: "3000.00", certificateCashRefunds: "500.00" });
+    expect(cashNet(s)).toBe(3500);
+    const { breakdown, inflow } = cashFlowNumbers(s);
+    expect(inflow).toBe(3500);
+    expect(row(breakdown, "certificate").children?.map((r) => r.label)).toEqual([
+      "Продано",
+      "Возвращено при аннулировании",
+    ]);
+  });
+});
+
 describe("cashNet — остаток по учёту", () => {
   it("возвраты, расходы и закупки уменьшают остаток", () => {
     expect(
