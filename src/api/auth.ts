@@ -128,23 +128,19 @@ export type MeResponse = {
   rolePreview?: RbacRole;
 };
 
-export type RolePreviewOptions = { roles: NonNullable<RbacRole>[] };
+export type RolePreviewOptions = { roles: NonNullable<RbacRole>[]; csrfToken: string };
 
 export function getRolePreviewOptions(): Promise<RolePreviewOptions> {
   return apiRequest<RolePreviewOptions>("/auth/role-preview/");
 }
 
 export async function setRolePreview(roleId: number | null): Promise<MeResponse> {
-  const csrfToken = () => document.cookie.split("; ").find((item) => item.startsWith("csrftoken="))?.slice(10);
-  if (!csrfToken()) {
-    // GET also issues the CSRF cookie; a revoked admin may still exit.
-    await getRolePreviewOptions().catch((error) => {
-      if (roleId !== null) throw error;
-    });
-  }
+  // The cookie is HttpOnly; GET returns a masked CSRF token and also
+  // allows a revoked administrator to exit an existing preview.
+  const { csrfToken } = await getRolePreviewOptions();
   return apiRequest<MeResponse>("/auth/role-preview/", {
     method: "POST", body: { roleId },
-    headers: { "X-CSRFToken": decodeURIComponent(csrfToken() ?? "") },
+    headers: { "X-CSRFToken": csrfToken },
   });
 }
 
