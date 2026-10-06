@@ -127,6 +127,7 @@ const SupplyWarehousePage = lazy(() => import("./pages/construction/WarehousePag
 const PersonnelStaffPage = lazy(() => import("./pages/personnel/StaffPage"));
 const PersonnelTimesheetPage = lazy(() => import("./pages/personnel/TimesheetPage"));
 const PersonnelPayrollPage = lazy(() => import("./pages/personnel/PayrollPage"));
+const PersonnelAcsPage = lazy(() => import("./pages/personnel/AcsPage"));
 const PaycalPage = lazy(() => import("./pages/realty-finance/PaycalPage"));
 const BudgetPage = lazy(() => import("./pages/realty-finance/BudgetPage"));
 const ReceivablesPage = lazy(() => import("./pages/realty-finance/ReceivablesPage"));
@@ -1432,6 +1433,7 @@ function App() {
                                 ["personnel/staff", PersonnelStaffPage, PAGE_PERMISSIONS.personnel],
                                 ["personnel/timesheet", PersonnelTimesheetPage, PAGE_PERMISSIONS.personnel],
                                 ["personnel/payroll", PersonnelPayrollPage, PAGE_PERMISSIONS.estatePayroll],
+                                ["personnel/acs", PersonnelAcsPage, PAGE_PERMISSIONS.attendance],
                               ] as const
                             ).map(([path, Page, permission]) => (
                               <Route

@@ -225,6 +225,10 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     path: '/personnel/payroll',
     requiredPermissions: [PERMISSIONS.SALARY_VIEW],
   },
+  {
+    path: '/personnel/acs',
+    requiredPermissions: ['attendance.view'],
+  },
 
   // Сметы, снабжение, склад застройщика (supply)
   {

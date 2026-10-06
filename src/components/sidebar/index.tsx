@@ -60,6 +60,7 @@ import EngineeringOutlined from "@mui/icons-material/EngineeringOutlined";
 import ReportProblemOutlined from "@mui/icons-material/ReportProblemOutlined";
 import CalculateOutlined from "@mui/icons-material/CalculateOutlined";
 import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
+import SensorDoorOutlined from "@mui/icons-material/SensorDoorOutlined";
 import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
@@ -99,6 +100,7 @@ import { getCashForecast, getDebtSummary, treasuryKeys } from "../../api/treasur
 import { constructionKeys, getActsSummary, getDefectsSummary, getStages } from "../../api/construction";
 import { getStockSummary, getSupplySummary, supplyKeys } from "../../api/supply";
 import { hasPendingPayroll, payrollKeys } from "../../api/salaryPayroll";
+import { acsKeys, getMyShift } from "../../api/acs";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -476,6 +478,8 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canStaff = can(PAGE_PERMISSIONS.personnel) && seen("staff");
   const canTimesheet = can(PAGE_PERMISSIONS.personnel) && seen("timesheet");
   const canPayroll = can(PAGE_PERMISSIONS.estatePayroll) && seen("payroll");
+  // СКУД AIVIO (гайд frontend-acs §2): attendance.view, пункт — по матрице (canSee.acs).
+  const canAcs = can(PAGE_PERMISSIONS.attendance) && estateNav != null && seen("acs");
   const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
@@ -554,6 +558,15 @@ const RealEstateSidebarMenu: React.FC = () => {
     staleTime: 5 * 60_000,
     retry: false,
   }).data?.lowCount;
+  // «●» у «СКУД» — моя смена идёт (гайд frontend-acs §4).
+  const shiftActive =
+    useQuery({
+      queryKey: acsKeys.shift(realtyScope),
+      queryFn: ({ signal }) => getMyShift(realtyScope, signal),
+      enabled: canAcs && realtyScope.orgReady !== false,
+      staleTime: 5 * 60_000,
+      retry: false,
+    }).data?.status === "active";
   // «!» у «Зарплаты» — есть рассчитанная или утверждённая, но не выплаченная ведомость (гайд §3).
   const payrollPending = useQuery({
     queryKey: payrollKeys.pending(realtyScope),
@@ -635,7 +648,7 @@ const RealEstateSidebarMenu: React.FC = () => {
       )}
       {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
 
-      {(canStaff || canTimesheet || canPayroll || canEmployees || canMotivation) && sectionLabel("Персонал")}
+      {(canStaff || canTimesheet || canPayroll || canAcs || canEmployees || canMotivation) && sectionLabel("Персонал")}
       {canStaff ? (
         <SidebarMenuItem to="/personnel/staff" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
       ) : (
@@ -644,6 +657,7 @@ const RealEstateSidebarMenu: React.FC = () => {
       )}
       {canTimesheet && <SidebarMenuItem to="/personnel/timesheet" icon={<EventNoteOutlined />} label="Табель" collapsed={siderCollapsed} />}
       {canPayroll && <SidebarMenuItem to="/personnel/payroll" icon={<PaidOutlined />} label="Зарплата" collapsed={siderCollapsed} badgeText={payrollPending ? "!" : undefined} badgeColor="warning" />}
+      {canAcs && <SidebarMenuItem to="/personnel/acs" icon={<SensorDoorOutlined />} label="СКУД" collapsed={siderCollapsed} badgeText={shiftActive ? "●" : undefined} badgeColor="primary" />}
       {canMotivation && <SidebarMenuItem to="/realestate/motivation" icon={<EmojiEventsOutlined />} label="Планы и мотивация" collapsed={siderCollapsed} />}
 
       {canSettings && sectionLabel("Компания")}
