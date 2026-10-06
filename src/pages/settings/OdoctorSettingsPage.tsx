@@ -21,6 +21,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
 import { OdoctorBranchLinks } from "./OdoctorBranchLinks";
 import { OdoctorCabinetSection } from "./OdoctorCabinetSection";
+import { OdoctorReconciliationSection } from "./OdoctorReconciliationSection";
 import {
   applyClearPasswordToggle,
   findOdoctorSettingsProblem,
@@ -335,7 +336,8 @@ const OdoctorSettingsPage: React.FC = () => {
               Филиалы идут первыми: без связи филиала сопоставлять врачей
               некуда, и порядок на экране повторяет порядок работы.
             */}
-            <OdoctorBranchLinks organizationId={orgId} disabled={busy} />
+              <OdoctorBranchLinks organizationId={orgId} disabled={busy} />
+              <OdoctorReconciliationSection organizationId={orgId} disabled={busy} />
             <OdoctorCabinetSection organizationId={orgId} disabled={busy} />
           </>
         )}

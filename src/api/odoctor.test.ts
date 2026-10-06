@@ -29,6 +29,8 @@ import {
   odoctorPreviewTotals,
   odoctorLinkBlocker,
   previewClearWarning,
+  getOdoctorReconciliation,
+  startOdoctorReconciliation,
 } from "./odoctor";
 
 /** Ответ GET по контракту payloads.py: значения пароля в нём нет. */
@@ -400,6 +402,24 @@ describe("odoctorSettingsErrorMessage", () => {
 // ── Запрос целиком: что реально уходит на бэк ────────────────────────────────
 
 const fetchMock = vi.fn();
+
+describe("monthly reconciliation requests", () => {
+  it("scopes polling by organization, branch and month and forwards cancellation", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ run: null }));
+    const controller = new AbortController();
+    await getOdoctorReconciliation(13, 2026, 9, 4, controller.signal);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/odoctor/branches/13/reconciliation/?year=2026&month=9&organizationId=4");
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
+  });
+
+  it("manual monthly start sends preview mode without routing identifiers in the body", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ run: null }));
+    await startOdoctorReconciliation({ branchId: 13, organizationId: 4, year: 2026, month: 9, previewOnly: true });
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/odoctor/branches/13/reconciliation/?organizationId=4");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(sentBody()).toEqual({ year: 2026, month: 9, previewOnly: true });
+  });
+});
 
 beforeEach(() => {
   fetchMock.mockReset();
