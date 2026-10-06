@@ -1,0 +1,202 @@
+{
+  "common": {
+    "millions": "{{value}} млн",
+    "billions": "{{value}} млрд",
+    "cancel": "Отмена",
+    "close": "Закрыть",
+    "save": "Сохранить",
+    "failed": "Не удалось выполнить действие",
+    "loadError": "Не удалось загрузить данные",
+    "retry": "Повторить",
+    "required": "Обязательное поле",
+    "number": "Введите число",
+    "amountInvalid": "Введите сумму больше нуля",
+    "ownForces": "Собственные силы",
+    "empty": "Пока ничего нет",
+    "emptyFiltered": "Ничего не найдено — измените фильтры",
+    "allProjects": "Все объекты",
+    "project": "Объект",
+    "contractor": "Подрядчик",
+    "history": "История",
+    "openDocument": "Документ ЭДО",
+    "days_one": "{{count}} день",
+    "days_few": "{{count}} дня",
+    "days_many": "{{count}} дней",
+    "days_other": "{{count}} дня",
+    "daysShort": "{{count}} дн."
+  },
+  "schedule": {
+    "title": "Проекты и графики",
+    "subtitle": "Календарный график и готовность объектов",
+    "loadError": "Не удалось загрузить график",
+    "updated": "обновлено {{date}}",
+    "newStage": "Этап",
+    "kpi": {
+      "readiness": "Готовность объекта",
+      "elapsed": "{{pct}}% срока прошло",
+      "active": "Этапов в работе",
+      "activeHint": "{{done}} из {{total}} завершено",
+      "delay": "Отставание",
+      "delayNone": "нет",
+      "delayHint_one": "{{count}} этап",
+      "delayHint_few": "{{count}} этапа",
+      "delayHint_many": "{{count}} этапов",
+      "delayHint_other": "{{count}} этапа",
+      "handover": "До сдачи",
+      "handoverHint": "сдача {{date}}"
+    },
+    "critical": {
+      "title": "Критический путь: «{{stage}}» отстаёт на {{days}}",
+      "contractor": "Подрядчик: {{name}}",
+      "more_one": "и ещё {{count}} этап с отставанием",
+      "more_few": "и ещё {{count}} этапа с отставанием",
+      "more_many": "и ещё {{count}} этапов с отставанием",
+      "more_other": "и ещё {{count}} этапа с отставанием",
+      "open": "Открыть этап",
+      "claim": "Претензия подрядчику"
+    },
+    "tabs": {
+      "gantt": "График",
+      "stages": "Этапы",
+      "overview": "Сводка по объектам"
+    },
+    "gantt": {
+      "stage": "Этап",
+      "today": "сегодня",
+      "forecast": "прогноз до {{date}}",
+      "legend": "Разделы"
+    },
+    "table": {
+      "order": "№",
+      "stage": "Этап",
+      "group": "Раздел",
+      "contractor": "Подрядчик",
+      "dates": "Срок",
+      "progress": "Готовность",
+      "status": "Статус",
+      "delay": "Отставание"
+    },
+    "status": {
+      "planned": "Запланирован",
+      "active": "В работе",
+      "late": "Отставание",
+      "done": "Завершён"
+    },
+    "risks": {
+      "title": "Отставания и риски",
+      "none": "Отставаний нет",
+      "line": "отставание {{days}} · {{progress}}%"
+    },
+    "milestones": {
+      "title": "Ближайшие вехи",
+      "none": "Все этапы завершены",
+      "until": "до {{date}}"
+    },
+    "overview": {
+      "readiness": "Готовность",
+      "elapsed": "срока прошло {{pct}}%",
+      "foreman": "Прораб",
+      "active": "Сейчас",
+      "next": "Следующий этап",
+      "handover": "Сдача по плану",
+      "delay": "Отставание",
+      "open": "График"
+    },
+    "drawer": {
+      "title": "Этап",
+      "group": "Раздел",
+      "contractor": "Подрядчик",
+      "responsible": "Ответственный",
+      "plan": "План",
+      "fact": "Факт",
+      "forecast": "Прогноз завершения",
+      "volume": "Объём",
+      "volumeValue": "{{done}} из {{volume}} {{unit}}",
+      "shift": "Ручной сдвиг",
+      "delay": "Отставание",
+      "acts": "Акты подрядчика",
+      "actsEmpty": "Актов нет",
+      "defects": "Открытые дефекты",
+      "defectsEmpty": "Открытых дефектов нет",
+      "defectPlace": "секция {{section}}, этаж {{floor}}",
+      "progress": "Обновить прогресс",
+      "shiftAction": "Сдвинуть срок",
+      "claim": "Претензия",
+      "act": "Акт работ",
+      "defect": "Дефект",
+      "notFound": "Этап не найден"
+    },
+    "progressDialog": {
+      "title": "Прогресс этапа",
+      "progress": "Готовность, %",
+      "done": "Выполнено, {{unit}}",
+      "doneHint": "Из {{volume}} {{unit}}",
+      "note": "Комментарий",
+      "save": "Сохранить",
+      "saved": "Прогресс обновлён",
+      "range": "От 0 до 100"
+    },
+    "shiftDialog": {
+      "title": "Сдвинуть срок этапа",
+      "days": "На сколько дней",
+      "daysHint": "Отрицательное число — сдвиг раньше",
+      "reason": "Причина",
+      "cascade": "Сдвинуть и следующие этапы",
+      "save": "Сдвинуть",
+      "saved": "Срок сдвинут",
+      "savedCascade_one": "Срок сдвинут, вместе с ним — {{count}} этап",
+      "savedCascade_few": "Срок сдвинут, вместе с ним — {{count}} этапа",
+      "savedCascade_many": "Срок сдвинут, вместе с ним — {{count}} этапов",
+      "savedCascade_other": "Срок сдвинут, вместе с ним — {{count}} этапа",
+      "nonZero": "Введите целое число дней, не ноль"
+    },
+    "claimDialog": {
+      "title": "Претензия подрядчику",
+      "text": "{{contractor}} получит письмо-претензию об отставании по этапу «{{stage}}». Письмо создаётся в ЭДО.",
+      "confirm": "Создать претензию",
+      "created": "Претензия создана в ЭДО"
+    },
+    "form": {
+      "title": "Новый этап · {{project}}",
+      "name": "Название этапа",
+      "group": "Раздел графика",
+      "contractor": "Подрядчик",
+      "start": "Начало",
+      "end": "Окончание",
+      "endBeforeStart": "Окончание раньше начала",
+      "volume": "Объём",
+      "unit": "Ед. изм.",
+      "create": "Добавить этап",
+      "created": "Этап добавлен в график"
+    }
+  },
+  "act": {
+    "formTitle": "Новый акт работ",
+    "contractor": "Подрядчик",
+    "project": "Объект",
+    "period": "Период",
+    "periodHint": "Например: октябрь 2026",
+    "subject": "Предмет (работы)",
+    "amount": "Сумма акта",
+    "create": "Передать на проверку",
+    "created": "Акт создан и передан на проверку"
+  },
+  "defect": {
+    "formTitle": "Новый дефект",
+    "project": "Объект",
+    "title": "Что не так",
+    "category": "Категория",
+    "categoryHint": "Например: Кладка, Остекление, Электрика",
+    "severity": "Критичность",
+    "deadline": "Срок устранения",
+    "contractor": "Подрядчик",
+    "section": "Секция",
+    "floor": "Этаж",
+    "description": "Описание",
+    "create": "Зарегистрировать",
+    "created": "Дефект зарегистрирован",
+    "severity_critical": "Критичный",
+    "severity_major": "Значительный",
+    "severity_minor": "Незначительный"
+  }
+}

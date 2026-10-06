@@ -53,6 +53,7 @@ import AnalyticsOutlined from "@mui/icons-material/AnalyticsOutlined";
 import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import DonutSmallOutlined from "@mui/icons-material/DonutSmallOutlined";
 import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
+import ViewTimelineOutlined from "@mui/icons-material/ViewTimelineOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
@@ -88,6 +89,7 @@ import { useEstateNav } from "../../hooks/useEstateNav";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { getRealtyTasks, realtyTaskKeys } from "../../api/realtyTasks";
 import { getCashForecast, getDebtSummary, treasuryKeys } from "../../api/treasury";
+import { constructionKeys, getStages } from "../../api/construction";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -452,6 +454,9 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canPaycal = canFinance && seen("paycal");
   const canBudget = canFinance && seen("budget");
   const canReceivables = canFinance && seen("receivables");
+  // «Стройка» AIVIO (гайд frontend-construction §1): construction.view / supply.view, пункты — по матрице.
+  const canConstruction = can(PAGE_PERMISSIONS.construction);
+  const canSchedule = canConstruction && seen("construction");
   const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
@@ -491,6 +496,14 @@ const RealEstateSidebarMenu: React.FC = () => {
     staleTime: 5 * 60_000,
     retry: false,
   }).data?.overdueCount;
+  // Бейдж «Проекты и графики» — этапы с отставанием (гайд §3: `/stages/?delayed=true` → длина).
+  const delayedStages = useQuery({
+    queryKey: constructionKeys.stages(realtyScope, null, true),
+    queryFn: ({ signal }) => getStages({ delayed: true }, realtyScope, signal),
+    enabled: canSchedule && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.length;
   const tasksBadgeColor: "error" | "primary" = todayTasks?.some((task) => task.overdue && !task.done) ? "error" : "primary";
 
   const sectionLabel = (text: string) =>
@@ -524,6 +537,11 @@ const RealEstateSidebarMenu: React.FC = () => {
       {canMortgage && <SidebarMenuItem to="/realestate/mortgage" icon={<AccountBalanceOutlined />} label="Ипотека и банки" collapsed={siderCollapsed} />}
       {canPartners && <SidebarMenuItem to="/realestate/partners" icon={<HandshakeOutlined />} label="Риелторы и партнёры" collapsed={siderCollapsed} />}
       {canMarketing && <SidebarMenuItem to="/realestate/marketing" icon={<CampaignOutlined />} label="Маркетинг и ROI" collapsed={siderCollapsed} />}
+
+      {canSchedule && sectionLabel("Стройка")}
+      {canSchedule && (
+        <SidebarMenuItem to="/construction/schedule" icon={<ViewTimelineOutlined />} label="Проекты и графики" collapsed={siderCollapsed} badgeCount={delayedStages ?? 0} badgeColor="error" />
+      )}
 
       {(docsItems.length > 0 || canSalesDocs) && sectionLabel("Документы")}
       {docsItems.map(([screen, to, label, icon]) => (

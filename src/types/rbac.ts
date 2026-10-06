@@ -242,6 +242,14 @@ export const PERMISSIONS = {
   TREASURY_VIEW: 'treasury.view',
   TREASURY_MANAGE: 'treasury.manage',
 
+  // Стройка застройщика (AIVIO, 06.10.2026): графики, подрядчики, стройконтроль — construction.*;
+  // сметы, снабжение, склад — supply.* (согласование заявок и выбор победителя тендера — supply.approve).
+  CONSTRUCTION_VIEW: 'construction.view',
+  CONSTRUCTION_MANAGE: 'construction.manage',
+  SUPPLY_VIEW: 'supply.view',
+  SUPPLY_MANAGE: 'supply.manage',
+  SUPPLY_APPROVE: 'supply.approve',
+
   // ЭДО и документы застройщика (AIVIO, 04.10.2026)
   EDO_VIEW: 'edo.view',
   EDO_MANAGE: 'edo.manage',

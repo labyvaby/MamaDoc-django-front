@@ -53,6 +53,10 @@ export const PAGE_PERMISSIONS = {
   billing: ["treasury.view", "realty.view"],
   // Финансы застройщика (касса, календарь, бюджеты, долги) — /api/v2/treasury/, действия — treasury.manage.
   realtyFinance: "treasury.view",
+  // Стройка застройщика: графики, подрядчики, стройконтроль — /api/v2/construction/, кнопки — construction.manage.
+  construction: "construction.view",
+  // Сметы, снабжение, склад — /api/v2/supply/, кнопки — supply.manage / supply.approve.
+  supply: "supply.view",
   // Рабочий стол застройщика: экран и его панели — estate_dashboard.view,
   // остальные панели бэк режет правами своих модулей сам.
   estateDashboard: "estate_dashboard.view",

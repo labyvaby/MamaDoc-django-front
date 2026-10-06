@@ -118,6 +118,7 @@ const RealtyMarketingPage = lazy(() => import("./pages/realty-sales/MarketingPag
 const RealtyMotivationPage = lazy(() => import("./pages/realty-sales/MotivationPage"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const CashbankPage = lazy(() => import("./pages/realty-finance/CashbankPage"));
+const ConstructionSchedulePage = lazy(() => import("./pages/construction/SchedulePage"));
 const PaycalPage = lazy(() => import("./pages/realty-finance/PaycalPage"));
 const BudgetPage = lazy(() => import("./pages/realty-finance/BudgetPage"));
 const ReceivablesPage = lazy(() => import("./pages/realty-finance/ReceivablesPage"));
@@ -1361,6 +1362,24 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {/* Стройка застройщика (AIVIO) на /api/v2/construction/: графики, подрядчики и акты, стройконтроль. */}
+                            {(
+                              [
+                                ["construction/schedule", ConstructionSchedulePage],
+                              ] as const
+                            ).map(([path, Page]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={PAGE_PERMISSIONS.construction}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
                             {/* Финансы застройщика (AIVIO) на /api/v2/treasury/: касса и банк, платёжный календарь, бюджеты, долги. */}
                             {(
                               [
