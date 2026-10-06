@@ -8,176 +8,150 @@ import {
 import { useChangesSocket } from "./useChangesSocket";
 
 type Options = {
-  /** Узкий фильтр по филиалу (как у списка приёмов). */
   branchId?: number;
-  /** Пауза фонового чека (например, открыт дровер создания/редактирования). */
-  paused?: boolean;
-  /** Вызывается ОДИН РАЗ, когда обнаружено изменение приёмов. */
+  organizationId?: number;
+  enabled?: boolean;
   onChange: () => void;
 };
 
-/**
- * Склейка WS-событий: бэк на одно действие может прислать несколько сообщений
- * подряд (например, оплата = update приёма + платёж) — рефетчим один раз.
- */
 const WS_EVENT_DEBOUNCE_MS = 200;
+const HEARTBEAT_REQUEST_TIMEOUT_MS = 15_000;
 const HEARTBEAT_ERROR_MAX_INTERVAL_MS = 60_000;
 
 /**
- * Синхронизация календаря приёмов: WebSocket как мгновенный триггер +
- * лёгкий timestamp-polling как страховка.
- *
- * Real-time: сокет `/ws/changes/` (см. useChangesSocket) присылает hint при
- * изменении приёмов/оплат своего филиала → перечитываем базу last-update и
- * зовём onChange() сразу, не дожидаясь тика polling.
- *
- * Страховка (WebSocket может тихо отвалиться — wifi, сон ноутбука, прокси, —
- * а это медцентр: надёжность важнее скорости): каждые intervalMs запрашиваем
- * дешёвый `last-update` (max updated_at). Пока сокет жив — редкий тик
- * (DJANGO_REALTIME_FALLBACK_INTERVAL_MS); сокет отвалился или недоступен
- * (нет филиала, 4401) — прежний частый (DJANGO_HEARTBEAT_INTERVAL_MS).
- * Базовый таймстамп фиксируется при первом ответе БЕЗ вызова onChange
- * (открытие страницы не должно дёргать refetch). Дальше, если таймстамп
- * сдвинулся — значит кто-то в клинике добавил/изменил приём — вызывает
- * onChange() ровно один раз (там делается единичный refetch тяжёлого списка).
- *
- * Чек не идёт когда `paused` (открыт дровер) или вкладка скрыта; WS-события в
- * это время тоже не рефетчат (не мешаем вводу). База при этом СОХРАНЯЕТСЯ:
- * первый чек после снятия паузы/возврата на вкладку сравнивает с базой до
- * паузы, поэтому изменения, случившиеся пока дровер был открыт, подтягиваются
- * сразу после его закрытия, а не теряются.
+ * WebSocket hints trigger a refresh; MAX(updated_at)+COUNT polling covers lost
+ * hints. Hidden-tab events stay pending until the tab becomes visible.
+ * Forms do not pause synchronization. One heartbeat runs at a time, with a
+ * deadline so a stalled request cannot stop synchronization indefinitely.
  */
-export function useAppointmentsAutoSync({ branchId, paused, onChange }: Options): void {
-  const lastSeenRef = React.useRef<string | null>(null);
-  // onChange держим в ref, чтобы интервал не пересоздавался на каждый рендер.
+export function useAppointmentsAutoSync({
+  branchId,
+  organizationId,
+  enabled = true,
+  onChange,
+}: Options): void {
+  // undefined is an unread baseline; null is a valid empty collection token.
+  const lastSeenRef = React.useRef<string | null | undefined>(undefined);
+  const pendingRef = React.useRef(false);
   const onChangeRef = React.useRef(onChange);
   onChangeRef.current = onChange;
-
-  // Мост «сокет → активный polling-эффект»: эффект ниже кладёт сюда обработчик
-  // на время своей жизни. Пока paused / нет эффекта — здесь null, события
-  // игнорируются (их подхватит немедленный чек при снятии паузы: сравнение с
-  // базой до паузы обнаружит сдвиг таймстампа).
   const wsEventRef = React.useRef<(() => void) | null>(null);
+
+  React.useEffect(() => {
+    lastSeenRef.current = undefined;
+    pendingRef.current = false;
+  }, [branchId, organizationId]);
 
   const wsConnected = useChangesSocket({
     branchId,
+    organizationId,
+    enabled: enabled && branchId != null,
     onMessage: (msg) => {
-      // Оплаты и возвраты приходят тоже как entity="appointment" (платёж
-      // меняет кэш-поля приёма) — отдельной ветки для них не нужно.
-      // Заключения (entity="conclusion") тоже меняют экраны приёмов:
-      // иконка печати и статус строки услуги живут в данных списка.
       if (msg.entity === "appointment" || msg.entity === "conclusion") {
+        pendingRef.current = true;
         wsEventRef.current?.();
       }
     },
   });
 
-  // База валидна только в рамках одного филиала: max(updated_at) другого
-  // филиала — другое число, сравнение с ним дало бы ложный onChange.
   React.useEffect(() => {
-    lastSeenRef.current = null;
-  }, [branchId]);
-
-  React.useEffect(() => {
-    if (paused) return;
+    if (!enabled) return;
 
     let cancelled = false;
-    const controller = new AbortController();
-
     let inFlight = false;
     let consecutiveFailures = 0;
+    const controller = new AbortController();
+    let wsDebounce: number | undefined;
+    let heartbeatTimer: number | undefined;
 
-    const check = async () => {
-      if (document.hidden) return; // вкладка не активна — не дёргаем сеть
-      // Не накладываем heartbeat-запросы друг на друга. При медленном/лежащем
-      // API старый setInterval мог создавать всё новые fetch до завершения
-      // предыдущих, превращая временный сбой в лавину 429/500.
-      if (inFlight) return;
+    const readLatest = async () => {
+      const requestController = new AbortController();
+      let deadline: number | undefined;
+      let abortRequest: () => void = () => {};
+      const bounded = new Promise<never>((_, reject) => {
+        abortRequest = () => {
+          requestController.abort();
+          reject(new DOMException("Synchronization stopped", "AbortError"));
+        };
+        controller.signal.addEventListener("abort", abortRequest, { once: true });
+        deadline = window.setTimeout(() => {
+          // Reject before aborting fetch so a deadline counts as a failure.
+          reject(new Error("Appointment heartbeat timed out"));
+          requestController.abort();
+        }, HEARTBEAT_REQUEST_TIMEOUT_MS);
+      });
+      try {
+        return await Promise.race([
+          getAppointmentsLastUpdate(branchId, requestController.signal, organizationId),
+          bounded,
+        ]);
+      } finally {
+        window.clearTimeout(deadline);
+        controller.signal.removeEventListener("abort", abortRequest);
+      }
+    };
+
+    const flushEvents = () => {
+      if (cancelled || document.hidden || !pendingRef.current) return;
+      pendingRef.current = false;
+      // A committed change must refresh the screen even if last-update hangs.
+      onChangeRef.current();
+      void check(true);
+    };
+
+    const scheduleEventCheck = () => {
+      if (cancelled || document.hidden) return;
+      window.clearTimeout(wsDebounce);
+      wsDebounce = window.setTimeout(flushEvents, WS_EVENT_DEBOUNCE_MS);
+    };
+
+    const check = async (alreadyRefreshed = false) => {
+      if (cancelled || document.hidden || inFlight) return;
       inFlight = true;
       try {
-        const latest = await getAppointmentsLastUpdate(branchId, controller.signal);
+        const latest = await readLatest();
         if (cancelled) return;
+        const changed = lastSeenRef.current === undefined
+          ? consecutiveFailures > 0
+          : latest !== lastSeenRef.current;
         consecutiveFailures = 0;
-        // Первый успешный ответ — только запоминаем базу, без refetch.
-        if (lastSeenRef.current === null) {
-          lastSeenRef.current = latest;
-          return;
-        }
-        if (latest !== lastSeenRef.current) {
-          lastSeenRef.current = latest;
-          onChangeRef.current();
-        }
+        lastSeenRef.current = latest;
+        if (changed && !alreadyRefreshed) onChangeRef.current();
       } catch (err) {
-        if (!isAbortError(err)) {
-          // Heartbeat — best-effort. После ошибки увеличиваем задержку, чтобы
-          // недоступный сервер или rate limiter успели восстановиться.
-          consecutiveFailures += 1;
-        }
+        if (cancelled) return;
+        if (!isAbortError(err)) consecutiveFailures += 1;
       } finally {
         inFlight = false;
       }
     };
+    wsEventRef.current = scheduleEventCheck;
+    // Replaying a hidden event also works when the connection changes state.
+    if (pendingRef.current) flushEvents();
 
-    // Реакция на WS-событие. onChange зовём БЕЗУСЛОВНО (не сравнивая базу):
-    // при удалении приёма max(updated_at) может не сдвинуться, а событие —
-    // доверенный сигнал. Но сперва перечитываем базу, чтобы следующий тик
-    // polling не среагировал на то же изменение вторым refetch. Порядок
-    // важен: база фиксируется ДО onChange — если между ними успеет прилететь
-    // ещё одно изменение, его таймстамп будет отличаться от базы и polling
-    // его не потеряет.
-    const forcedCheck = async () => {
-      try {
-        const latest = await getAppointmentsLastUpdate(branchId, controller.signal);
-        if (cancelled) return;
-        lastSeenRef.current = latest;
-      } catch (err) {
-        if (isAbortError(err)) return;
-        // База не перечиталась — рефетчим всё равно; максимум один
-        // дублирующий onChange от следующего тика страховки.
-      }
-      if (!cancelled) onChangeRef.current();
-    };
-
-    let wsDebounce: number | undefined;
-    wsEventRef.current = () => {
-      if (document.hidden) return; // подхватится чеком при возврате на вкладку
-      window.clearTimeout(wsDebounce);
-      wsDebounce = window.setTimeout(() => void forcedCheck(), WS_EVENT_DEBOUNCE_MS);
-    };
-
-    // Мгновенный чек при (пере)запуске. Базу НЕ сбрасываем: после снятия
-    // паузы (закрыт дровер) сравниваем с базой до паузы — так не теряются
-    // изменения коллег, случившиеся пока дровер был открыт. Сброс базы
-    // делается только при смене филиала (эффект выше).
     const baseIntervalMs = wsConnected
       ? DJANGO_REALTIME_FALLBACK_INTERVAL_MS
       : DJANGO_HEARTBEAT_INTERVAL_MS;
-    let heartbeatTimer: number | undefined;
     const scheduleNextCheck = () => {
       if (cancelled) return;
-      const errorBackoff = Math.min(
+      const interval = Math.min(
         baseIntervalMs * 2 ** Math.min(consecutiveFailures, 3),
         HEARTBEAT_ERROR_MAX_INTERVAL_MS,
       );
       heartbeatTimer = window.setTimeout(async () => {
         await check();
         scheduleNextCheck();
-      }, errorBackoff);
+      }, interval);
     };
-
-    // setTimeout запускается только после завершения предыдущего запроса: даже
-    // при зависшем API в каждой вкладке существует максимум один heartbeat.
     void check().finally(scheduleNextCheck);
 
-    // Мгновенная проверка при возврате на вкладку/окно — иначе обновление ждало
-    // бы следующего тика интервала. Главный кейс: работа в двух окнах
-    // (регистратор создал приём → врач переключился на свой кабинет и сразу
-    // видит его, не дожидаясь следующего тика и не обновляя страницу вручную).
-    const onFocus = () => {
-      if (!document.hidden) void check();
+    const onWake = () => {
+      if (document.hidden) return;
+      if (pendingRef.current) flushEvents();
+      else void check();
     };
-    document.addEventListener("visibilitychange", onFocus);
-    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("focus", onWake);
+    window.addEventListener("online", onWake);
 
     return () => {
       cancelled = true;
@@ -185,8 +159,9 @@ export function useAppointmentsAutoSync({ branchId, paused, onChange }: Options)
       wsEventRef.current = null;
       window.clearTimeout(wsDebounce);
       window.clearTimeout(heartbeatTimer);
-      document.removeEventListener("visibilitychange", onFocus);
-      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("focus", onWake);
+      window.removeEventListener("online", onWake);
     };
-  }, [branchId, paused, wsConnected]);
+  }, [branchId, organizationId, enabled, wsConnected]);
 }

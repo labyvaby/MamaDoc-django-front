@@ -26,6 +26,8 @@ type Options = {
    * события филиала скоупятся на момент подключения.
    */
   branchId?: number;
+  /** Reconnect when the active organization changes, including org-wide views. */
+  organizationId?: number;
   /**
    * Открывать сокет и без филиала. С 19.09.2026 бэк подписывает сокет и на
    * группу организации (по активному членству), так что доска сделок в режиме
@@ -56,7 +58,7 @@ const MAX_RETRY_EXPONENT = 6;
  * @returns true, пока соединение открыто (вызывающий код по этому флагу
  * замедляет страховочный polling).
  */
-export function useChangesSocket({ branchId, enabled, onMessage }: Options): boolean {
+export function useChangesSocket({ branchId, organizationId, enabled, onMessage }: Options): boolean {
   const active = enabled ?? branchId != null;
   const [connected, setConnected] = React.useState(false);
   // Колбэк в ref — чтобы сокет не переоткрывался на каждый рендер страницы.
@@ -137,7 +139,7 @@ export function useChangesSocket({ branchId, enabled, onMessage }: Options): boo
       // Обработчик уже видит disposed=true и не станет переподключаться.
       ws?.close();
     };
-  }, [branchId, active]);
+  }, [branchId, organizationId, active]);
 
   return connected;
 }

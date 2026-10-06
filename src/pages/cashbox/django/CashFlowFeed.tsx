@@ -31,7 +31,7 @@ import {
   type CashboxFilters,
   type CashboxMethod,
 } from "../../../api/cashbox";
-import { djangoQueryKeys } from "../../../api/queryKeys";
+import { djangoQueryKeys, DJANGO_DETAIL_STALE_TIME_MS } from "../../../api/queryKeys";
 import { formatSom } from "./money";
 import { tt } from "../../../i18n/t";
 import { CASHLESS_METHODS_ENABLED } from "../../../api/cashlessMethods";
@@ -471,6 +471,9 @@ const CashFlowFeed: React.FC<Props> = ({
     queryFn: ({ signal }) => getCashboxEntries(filters, signal),
     enabled,
     placeholderData: keepPreviousData,
+    staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+    refetchInterval: enabled ? 60_000 : false,
+    refetchOnWindowFocus: "always",
   });
 
   const resetPage = () => setPage(1);

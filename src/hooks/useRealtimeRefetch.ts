@@ -8,6 +8,8 @@ type Options = {
   entities: readonly string[];
   /** Вызывается один раз на пачку событий (склейка бурста). */
   onEvent: () => void;
+  /** Gate the subscription while context/permissions are still loading. */
+  enabled?: boolean;
 };
 
 /**
@@ -29,8 +31,8 @@ const WS_EVENT_DEBOUNCE_MS = 300;
  *
  * @returns true, пока сокет жив (можно использовать для индикации).
  */
-export function useRealtimeRefetch({ entities, onEvent }: Options): boolean {
-  const { activeBranch } = usePermissions();
+export function useRealtimeRefetch({ entities, onEvent, enabled = true }: Options): boolean {
+  const { activeBranch, activeOrganization } = usePermissions();
 
   // Колбэк и список сущностей в ref — чтобы сокет не переоткрывался на
   // каждый рендер страницы (identity этих значений меняется постоянно).
@@ -50,6 +52,8 @@ export function useRealtimeRefetch({ entities, onEvent }: Options): boolean {
 
   const connected = useChangesSocket({
     branchId: activeBranch?.id,
+    organizationId: activeOrganization?.id,
+    enabled: enabled && activeBranch != null,
     onMessage: (msg: ChangeMessage) => {
       if (!entitiesRef.current.includes(msg.entity)) return;
       if (document.hidden) {
