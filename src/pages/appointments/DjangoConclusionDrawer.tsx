@@ -54,6 +54,7 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import { useNotification } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -79,6 +80,7 @@ import { formatPatientAge } from "../../utility/age";
 import { subtleBg } from "../../theme";
 import { ConclusionHistory } from "../../components/conclusion-forms/ConclusionHistory";
 import { ConclusionFormReadView } from "../../components/conclusion-forms/ConclusionFormReadView";
+import { PatientConclusionHistoryPanel } from "../../components/conclusion-forms/PatientConclusionHistoryPanel";
 import { buildConclusionPrintParts, formatDiagnoses } from "../../utility/conclusionPrintParts";
 import {
   AiAssistHeaderButton,
@@ -405,6 +407,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
   const readOnly = !canEdit;
+  const canViewPatientHistory = useCan("medical.conclusions.view");
+  const [patientHistoryOpen, setPatientHistoryOpen] = React.useState(false);
+  const historySide = !inline && !isMobile;
+  const showHistorySide = patientHistoryOpen && historySide;
+  const showHistoryTab = patientHistoryOpen && !historySide;
+  React.useEffect(() => {
+    setPatientHistoryOpen(false);
+  }, [open, appointmentId, canViewPatientHistory]);
 
   // ── лист рядом с формой (редизайн 28.09.2026) ─────────────────────────────
   // Справа от формы лист встаёт только в дровере на широком экране. В колонке
@@ -415,9 +425,10 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [sheetPinned, setSheetPinned] = React.useState(readSheetPref);
   const [sheetTab, setSheetTab] = React.useState(false);
   // Лист есть и в просмотре: там это и есть документ, каким его напечатают.
-  const showSheetSide = sheetSide && sheetPinned;
-  const showSheetTab = !sheetSide && sheetTab;
+  const showSheetSide = sheetSide && sheetPinned && !patientHistoryOpen;
+  const showSheetTab = !sheetSide && sheetTab && !patientHistoryOpen;
   const toggleSheet = () => {
+    setPatientHistoryOpen(false);
     if (sheetSide) {
       setSheetPinned((prev) => {
         writeSheetPref(!prev);
@@ -2446,7 +2457,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
    * по привычке посреди текста.
    */
   const handleHotkeys = (e: React.KeyboardEvent) => {
-    if (readOnly || saving || !(e.ctrlKey || e.metaKey)) return;
+    if (readOnly || saving || showHistoryTab || !(e.ctrlKey || e.metaKey)) return;
     if (e.key === "Enter") {
       e.preventDefault();
       requestSave("completed", false);
@@ -2586,6 +2597,16 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
     />
   );
 
+  const historyToggleNode = canViewPatientHistory && historyPatientId != null ? (
+    <Button size="small" startIcon={<HistoryOutlined />} disableElevation
+      variant={patientHistoryOpen ? "contained" : "outlined"}
+      aria-pressed={patientHistoryOpen}
+      onClick={() => setPatientHistoryOpen((previous) => !previous)}
+      sx={{ alignSelf: "flex-start", whiteSpace: "nowrap" }}>
+      {t("conclusion.patientHistory.trigger")}
+    </Button>
+  ) : null;
+
   const content = (
     <>
       {/* ── header ── */}
@@ -2602,6 +2623,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
             <Typography variant={isMobile ? "subtitle1" : "h6"} lineHeight={1.3} fontWeight={600}>
               {t("conclusion.title")}
             </Typography>
+            {historyToggleNode}
             {/* Услуга/врач и время правки — только в дровере, не в
                 inline-просмотре (там шапка чистая, как в оригинале). */}
             {!inline && (
@@ -2620,7 +2642,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
             {/* Лист в просмотре — документ, каким его напечатают. Без
                 заключения показывать нечего. */}
-            {conclusion && sheetToggleNode}
+            {conclusion && !showHistoryTab && sheetToggleNode}
             <IconButton onClick={onClose} size="small">
               <CloseOutlined />
             </IconButton>
@@ -2650,7 +2672,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
             <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
               {/* AI — одна кнопка на все поля; в шапке, потому что она не
                   прокручивается, а просят AI обычно дописав форму до низа. */}
-              {canAiAssist && (
+              {canAiAssist && !showHistoryTab && (
                 <AiAssistHeaderButton
                   loading={ai.loading}
                   fieldCount={ai.loadingCount}
@@ -2658,7 +2680,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                   onClick={handleAiRequest}
                 />
               )}
-              {sheetToggleNode}
+              {!showHistoryTab && sheetToggleNode}
               <IconButton onClick={saving ? undefined : onClose} size="small">
                 <CloseOutlined />
               </IconButton>
@@ -2666,6 +2688,8 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           </Stack>
 
           <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+            {historyToggleNode}
+            {!showHistoryTab && <>
             <ConclusionDocumentMenu
               forms={selectableForms}
               form={attachedForm}
@@ -2744,6 +2768,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                 />
               </Tooltip>
             )}
+            </>}
           </Stack>
         </Stack>
       )}
@@ -2753,7 +2778,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       {previousLoading && <LinearProgress sx={{ height: 2, flexShrink: 0 }} />}
 
       {/* ── документы строки услуги (если их несколько или можно добавить) ── */}
-      {documentBar && (
+      {documentBar && !showHistoryTab && (
         <>
           {documentBar}
           <Divider />
@@ -2761,7 +2786,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       )}
 
       {/* ── подсказки AI: массовые действия, пока есть неразобранные ── */}
-      {canAiAssist && ai.suggestedKeys.length > 0 && (
+      {canAiAssist && !showHistoryTab && ai.suggestedKeys.length > 0 && (
         <>
           <AiAssistPendingStrip
             pendingCount={ai.suggestedKeys.length}
@@ -2783,7 +2808,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       )}
 
       {/* ── inline-просмотр: тулбар действий под шапкой (единая высота) ── */}
-      {inline && readOnly && (onStartEdit || (canPrint && conclusion)) && (
+      {inline && readOnly && !showHistoryTab && (onStartEdit || (canPrint && conclusion)) && (
         <>
           <Stack
             direction="row"
@@ -2859,13 +2884,13 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         ref={formColumnRef}
         onFocus={handleFormFocus}
         sx={{
-          flex: showSheetSide ? `0 0 ${FORM_COLUMN_WIDTH}px` : 1,
+          flex: showHistorySide ? "0 0 52%" : showSheetSide ? `0 0 ${FORM_COLUMN_WIDTH}px` : 1,
           minWidth: 0,
-          display: showSheetTab ? "none" : "block",
+          display: showSheetTab || showHistoryTab ? "none" : "block",
           overflowY: "auto",
           p: 2,
           minHeight: 0,
-          borderRight: showSheetSide ? 1 : 0,
+          borderRight: showSheetSide || showHistorySide ? 1 : 0,
           borderColor: "divider",
           scrollbarWidth: "none",
           "&::-webkit-scrollbar": { display: "none" },
@@ -3456,10 +3481,17 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           {sheetPane}
         </Box>
       )}
+      {patientHistoryOpen && canViewPatientHistory && historyPatientId != null && (
+        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+          <PatientConclusionHistoryPanel key={historyPatientId}
+            patientId={historyPatientId} currentAppointmentId={appointmentId}
+            onClose={() => setPatientHistoryOpen(false)} />
+        </Box>
+      )}
       </Box>
 
       {/* ── footer ── (в inline-просмотре скрыт: закрытие — крестиком в шапке) */}
-      {!(inline && readOnly) && (
+      {!(inline && readOnly) && !showHistoryTab && (
       <>
       <Divider />
       {/* На телефоне ряд кнопок переносился в две-три строки и съедал место у
@@ -3799,7 +3831,9 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         sx: {
           // С листом справа дровер шире ровно на лист: колонка формы остаётся
           // прежней ширины (FORM_COLUMN_WIDTH), лист занимает остальное.
-          width: showSheetSide
+          width: showHistorySide
+            ? "min(1080px, calc(100vw - 32px))"
+            : showSheetSide
             ? "min(1200px, calc(100vw - 48px))"
             : { xs: "100vw", sm: 520, md: 560 },
           transition: (th) =>

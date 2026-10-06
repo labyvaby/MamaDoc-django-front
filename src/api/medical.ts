@@ -480,6 +480,27 @@ export function getPatientConclusions(
   );
 }
 
+/** Paged history: do not silently truncate a patient's chart at 50 documents. */
+export async function getPatientConclusionHistoryPage(
+  patientId: number,
+  offset: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<{ items: PatientConclusionSummary[]; nextOffset: number | null }> {
+  const limit = 50;
+  const { data, headers } = await apiRequestWithHeaders<PatientConclusionSummary[]>(
+    `/medical/patient-conclusions/?patientId=${patientId}&limit=${limit}&offset=${offset}`,
+    { signal, headers: organizationId ? { "X-Organization-Id": String(organizationId) } : undefined },
+  );
+  const totalHeader = headers.get("X-Total-Count");
+  const total = totalHeader === null ? null : Number(totalHeader);
+  const nextOffset = offset + data.length;
+  const hasMore = data.length > 0 && (total !== null && Number.isFinite(total)
+    ? nextOffset < total
+    : data.length === limit);
+  return { items: data, nextOffset: hasMore ? nextOffset : null };
+}
+
 /**
  * GET /api/appointments/<appointmentId>/conclusion-slots/
  * Returns only service lines where requiresConclusion=true.
@@ -525,8 +546,15 @@ export function getConclusionContext(
 /**
  * GET /api/medical/conclusions/<id>/
  */
-export function getMedicalConclusion(id: number): Promise<MedicalConclusion> {
-  return apiRequest<MedicalConclusion>(`/medical/conclusions/${id}/`);
+export function getMedicalConclusion(
+  id: number,
+  signal?: AbortSignal,
+  organizationId?: number,
+): Promise<MedicalConclusion> {
+  return apiRequest<MedicalConclusion>(`/medical/conclusions/${id}/`, {
+    signal,
+    headers: organizationId ? { "X-Organization-Id": String(organizationId) } : undefined,
+  });
 }
 
 /**
