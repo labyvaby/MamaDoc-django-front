@@ -16,7 +16,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import type { AttachmentOwner } from "../../api/attachments";
-import { getClients, getClientStatuses, type DjangoClient } from "../../api/clients";
+import { getClientMetrics, getClients, getClientStatuses, type DjangoClient } from "../../api/clients";
 import { getClientPurchases, type ClientPurchase } from "../../api/retail";
 import CardAttachmentsPanel from "../../components/attachments/CardAttachmentsPanel";
 import { useCardAttachments } from "../../components/attachments/useCardAttachments";
@@ -54,6 +54,9 @@ export default function ClientsPage() {
   // организации (и в «Меню как у клиники») их нет, как и данных на бэке.
   const canViewFinance = auth.canAccess("pos.view") || auth.canAccess("pos.sell");
   const canViewPurchaseHistory = auth.canAccess("pos.history");
+  // Сколько клиент потратил (вместе с покупками до перехода в CRM) и его
+  // уровень лояльности — метрики CRM-карточки, право clients.crm.view.
+  const canViewMetrics = auth.canAccess("clients.crm.view");
 
   usePageTitle("Все клиенты");
   const [search, setSearch] = React.useState("");
@@ -116,6 +119,11 @@ export default function ClientsPage() {
   }, [clients.data, searchParams, setSearchParams, selectClient]);
 
   const purchases = useQuery({ queryKey: ["client-purchases", organizationId, selected?.id], queryFn: ({ signal }) => getClientPurchases(selected!.id, signal), enabled: Boolean(selected && canViewPurchaseHistory) });
+  const metrics = useQuery({
+    queryKey: ["client-metrics", organizationId, selected?.id],
+    queryFn: ({ signal }) => getClientMetrics(selected!.id, organizationId as number, signal),
+    enabled: Boolean(selected && organizationId && canViewMetrics),
+  });
 
   // Файлы карточки: панель грузит их сама, а тот же запрос даёт счётчик на вкладке.
   const selectedId = selected?.id ?? null;
@@ -134,7 +142,18 @@ export default function ClientsPage() {
 
   const cardSettings = { ...layout, sections: { ...layout.sections, finance: layout.sections.finance && canViewFinance } };
 
-  const cardNode = <ClientCard client={selected} settings={cardSettings} canUpdate={canUpdate} onEdit={openEdit} />;
+  const cardNode = (
+    <ClientCard
+      client={selected}
+      settings={cardSettings}
+      canUpdate={canUpdate}
+      onEdit={openEdit}
+      showPurchases={canViewMetrics}
+      metrics={metrics.data ?? null}
+      metricsLoading={metrics.isLoading}
+      metricsError={metrics.isError}
+    />
+  );
   const historyNode = (
     <ClientPurchaseHistoryCard
       purchases={purchases.data}
