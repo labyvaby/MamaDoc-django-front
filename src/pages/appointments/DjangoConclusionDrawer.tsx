@@ -2725,7 +2725,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
             <Typography variant={isMobile ? "subtitle1" : "h6"} lineHeight={1.3} fontWeight={600}>
               {t("conclusion.title")}
             </Typography>
-            {historyToggleNode}
             {/* Услуга/врач и время правки — только в дровере, не в
                 inline-просмотре (там шапка чистая, как в оригинале). */}
             {!inline && (
