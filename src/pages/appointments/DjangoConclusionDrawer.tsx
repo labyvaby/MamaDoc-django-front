@@ -53,7 +53,6 @@ import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
-import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import { useNotification } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
@@ -61,12 +60,6 @@ import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { useKeyboardViewportHeight } from "../../hooks/useKeyboardViewportHeight";
-import {
-  useAppointmentReceipt,
-  useReceiptAvailable,
-} from "../../components/appointments/useAppointmentReceipt";
-import InvoiceFormatDialog from "../../components/appointments/InvoiceFormatDialog";
-import type { InvoicePageSize } from "../../components/appointments/appointmentInvoice";
 import { formatQuantity, trimDecimalInput } from "../../utility/format";
 import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
@@ -341,29 +334,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const listboxMaxHeight = keyboard.keyboardOpen
     ? Math.max(132, Math.round(keyboard.availableHeight * 0.45))
     : undefined;
-
-  // ── чек (лист A5) ─────────────────────────────────────────────────────────
-  // Печатается по всему приёму, а не по строке услуги: касса принимает оплату
-  // за визит целиком.
-  const { printReceipt, pending: receiptPending } = useAppointmentReceipt();
-  const receiptAppointmentId = appointmentId ?? conclusion?.appointmentId ?? null;
-  // До оплаты чека нет: врач заполняет заключение раньше кассы, и печатать
-  // бланк с нулями пациенту нельзя.
-  const receiptAvailable = useReceiptAvailable(receiptAppointmentId, open);
-  // Лист выбираем перед печатью: A5 — кассовый чек, A4 — счёт на руки.
-  const [receiptFormatOpen, setReceiptFormatOpen] = React.useState(false);
-  const handlePrintReceipt = async (pageSize: InvoicePageSize) => {
-    setReceiptFormatOpen(false);
-    if (receiptAppointmentId == null) return;
-    try {
-      const result = await printReceipt(receiptAppointmentId, pageSize);
-      if (result === "blocked") {
-        notify?.({ type: "error", message: t("invoice.popupBlocked") });
-      }
-    } catch {
-      notify?.({ type: "error", message: t("conclusion.receiptError") });
-    }
-  };
 
   // ── form state ────────────────────────────────────────────────────────────
   const [complaints, setComplaints] = React.useState("");
@@ -2966,18 +2936,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                 >
                   {t("conclusion.certificate")}
                 </Button>
-                {receiptAppointmentId != null && receiptAvailable && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<ReceiptLongOutlined />}
-                    onClick={() => setReceiptFormatOpen(true)}
-                    disabled={receiptPending}
-                    sx={{ whiteSpace: "nowrap" }}
-                  >
-                    {t("conclusion.receipt")}
-                  </Button>
-                )}
               </>
             )}
           </Stack>
@@ -3599,17 +3557,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               >
                 {t("conclusion.certificate")}
               </Button>
-              {receiptAppointmentId != null && receiptAvailable && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<ReceiptLongOutlined />}
-                  onClick={() => setReceiptFormatOpen(true)}
-                  disabled={receiptPending}
-                >
-                  {t("conclusion.receipt")}
-                </Button>
-              )}
             </Stack>
           )}
         </Stack>
@@ -3942,12 +3889,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           )}
         </Box>
       </Modal>
-
-      <InvoiceFormatDialog
-        open={receiptFormatOpen}
-        onCancel={() => setReceiptFormatOpen(false)}
-        onConfirm={handlePrintReceipt}
-      />
     </>
   );
 
