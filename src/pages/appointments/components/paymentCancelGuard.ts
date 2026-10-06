@@ -16,7 +16,7 @@ export function isAppointmentClosedForPayment(status: string | null | undefined)
 
 interface PaidSource {
   paidTotal?: string | null;
-  /** Есть только в сводке оплаты: paidTotal − refundedTotal. */
+  /** paidTotal − refundedTotal: в сводке оплаты, в приёме — где бэк уже выложил поле. */
   paidNet?: string | null;
   refundedTotal?: string | null;
   paymentStatus?: string | null;
@@ -30,9 +30,9 @@ const toNumber = (value: string | null | undefined): number => {
 /**
  * Сколько денег по приёму осталось у клиники после возвратов.
  *
- * `paidTotal` бэк отдаёт валовым, возвраты не вычитает. Сводка оплаты шлёт
- * `paidNet`/`refundedTotal`; у строки списка их нет — там полный возврат
- * виден только по `paymentStatus: "refunded"`.
+ * `paidTotal` бэк отдаёт валовым, возвраты не вычитает. Сводка оплаты и
+ * приём (список и деталь, на проде пока нет) шлют `paidNet`/`refundedTotal`;
+ * без них полный возврат виден только по `paymentStatus: "refunded"`.
  */
 export function appointmentNetPaid(src: PaidSource): number {
   if (src.paidNet != null && src.paidNet !== "") return Math.max(0, toNumber(src.paidNet));
