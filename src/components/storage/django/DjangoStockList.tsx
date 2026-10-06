@@ -15,6 +15,7 @@ import {
   ListItemText,
   Divider,
   Tooltip,
+  Checkbox,
   alpha,
 } from "@mui/material";
 import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
@@ -23,7 +24,10 @@ import FilterListIcon from "@mui/icons-material/FilterListOutlined";
 import CheckIcon from "@mui/icons-material/Check";
 import { subtleBg } from "../../../theme";
 import { DjangoStockItem } from "../../../api/warehouse";
-import { ListLoadingSkeleton, ListEmptyState } from "../../ui";
+import { ListLoadingSkeleton, ListEmptyState, SelectionMark } from "../../ui";
+import { useLongPress } from "../../../hooks/useLongPress";
+import { toggleSelection } from "../../../utility/bulkSelection";
+import { hapticTap } from "../../../utility/haptics";
 
 type StockStatusFilter = "all" | "in" | "out";
 
@@ -36,6 +40,16 @@ interface DjangoStockListProps {
   selectedItem?: DjangoStockItem | null;
   /** Если передан — в пустом состоянии показываем кнопку «Приход товара». */
   onAdd?: () => void;
+  /**
+   * Массовый выбор как в галерее (по productId). Без пропсов — список как
+   * раньше: долгое нажатие ничего не делает.
+   */
+  checkedIds?: ReadonlySet<number>;
+  onCheckedChange?: (next: Set<number>) => void;
+  /** Пока идёт массовое действие — выбор заморожен. */
+  selectionDisabled?: boolean;
+  /** Содержимое шапки в режиме выбора: счётчик, «Действия», «Снять». */
+  selectionBar?: React.ReactNode;
 }
 
 export const DjangoStockList: React.FC<DjangoStockListProps> = ({
@@ -46,6 +60,10 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
   warehouseAddress,
   selectedItem,
   onAdd,
+  checkedIds,
+  onCheckedChange,
+  selectionDisabled = false,
+  selectionBar,
 }) => {
   const [statusFilter, setStatusFilter] = React.useState<StockStatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
@@ -89,6 +107,38 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
     return { all: base.length, in: base.length - out, out };
   }, [stock, categoryFilter]);
 
+  // ── Выбор как в галерее: долгое нажатие включает, дальше тап отмечает ──
+  const selectable = Boolean(checkedIds && onCheckedChange);
+  const selecting = selectable && (checkedIds?.size ?? 0) > 0;
+  const anchorIdRef = React.useRef<number | null>(null);
+  const visibleIds = React.useMemo(() => displayed.map((i) => i.productId), [displayed]);
+  const visibleChecked = checkedIds ? visibleIds.filter((id) => checkedIds.has(id)).length : 0;
+  const allVisibleChecked = visibleIds.length > 0 && visibleChecked === visibleIds.length;
+
+  const headerHeightRef = React.useRef(0);
+
+  const toggle = (productId: number, shift: boolean) => {
+    if (!checkedIds || !onCheckedChange) return;
+    onCheckedChange(toggleSelection(checkedIds, visibleIds, productId, anchorIdRef.current, shift));
+    if (!shift) anchorIdRef.current = productId;
+  };
+  const toggleAllVisible = () => {
+    if (!checkedIds || !onCheckedChange) return;
+    const next = new Set(checkedIds);
+    for (const id of visibleIds) {
+      if (allVisibleChecked) next.delete(id);
+      else next.add(id);
+    }
+    anchorIdRef.current = null;
+    onCheckedChange(next);
+  };
+  const longPress = useLongPress((productId) => {
+    if (!checkedIds || !onCheckedChange || checkedIds.has(productId)) return;
+    hapticTap();
+    anchorIdRef.current = productId;
+    onCheckedChange(new Set(checkedIds).add(productId));
+  }, selectable && !selectionDisabled);
+
   const statusOptions: { value: StockStatusFilter; label: string; count: number }[] = [
     { value: "all", label: "Все", count: statusCounts.all },
     { value: "in", label: "В наличии", count: statusCounts.in },
@@ -109,7 +159,48 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
         position: "relative",
       }}
     >
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}>
+      {selecting ? (
+        // Панель выбора — на месте шапки и не ниже неё: список не прыгает,
+        // следующий тап (и Shift-клик) попадает в свою строку.
+        <Stack
+          direction="row"
+          alignItems="center"
+          gap={1}
+          sx={(t) => ({
+            position: "relative",
+            px: 1.5,
+            py: 1,
+            minHeight: headerHeightRef.current || 64,
+            borderBottom: 1,
+            borderColor: "divider",
+            bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.06),
+          })}
+        >
+          <Tooltip title={allVisibleChecked ? "Снять выбор" : "Выбрать все в списке"}>
+            <span>
+              <Checkbox
+                size="small"
+                checked={allVisibleChecked}
+                indeterminate={visibleChecked > 0 && !allVisibleChecked}
+                disabled={selectionDisabled || visibleIds.length === 0}
+                onChange={toggleAllVisible}
+                inputProps={{ "aria-label": "Выбрать все позиции в списке" }}
+                sx={{ ml: -0.5, p: 0.5 }}
+              />
+            </span>
+          </Tooltip>
+          {selectionBar}
+        </Stack>
+      ) : (
+      <Stack
+        ref={(el: HTMLDivElement | null) => {
+          if (el) headerHeightRef.current = el.offsetHeight;
+        }}
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}
+      >
         <Stack spacing={0.5}>
           <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
             Склад ({filterActive ? `${displayed.length} из ${stock.length}` : stock.length})
@@ -138,6 +229,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
           </IconButton>
         </Tooltip>
       </Stack>
+      )}
 
       {/* Видимые чипы-фильтры наличия */}
       <Stack
@@ -270,12 +362,33 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                 selectedItem != null &&
                 selectedItem.warehouseId === item.warehouseId &&
                 selectedItem.productId === item.productId;
+              const isChecked = selecting && Boolean(checkedIds?.has(item.productId));
               return (
                 <ButtonBase
                   key={`${item.warehouseId}-${item.productId}`}
-                  onClick={() => onSelect(item)}
+                  {...(selectable ? longPress.bind(item.productId) : {})}
+                  role={selecting ? "checkbox" : undefined}
+                  aria-checked={selecting ? isChecked : undefined}
+                  // Shift-клик иначе выделяет текст строк вместо диапазона.
+                  onMouseDown={(e: React.MouseEvent) => {
+                    if (selectable && e.shiftKey) e.preventDefault();
+                  }}
+                  onClick={(e: React.MouseEvent) => {
+                    // Хвост долгого нажатия: отметку оно уже поставило.
+                    if (longPress.consumeClick()) return;
+                    // Пока идёт выбор — тап отмечает; Ctrl/Cmd/Shift — то же с мыши.
+                    if (selectable && (selecting || e.ctrlKey || e.metaKey || e.shiftKey)) {
+                      if (!selectionDisabled) toggle(item.productId, e.shiftKey);
+                      return;
+                    }
+                    onSelect(item);
+                  }}
                   focusRipple
                   sx={{
+                    // Долгое касание не должно выделять текст и звать меню iOS.
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    WebkitTouchCallout: "none",
                     display: "flex",
                     alignItems: "center",
                     gap: 1.5,
@@ -284,9 +397,15 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                     p: 1.25,
                     borderRadius: 1,
                     border: 1,
-                    borderColor: isSelected ? "primary.main" : "divider",
+                    borderColor: isSelected
+                      ? "primary.main"
+                      : isChecked
+                        ? (theme) => alpha(theme.palette.primary.main, 0.4)
+                        : "divider",
+                    // В режиме выбора заливка — только у отмеченных, иначе
+                    // открытая справа позиция выглядит отмеченной.
                     bgcolor: (theme) =>
-                      isSelected
+                      isChecked || (isSelected && !selecting)
                         ? alpha(theme.palette.primary.main, 0.08)
                         : "background.paper",
                     transition: "border-color .15s ease, background-color .15s ease",
@@ -296,21 +415,23 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                     },
                   }}
                 >
-                  <Avatar
-                    variant="rounded"
-                    src={item.productImageUrl || undefined}
-                    sx={{
-                      flexShrink: 0,
-                      width: 48,
-                      height: 48,
-                      borderRadius: 1,
-                      bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                      color: "primary.onSurface",
-                      opacity: inStock ? 1 : 0.55,
-                    }}
-                  >
-                    {item.productName?.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
-                  </Avatar>
+                  <Box sx={{ position: "relative", flexShrink: 0, width: 48, height: 48 }}>
+                    <Avatar
+                      variant="rounded"
+                      src={item.productImageUrl || undefined}
+                      sx={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 1,
+                        bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                        color: "primary.onSurface",
+                        opacity: inStock || selecting ? 1 : 0.55,
+                      }}
+                    >
+                      {item.productName?.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
+                    </Avatar>
+                    {selecting && <SelectionMark checked={isChecked} borderRadius={1} />}
+                  </Box>
 
                   <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden", opacity: inStock ? 1 : 0.55 }}>
                     <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
