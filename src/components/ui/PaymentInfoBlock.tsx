@@ -18,6 +18,7 @@ import {
   ErrorOutline,
   InfoOutlined,
   CancelOutlined as CancelIcon,
+  CurrencyExchangeOutlined,
 } from "@mui/icons-material";
 import { discountPercentOf } from "../../utility/format";
 
@@ -101,6 +102,7 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
   let isDiscounted: boolean = false;
   let isCancelled: boolean = false;
   let isArrived: boolean = false;
+  let isRefunded: boolean = false;
 
   if (status) {
     const s = status.trim().toLowerCase();
@@ -109,6 +111,7 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
     isDiscounted = s === 'discounted' || s === 'оплачено со скидкой';
     isCancelled = s === 'canceled' || s === 'cancelled' || s === 'отменено' || s === 'пациент не пришел';
     isArrived = s === 'пациент здесь' || s === 'прибыл' || s === 'в очереди';
+    isRefunded = s === 'refunded' || s === 'возврат';
   } else {
     // Fallback logic
     isDiscounted = debt <= 0 && totalPaid <= 0 && (discountAmount || 0) > 0;
@@ -117,6 +120,17 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
   }
 
   const getStatusConfig = () => {
+    // Возврат раньше падал в ветку по умолчанию и подписывался «Ожидаем» —
+    // как будто денег ещё не приносили.
+    if (isRefunded) {
+      return {
+        label: "Возврат",
+        color: "warning" as const,
+        icon: <CurrencyExchangeOutlined fontSize="small" />,
+        bgColor: theme.palette.warning.main,
+        lightBg: alpha(theme.palette.warning.main, 0.08),
+      };
+    }
     if (isCancelled) {
       return {
         label: status || "Отменено",

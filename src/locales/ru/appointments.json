@@ -13,7 +13,8 @@
     "discounted": "Со скидкой",
     "free": "Бесплатно",
     "debt": "Долг",
-    "insurance": "Страховка"
+    "insurance": "Страховка",
+    "refunded": "Возврат"
   },
   "chips": {
     "undoArrived": "Отменить отметку «{{patient.nom, capitalize}} здесь»",

@@ -48,7 +48,7 @@ export const VISIT_FILTER_CODES: StatusCode[] = [
  * В журнале реестров (registry/) свой набор чипов, «Не оплачено» там
  * осталось.
  *
- * «Возврат» своего чипа в строке не имеет и остаётся нейтральным.
+ * «Возврат» красится как чип «Возврат» в строке (с 06.10.2026 он там есть).
  *
  * ⚠ «Со скидкой» из этой оси убрано и живёт в оси правок цены
  * (MONEY_FLAG_OPTIONS): статус `discounted` бэк ставит только при закрытии
@@ -63,7 +63,7 @@ export const PAYMENT_FILTER_OPTIONS: {
 }[] = [
   { value: "paid", statusCode: "paid" },
   { value: "partial", statusCode: "debt" },
-  { value: "refunded", statusCode: null },
+  { value: "refunded", statusCode: "refunded" },
 ];
 
 /**

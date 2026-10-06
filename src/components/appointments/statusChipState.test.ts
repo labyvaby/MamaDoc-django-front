@@ -371,3 +371,46 @@ describe("стиль платёжного чипа", () => {
     expect(state({ paymentStatus: "partial", paidTotal: "500.00" }).paymentStyleStatus).toBe("partially_paid");
   });
 });
+
+describe("возврат по приёму", () => {
+  // paidTotal в списке — сумма ДО возврата, а подпись чипа оплаты раньше
+  // бралась от статуса визита: возвращённый приём выглядел как «Ожидаем».
+  it("чип оплаты подписан «Возврат», статус визита скрыт", () => {
+    const s = state({ status: "scheduled", paymentStatus: "refunded", paidTotal: "900.00" });
+    expect(s.paymentStyleStatus).toBe("refunded");
+    expect(s.showPayChip).toBe(true);
+    expect(s.showStatusChip).toBe(false);
+  });
+
+  it("возврат без paidTotal (сводка обнулила) всё равно виден", () => {
+    const s = state({ status: "scheduled", paymentStatus: "refunded", paidTotal: "0.00" });
+    expect(s.showPayChip).toBe(true);
+    expect(s.paymentStyleStatus).toBe("refunded");
+  });
+
+  it("долг после возврата не показываем", () => {
+    const s = state({
+      status: "scheduled",
+      paymentStatus: "refunded",
+      paidTotal: "900.00",
+      debt: "900.00",
+      totalAmount: "900.00",
+    });
+    expect(s.debtAmount).toBeNull();
+    expect(s.showPayChip).toBe(true);
+  });
+
+  it("отмена остаётся видна рядом с возвратом", () => {
+    const s = state({ status: "canceled", paymentStatus: "refunded", paidTotal: "900.00" });
+    expect(s.showStatusChip).toBe(true);
+    expect(s.paymentStyleStatus).toBe("refunded");
+  });
+
+  it("состояние приёма — «refunded», а не «paid»", () => {
+    expect(
+      resolveAppointmentDisplayState(
+        appt({ status: "scheduled", paymentStatus: "refunded", paidTotal: "900.00" }),
+      ),
+    ).toBe("refunded");
+  });
+});
