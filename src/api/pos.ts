@@ -32,11 +32,26 @@ export type PosTender = {
   amount: string;
   cashlessMethodId?: number;
 };
+/**
+ * Подарочный сертификат, который продаётся строкой чека (сертификаты v2).
+ * Код выдаёт сервер при оплате; скидки, акции и бонусы на строку не действуют.
+ */
+export type PosCertificateInput = {
+  clientId: number;
+  nominal: string;
+  /** Последний день действия, YYYY-MM-DD; null — бессрочный. */
+  expiresOn: string | null;
+  noExpiry: boolean;
+  comment: string;
+};
 export type PosCart = {
   warehouseId: number;
   branchId: number;
   clientId?: number;
+  /** Может быть пустым, если в чеке только сертификаты. */
   lines: Array<{ productId: number; quantity: string; discountAmount?: string }>;
+  /** Продажа сертификатов в этом чеке. Пустой список не отправляем. */
+  certificates?: PosCertificateInput[];
   /** Ручная скидка на чек процентом — от суммы после скидок на позиции. */
   discountPercent: string;
   discountAmount: string;
@@ -53,7 +68,11 @@ export type PosQuote = {
   total: string;
   bonuses: string;
   certificateAmount: string;
+  /** К оплате: товары после скидок, бонусов и оплаты сертификатом + проданные сертификаты. */
   due: string;
+  /** Сумма номиналов продаваемых сертификатов. Нет поля — бэкенд их не поддерживает. */
+  certificatesTotal?: string;
+  certificates?: Array<PosCertificateInput & { clientName: string }>;
   /** True only when a promotion produced a larger discount than the manual one. */
   promotionApplied?: boolean;
   lines: Array<{
@@ -196,10 +215,21 @@ export const checkoutPosCart = (
     comment?: string;
   }
 ) =>
-  posRequest<PosSavedReceipt>(scope, "checkout/", {
+  posRequest<PosCheckoutResponse>(scope, "checkout/", {
     method: "POST",
     body: { ...cart, ...data },
   });
+
+/**
+ * Ответ checkout/: прежний чек и проданные сертификаты. В чеке только из
+ * сертификатов товарного чека нет — `id: null` (или `receipt: null`).
+ * Разбирает его `normalizeCheckoutResult` (pages/pos/certificateCart.ts).
+ */
+export type PosCheckoutResponse = Partial<Omit<PosSavedReceipt, "id">> & {
+  id?: number | null;
+  receipt?: PosSavedReceipt | null;
+  soldCertificates?: GiftCertificateDetail[];
+};
 
 /** Страница истории — 25 чеков, размер задаёт бэк. */
 export const POS_HISTORY_PAGE_SIZE = 25;
@@ -253,22 +283,7 @@ export type PosCertificateLookup = {
   soldBranchName: string;
 };
 
-/** POST workspace/certificates/sell/ body. Payments must add up to the nominal exactly. */
-export type PosCertificateSale = {
-  code: string;
-  nominal: string;
-  payments: PosTender[];
-  /** Last valid day, YYYY-MM-DD. Omitted — the organization's default. */
-  expiresOn?: string;
-  noExpiry?: boolean;
-  clientId?: number;
-  recipientName: string;
-  recipientPhone: string;
-  comment: string;
-  branchId: number;
-};
-
-/** 404 means the number is free — the sell dialog relies on that. */
+/** 404 — сертификата с таким номером нет. */
 export const lookupPosCertificate = (scope: PosScope, code: string, signal?: AbortSignal) =>
   posRequest<PosCertificateLookup>(
     scope,
@@ -276,19 +291,19 @@ export const lookupPosCertificate = (scope: PosScope, code: string, signal?: Abo
     { signal },
   );
 
-export const sellPosCertificate = (
-  scope: PosScope,
-  body: PosCertificateSale,
-  idempotencyKey: string,
-) =>
-  apiRequest<GiftCertificateDetail>(
-    `/v2/pos/workspace/certificates/sell/?branchId=${scope.branchId}`,
-    {
-      method: "POST",
-      body,
-      headers: {
-        "X-Organization-Id": String(scope.organizationId),
-        "Idempotency-Key": idempotencyKey,
-      },
-    },
-  );
+/** GET workspace/certificates/?clientId= — активные сертификаты покупателя для оплаты. */
+export type PosClientCertificate = {
+  id: number;
+  code: string;
+  nominal: string;
+  balance: string;
+  status: GiftCertificateStatus | string;
+  usable: boolean;
+  /** Начало дня после последнего дня действия; null — бессрочный. */
+  expiresAt: string | null;
+  soldAt: string | null;
+  soldBranchName: string;
+};
+
+export const getPosClientCertificates = (scope: PosScope, clientId: number, signal?: AbortSignal) =>
+  posRequest<PosClientCertificate[]>(scope, `certificates/?clientId=${clientId}`, { signal });
