@@ -7,7 +7,7 @@ import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
 import { motion } from "framer-motion";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 
 import { AppBottomSheet, PageHeader, SegmentedTabs, cascadeContainer, cascadeItem } from "../../components/ui";
@@ -16,7 +16,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import type { AttachmentOwner } from "../../api/attachments";
-import { getClientMetrics, getClients, getClientStatuses, type DjangoClient } from "../../api/clients";
+import { getClient, getClientMetrics, getClientPage, getClientStatuses, type DjangoClient } from "../../api/clients";
 import { getClientPurchases, type ClientPurchase } from "../../api/retail";
 import CardAttachmentsPanel from "../../components/attachments/CardAttachmentsPanel";
 import { useCardAttachments } from "../../components/attachments/useCardAttachments";
@@ -31,6 +31,9 @@ const MotionBox = motion(Box);
 
 type DetailTab = "card" | "purchases" | "files";
 type DesktopTab = "purchases" | "files";
+
+/** Сколько карточек грузим за раз — остальное подтягивает скролл. */
+const PAGE_SIZE = 50;
 
 const MONTHS = Array.from({ length: 12 }, (_, index) => {
   const name = new Intl.DateTimeFormat("ru-RU", { month: "long" }).format(new Date(2020, index, 1));
@@ -61,7 +64,8 @@ export default function ClientsPage() {
   usePageTitle("Все клиенты");
   const [search, setSearch] = React.useState("");
   const [debouncedSearch, setDebouncedSearch] = React.useState("");
-  const [birthMonth, setBirthMonth] = React.useState<number | "">("");
+  // По умолчанию — именинники текущего месяца; «×» в фильтре показывает всех.
+  const [birthMonth, setBirthMonth] = React.useState<number | "">(() => new Date().getMonth() + 1);
   const [selected, setSelected] = React.useState<DjangoClient | null>(null);
   const [editorClient, setEditorClient] = React.useState<DjangoClient | null>(null);
   const [editorOpen, setEditorOpen] = React.useState(false);
@@ -91,11 +95,25 @@ export default function ClientsPage() {
     setLayout(next);
   }, [layoutQuery.data]);
 
-  const clients = useQuery({
-    queryKey: ["clients", organizationId, debouncedSearch, birthMonth],
-    queryFn: ({ signal }) => getClients(organizationId as number, { query: debouncedSearch, birthMonth: birthMonth || null }, signal),
+  // Список грузится страницами: поиск и месяц ДР фильтруют на сервере по
+  // всем клиентам организации, а не по уже загруженным строкам.
+  const clients = useInfiniteQuery({
+    queryKey: ["clients", organizationId, "page", debouncedSearch.trim(), birthMonth],
+    queryFn: ({ signal, pageParam }) => getClientPage(
+      organizationId as number,
+      { query: debouncedSearch, birthMonth: birthMonth || null, limit: PAGE_SIZE, offset: pageParam },
+      signal,
+    ),
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.hasMore ? last.offset + last.items.length : undefined),
     enabled: Boolean(organizationId && canView),
   });
+  const clientRows = React.useMemo(() => clients.data?.pages.flatMap((page) => page.items) ?? [], [clients.data]);
+  const clientsTotal = clients.data?.pages[0]?.total ?? 0;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = clients;
+  const loadMoreClients = React.useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
   const statuses = useQuery({
     queryKey: ["client-statuses", organizationId],
     queryFn: ({ signal }) => getClientStatuses(organizationId as number, signal),
@@ -109,14 +127,17 @@ export default function ClientsPage() {
     if (isMobile) setMobileOpen(true);
   }, [isMobile]);
 
-  React.useEffect(() => { if (!selected) return; const fresh = clients.data?.find((row) => row.id === selected.id); if (fresh) setSelected(fresh); }, [clients.data, selected?.id]);
+  React.useEffect(() => { if (!selected) return; const fresh = clientRows.find((row) => row.id === selected.id); if (fresh) setSelected(fresh); }, [clientRows, selected?.id]);
+  // Ссылка ?client=<id>: клиента может не быть на загруженных страницах
+  // (и в выбранном месяце ДР) — тогда берём карточку отдельным запросом.
   React.useEffect(() => {
     const raw = Number(searchParams.get("client"));
-    if (!raw || !clients.data) return;
-    const found = clients.data.find((row) => row.id === raw);
+    if (!raw || !organizationId || !clients.data) return;
+    const found = clientRows.find((row) => row.id === raw);
     if (found) selectClient(found);
+    else void getClient(raw, organizationId).then(selectClient).catch(() => undefined);
     setSearchParams((previous) => { const next = new URLSearchParams(previous); next.delete("client"); return next; }, { replace: true });
-  }, [clients.data, searchParams, setSearchParams, selectClient]);
+  }, [clients.data, clientRows, organizationId, searchParams, setSearchParams, selectClient]);
 
   const purchases = useQuery({ queryKey: ["client-purchases", organizationId, selected?.id], queryFn: ({ signal }) => getClientPurchases(selected!.id, signal), enabled: Boolean(selected && canViewPurchaseHistory) });
   const metrics = useQuery({
@@ -225,7 +246,7 @@ export default function ClientsPage() {
       searchVal={search}
       onSearchChange={setSearch}
       searchPlaceholder="Имя, телефон или email"
-      loading={clients.isFetching}
+      loading={clients.isFetching && !clients.isFetchingNextPage}
       actions={birthMonthFilter}
       compactMobile
     />
@@ -238,10 +259,14 @@ export default function ClientsPage() {
     >
       <MotionBox variants={cascadeItem} sx={{ flex: isMobile ? "1 1 auto" : isTablet ? "5 1 0" : "3 1 0", minWidth: 0, height: "100%" }}>
         <ClientListPanel
-          clients={clients.data ?? []}
+          clients={clientRows}
+          total={clientsTotal}
+          hasMore={Boolean(clients.hasNextPage)}
+          loadingMore={clients.isFetchingNextPage}
+          onLoadMore={loadMoreClients}
           selectedId={selected?.id ?? null}
           loading={clients.isLoading}
-          fetching={clients.isFetching}
+          fetching={clients.isFetching && !clients.isFetchingNextPage}
           error={clients.error instanceof Error ? clients.error.message : null}
           filtered={Boolean(debouncedSearch.trim() || birthMonth)}
           onSelect={selectClient}

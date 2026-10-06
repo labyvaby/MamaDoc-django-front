@@ -83,6 +83,32 @@ export function getClients(
   return apiRequest<DjangoClient[]>(`/clients/?${search.toString()}`, { signal });
 }
 
+/** Страница `GET /api/v2/clients/`: поиск идёт по всей организации. */
+export interface ClientPage {
+  items: DjangoClient[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export function getClientPage(
+  organizationId: number,
+  params: { query?: string; birthMonth?: number | null; limit?: number; offset?: number } = {},
+  signal?: AbortSignal,
+): Promise<ClientPage> {
+  const search = new URLSearchParams({ organizationId: String(organizationId) });
+  if (params.query?.trim()) search.set("q", params.query.trim());
+  if (params.birthMonth) search.set("birthMonth", String(params.birthMonth));
+  if (params.limit) search.set("limit", String(params.limit));
+  if (params.offset) search.set("offset", String(params.offset));
+  return apiRequest<ClientPage>(`/v2/clients/?${search.toString()}`, { signal });
+}
+
+export function getClient(id: number, organizationId: number, signal?: AbortSignal): Promise<DjangoClient> {
+  return apiRequest<DjangoClient>(`/clients/${id}/?organizationId=${organizationId}`, { signal });
+}
+
 /** Текущий уровень лояльности клиента (проценты и суммы — строками). */
 export interface ClientMetricsTier {
   id: number;
