@@ -154,7 +154,7 @@ function EstimatesScreen() {
       )}
 
       {e && (
-        <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) 320px" }, alignItems: "start" }}>
+        <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "minmax(0, 1fr) 320px" }, alignItems: "start" }}>
           <Box sx={{ minWidth: 0 }}>
             <Box sx={{ mb: 1.25, display: "flex", flexWrap: "wrap", gap: 1, alignItems: "center" }}>
               <TextField
@@ -233,7 +233,7 @@ function EstimatesScreen() {
             </Box>
           </Box>
 
-          <Box sx={{ display: "grid", gap: 2, minWidth: 0 }}>
+          <Box sx={{ display: "grid", gap: 2, minWidth: 0, alignItems: "start", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))", xl: "minmax(0, 1fr)" } }}>
             <Box sx={{ ...cardSx, minWidth: 0 }}>
               <CardHeader title={t("smeta.structure")} subtitle={formatKGS(e.total)} />
               <AmountBars empty={t("common.empty")} items={e.sections.map((s) => ({ key: s.name, label: s.name, amount: s.total, hint: `${s.donePct.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}%` }))} />

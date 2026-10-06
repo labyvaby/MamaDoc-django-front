@@ -209,10 +209,18 @@ function ContractorsScreen() {
         preview={contractors.data?.find((c) => c.id === contractorId) ?? null}
         canManage={canManage}
         onClose={() => openContractor(null)}
-        onOpenAct={(id) => {
-          openContractor(null);
-          openAct(id);
-        }}
+        onOpenAct={(id) =>
+          // Одним обновлением адреса: два setSearchParams подряд не батчатся.
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.delete("contractor");
+              next.set("act", String(id));
+              return next;
+            },
+            { replace: true },
+          )
+        }
       />
       <ActDrawer id={actId} preview={allActs.find((a) => a.id === actId) ?? null} canManage={canManage} onClose={() => openAct(null)} />
       <ActFormDrawer preset={actPreset} onClose={() => setActPreset(null)} onCreated={(act) => openAct(act.id)} />

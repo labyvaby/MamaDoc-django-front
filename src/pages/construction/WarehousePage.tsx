@@ -228,8 +228,9 @@ function MatrixGrid({ rows, warehouses, loading, canManage, onRequest }: { rows:
     ...warehouses.map(
       (w): GridColDef<StockByNomenclature> => ({
         field: `wh${w.id}`,
-        headerName: w.isCentral ? `${w.code || w.name} · ${t("warehouse.central")}` : w.code || w.name,
-        description: w.name,
+        // Колонка узкая: в заголовке код склада, полное название (и «центральный») — в подсказке.
+        headerName: w.code || w.name,
+        description: w.isCentral ? `${w.name} · ${t("warehouse.central")}` : w.name,
         width: 110,
         align: "right",
         headerAlign: "right",

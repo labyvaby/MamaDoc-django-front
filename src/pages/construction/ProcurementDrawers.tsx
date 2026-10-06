@@ -50,7 +50,7 @@ const qty = (value: number) => value.toLocaleString("ru-RU", { maximumFractionDi
 function Shell({ open, onClose, eyebrow, title, badge, footer, children }: { open: boolean; onClose: () => void; eyebrow: React.ReactNode; title: React.ReactNode; badge?: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }) {
   const { t } = useT("construction");
   return (
-    <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: { xs: "100vw", sm: 600 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}>
+    <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: { xs: "100vw", sm: 640 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}>
       <Box sx={{ px: 2.5, py: 2, display: "flex", alignItems: "flex-start", gap: 1, borderBottom: 1, borderColor: "divider" }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{eyebrow}</Typography>
@@ -80,8 +80,8 @@ function MiniTable({ head, rows, minWidth = 480 }: { head: React.ReactNode[]; ro
           minWidth,
           borderCollapse: "collapse",
           "& td, & th": { px: 1.25, py: 0.8, fontSize: "0.8125rem", borderTop: 1, borderColor: "divider", textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" },
-          "& th": { fontWeight: 600, color: "text.secondary", borderTop: 0 },
-          "& td:first-of-type, & th:first-of-type": { textAlign: "left", whiteSpace: "normal" },
+          "& th": { fontWeight: 600, color: "text.secondary", borderTop: 0, whiteSpace: "normal", verticalAlign: "bottom", lineHeight: 1.25 },
+          "& td:first-of-type, & th:first-of-type": { textAlign: "left", whiteSpace: "normal", minWidth: 170 },
         }}
       >
         <thead>
@@ -148,7 +148,6 @@ export function RequestDrawer({ id, preview, can, onClose, onOpenTender, onOpenO
     tender: t("procurement.request.toTender"),
     order: t("procurement.request.toOrder"),
   };
-  const showCoverage = Boolean(detail?.items.some((i) => i.coverage != null));
 
   return (
     <Shell
@@ -210,39 +209,36 @@ export function RequestDrawer({ id, preview, can, onClose, onOpenTender, onOpenO
           {detail && (
             <Box>
               <SectionTitle>{t("procurement.request.items")}</SectionTitle>
-              <MiniTable
-                minWidth={showCoverage ? 640 : 460}
-                head={[
-                  t("procurement.request.nom"),
-                  t("procurement.request.qty"),
-                  t("procurement.request.price"),
-                  t("procurement.request.amount"),
-                  ...(showCoverage ? [t("procurement.request.local"), t("procurement.request.central"), t("procurement.request.coverage")] : []),
-                ]}
-                rows={[
-                  ...detail.items.map((i) => [
-                    <Box key="n">
-                      {i.nomName}
-                      {i.category && (
-                        <Typography component="span" sx={{ display: "block", fontSize: "0.72rem", color: "text.secondary" }}>
-                          {i.category}
+              <Box sx={{ border: 1, borderColor: "divider", borderRadius: "10px" }}>
+                {detail.items.map((i) => (
+                  <Box key={i.id} sx={{ px: 1.5, py: 1, display: "grid", gap: 0.4, borderTop: 1, borderColor: "divider", "&:first-of-type": { borderTop: 0 } }}>
+                    <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: "0.875rem", fontWeight: 600 }}>{i.nomName}</Typography>
+                        <Typography sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
+                          {[i.category, `${qty(i.qty)} ${i.unit} × ${formatKGS(i.price)}`].filter(Boolean).join(" · ")}
                         </Typography>
-                      )}
-                    </Box>,
-                    `${qty(i.qty)} ${i.unit}`,
-                    formatKGS(i.price),
-                    formatKGS(i.amount),
-                    ...(showCoverage
-                      ? [
-                          i.localAvailable != null ? qty(i.localAvailable) : "—",
-                          i.centralQty != null ? qty(i.centralQty) : "—",
-                          i.coverage ? <StatusPill key="c" label={t(`procurement.request.coverage_${i.coverage}`, { defaultValue: i.coverage })} tone={i.coverage === "stock" ? "success" : i.coverage === "transfer" ? "info" : "warning"} /> : "—",
-                        ]
-                      : []),
-                  ]),
-                  [<strong key="t">{t("procurement.request.total")}</strong>, "", "", <strong key="s">{formatKGS(detail.total)}</strong>, ...(showCoverage ? ["", "", ""] : [])],
-                ]}
-              />
+                      </Box>
+                      <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{formatKGS(i.amount)}</Typography>
+                    </Box>
+                    {i.coverage != null && (
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                        <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>
+                          {t("procurement.request.local")}: {i.localAvailable != null ? qty(i.localAvailable) : "—"} · {t("procurement.request.central")}: {i.centralQty != null ? qty(i.centralQty) : "—"}
+                        </Typography>
+                        <StatusPill
+                          label={t(`procurement.request.coverage_${i.coverage}`, { defaultValue: i.coverage })}
+                          tone={i.coverage === "stock" ? "success" : i.coverage === "transfer" ? "info" : "warning"}
+                        />
+                      </Box>
+                    )}
+                  </Box>
+                ))}
+                <Box sx={{ px: 1.5, py: 1, display: "flex", borderTop: 1, borderColor: "divider" }}>
+                  <Typography sx={{ flex: 1, fontSize: "0.875rem", fontWeight: 700 }}>{t("procurement.request.total")}</Typography>
+                  <Typography sx={{ fontSize: "0.875rem", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatKGS(detail.total)}</Typography>
+                </Box>
+              </Box>
             </Box>
           )}
           {detail && (

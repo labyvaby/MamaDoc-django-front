@@ -100,12 +100,17 @@ function ProcurementScreen() {
     );
   };
   // Переход между карточками (заявка → тендер → заказ) — одна шторка за раз.
-  const go = (kind: "request" | "tender" | "order" | "supplier", id: number) => {
-    openRequest(kind === "request" ? id : null);
-    openTender(kind === "tender" ? id : null);
-    openOrder(kind === "order" ? id : null);
-    openSupplier(kind === "supplier" ? id : null);
-  };
+  // Одним обновлением адреса: setSearchParams подряд не батчатся, последний затёр бы первый.
+  const go = (kind: "request" | "tender" | "order" | "supplier", id: number) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const key of ["request", "tender", "order", "supplier"]) next.delete(key);
+        next.set(kind, String(id));
+        return next;
+      },
+      { replace: true },
+    );
 
   if (summary.error) return <ScreenError error={summary.error} title={t("procurement.loadError")} onRetry={() => void summary.refetch()} />;
 
@@ -168,7 +173,7 @@ function ProcurementScreen() {
         </Box>
       </Box>
 
-      <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) 300px" }, alignItems: "start" }}>
+      <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "minmax(0, 1fr) 300px" }, alignItems: "start" }}>
         <Box sx={{ minWidth: 0 }}>
           {tab === "requests" && (
             <Box sx={{ mb: 1.25, display: "flex", flexWrap: "wrap", gap: 0.5 }}>
@@ -196,7 +201,7 @@ function ProcurementScreen() {
           </Box>
         </Box>
 
-        <Box sx={{ display: "grid", gap: 2, minWidth: 0 }}>
+        <Box sx={{ display: "grid", gap: 2, minWidth: 0, alignItems: "start", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))", xl: "minmax(0, 1fr)" } }}>
           <Box sx={{ ...cardSx, minWidth: 0 }}>
             <CardHeader title={t("procurement.funnel")} />
             <Box sx={{ px: 2.25, pb: 1.5 }}>

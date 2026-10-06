@@ -195,7 +195,7 @@ function QualityScreen() {
         </Box>
       </Box>
 
-      <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) 300px" }, alignItems: "start" }}>
+      <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "minmax(0, 1fr) 300px" }, alignItems: "start" }}>
         <Box sx={{ minWidth: 0 }}>
           {tab === "defects" && (
             <>
@@ -229,7 +229,7 @@ function QualityScreen() {
           {tab === "map" && <DefectMap projectId={project} onOpen={openDefect} />}
         </Box>
 
-        <Box sx={{ display: "grid", gap: 2, minWidth: 0 }}>
+        <Box sx={{ display: "grid", gap: 2, minWidth: 0, alignItems: "start", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))", xl: "minmax(0, 1fr)" } }}>
           {tab === "inspections" ? (
             <Box sx={{ ...cardSx, minWidth: 0 }}>
               <CardHeader title={t("quality.results")} subtitle={t("quality.resultsHint")} />
