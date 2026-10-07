@@ -195,7 +195,7 @@ export const HotelKitchenPage: React.FC = () => {
 
   // Порции, «Нужно», «Докупить» и суммы — как есть от бэка: он считает
   // round(гостей с этим питанием × порций на гостя) без минимума. Фронт
-  // ничего не пересчитывает. noGuests — только для подсказки и чтобы не
+  // ничего не пересчитывает. noGuests/noMeals — только для подсказки и чтобы не
   // предлагать «Купил» на меню, по которому готовить не для кого.
   const noGuests = plan != null && plan.occupiedGuests === 0;
   const totalPlanned = plan ? Number(plan.plannedTotal) : 0;
@@ -204,6 +204,8 @@ export const HotelKitchenPage: React.FC = () => {
   // завтрак — у ночевавших. Гости есть, а порций ноль — значит, их тарифы без питания.
   const mealGuests = plan?.mealGuests && Object.keys(plan.mealGuests).length > 0 ? plan.mealGuests : null;
   const noMeals = mealGuests != null && plan != null && plan.occupiedGuests > 0 && totalPortions === 0;
+  // Готовить не для кого: ни гостей, ни гостей с питанием — без меню из нулей и «Купил».
+  const nothingToCook = noGuests || noMeals;
   const guestsWord = (n: number) => `${n} ${plural(n, "гостя", "гостей", "гостей")}`;
   const purchasedCount = plan ? plan.shoppingList.filter((i) => i.purchase).length : 0;
 
@@ -286,7 +288,7 @@ export const HotelKitchenPage: React.FC = () => {
         <Stack alignItems="center" sx={{ py: 6 }}>
           <CircularProgress size={28} />
         </Stack>
-      ) : noGuests && purchasedCount === 0 ? (
+      ) : nothingToCook && purchasedCount === 0 ? (
         // Пустой день — одна строка, а не меню и таблица закупки из нулей.
         // Если на этот день уже что-то отмечено купленным, таблицу показываем
         // (ниже), чтобы отметку можно было поправить или убрать.
@@ -294,7 +296,11 @@ export const HotelKitchenPage: React.FC = () => {
           <EmptyState
             icon={<RestaurantOutlined />}
             title={isToday ? "Сегодня готовить нечего" : "На эту дату готовить нечего"}
-            description="Гостей нет — ни блюд, ни закупки. Выберите другую дату, чтобы посмотреть меню и список продуктов."
+            description={
+              noMeals
+                ? `Гостей ${plan.occupiedGuests}, но питание в их бронях не включено — ни блюд, ни закупки. Если отель кормит всех, укажите питание в тарифном плане или в брони.`
+                : "Гостей нет — ни блюд, ни закупки. Выберите другую дату, чтобы посмотреть меню и список продуктов."
+            }
           />
         </Surface>
       ) : (
@@ -305,7 +311,7 @@ export const HotelKitchenPage: React.FC = () => {
               value={plan.occupiedGuests}
               hint={`в ${plan.occupiedRooms} ${plural(plan.occupiedRooms, "номере", "номерах", "номерах")} · ${isToday ? "сегодня" : "на выбранную дату"}`}
             />
-            <MetricTile label="Блюд в меню" value={plan.dishes.length} hint={noGuests ? "готовить не для кого" : `${totalPortions} порций всего`} />
+            <MetricTile label="Блюд в меню" value={plan.dishes.length} hint={nothingToCook ? "готовить не для кого" : `${totalPortions} порций всего`} />
             <MetricTile
               label="Куплено"
               value={`${purchasedCount} / ${plan.shoppingList.length}`}
@@ -319,7 +325,7 @@ export const HotelKitchenPage: React.FC = () => {
             <Surface sx={{ py: 1.75, bgcolor: "transparent", borderStyle: "dashed" }}>
               <Typography variant="body2" color="text.secondary">
                 Гостей {plan.occupiedGuests}, но питание в их бронях не включено — по тарифам готовить не нужно. Если отель кормит
-                всех, укажите питание в тарифном плане или в брони.
+                всех, укажите питание в тарифном плане или в брони. Меню ниже показано для справки.
               </Typography>
             </Surface>
           )}
@@ -485,7 +491,7 @@ export const HotelKitchenPage: React.FC = () => {
                                 <EditOutlined sx={{ fontSize: 18 }} />
                               </IconButton>
                             </Tooltip>
-                          ) : noGuests ? null : (
+                          ) : nothingToCook ? null : (
                             <Button
                               size="small"
                               variant="outlined"
