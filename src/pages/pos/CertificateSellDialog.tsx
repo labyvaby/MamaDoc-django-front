@@ -339,7 +339,8 @@ export function CertificateSellDialog({
         <ButtonBase
           onClick={onClose}
           sx={{
-            display: { xs: "none", sm: "inline-flex" },
+            // Phones (below md; sm here is 360px) close with the cross in the header.
+            display: { xs: "none", md: "inline-flex" },
             minHeight: 48,
             px: 2.25,
             borderRadius: `${POS_RADIUS.control}px`,

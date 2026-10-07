@@ -104,6 +104,8 @@ const LineChip: React.FC<{
         cursor: interactive ? "pointer" : "default",
         "&:hover": interactive ? { borderColor: c.accent } : undefined,
         "&.Mui-disabled": { color: active ? c.accentText : c.textSoft },
+        // Phone: the pill stays 32px tall, the finger gets 44px.
+        "&::after": interactive ? { content: '""', position: "absolute", inset: { xs: "-6px 0", md: 0 } } : undefined,
       }}
     >
       {children}
