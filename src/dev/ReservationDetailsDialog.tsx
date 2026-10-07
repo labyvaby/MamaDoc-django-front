@@ -442,6 +442,10 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const canCheckIn = canManageStays && reservation?.status === "confirmed" && item?.stayStatus === "expected";
   const canCheckOut = canManageStays && item?.stayStatus === "checked_in";
   const todayIso = dayjs().format("YYYY-MM-DD");
+  // Заселить раньше даты заезда нельзя: бронь №18 заселили 02.10 при заезде 03.10, и
+  // отчёты посчитали её «выехавшей раньше срока» — ни одной прожитой ночи. Гость приехал
+  // раньше — сначала меняют даты брони (это лишняя ночь и цена), потом заселяют.
+  const checkInTooEarly = canCheckIn && item != null && item.checkIn > todayIso;
   const sameDayCheckOut = canCheckOut && item != null && item.checkIn === todayIso && item.nights.length > 1;
   const firstNightPrice = item?.nights[0] ? Number(item.nights[0].price) - Number(item.nights[0].discount ?? 0) : 0;
   // Штраф отмены на сегодня по условиям брони (r3 §4.3). Начисляется галочкой в отмене (r5) и становится
@@ -540,8 +544,14 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
       : [];
 
   // Главное действие по статусу — одной заметной кнопкой, остальное рядом тише.
-  const primaryAction = canCheckIn
-    ? { label: "Заселить", onClick: () => void handleCheckIn() }
+  const primaryAction: { label: string; onClick: () => void; disabledHint?: string } | null = canCheckIn
+    ? {
+        label: "Заселить",
+        onClick: () => void handleCheckIn(),
+        disabledHint: checkInTooEarly && item
+          ? `Заезд по брони — ${dayjs(item.checkIn).format("D MMMM")}. Гость приехал раньше — сначала «Изменить» даты брони, потом заселение.`
+          : undefined,
+      }
     : canCheckOut
       ? { label: "Выселить", onClick: () => void handleCheckOut() }
       : canConfirm
@@ -979,15 +989,20 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     </Button>
                   )}
                   {primaryAction && (
-                    <Button
-                      variant="contained"
-                      disableElevation
-                      disabled={actionBusy}
-                      onClick={primaryAction.onClick}
-                      sx={{ px: 2.5, borderRadius: "10px", fontWeight: 700 }}
-                    >
-                      {primaryAction.label}
-                    </Button>
+                    <Tooltip title={primaryAction.disabledHint ?? ""}>
+                      {/* span — у неактивной кнопки подсказка иначе не появляется */}
+                      <span>
+                        <Button
+                          variant="contained"
+                          disableElevation
+                          disabled={actionBusy || primaryAction.disabledHint != null}
+                          onClick={primaryAction.onClick}
+                          sx={{ px: 2.5, borderRadius: "10px", fontWeight: 700 }}
+                        >
+                          {primaryAction.label}
+                        </Button>
+                      </span>
+                    </Tooltip>
                   )}
                 </Stack>
               )}
