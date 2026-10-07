@@ -19,6 +19,14 @@ import { ReportPeriodPicker } from "./ReportPeriodPicker";
 
 const D = (d: dayjs.Dayjs) => d.format("YYYY-MM-DD");
 
+/**
+ * Незаезды строки: закрытые (noShows — ночной аудит или ресепшен; у старого сервера поля
+ * нет, они внутри «Отмен») плюс ещё не закрытые (notArrived). Раньше колонка показывала
+ * только не закрытые — после ночного аудита незаезды из отчёта пропадали.
+ */
+const noShowCount = (r: { noShows?: number; notArrived: number }) => (r.noShows ?? 0) + r.notArrived;
+const noShowMoney = (r: { noShowRevenue?: string; notArrivedRevenue: string }) => Number(r.noShowRevenue ?? 0) + Number(r.notArrivedRevenue);
+
 type Row = Omit<HotelPropertyComparisonRow, "propertyId" | "propertyName"> & { key: string; name: string; total?: boolean };
 
 const OccupancyBar: React.FC<{ percent: number }> = ({ percent }) => {
@@ -94,7 +102,7 @@ export const HotelPropertiesReport: React.FC<{ nav: ReportNav }> = ({ nav }) => 
                 </Typography>
                 <Typography variant="caption" color="text.secondary" component="div">
                   заездов {fmtInt(r.arrivals)} · отмен {fmtInt(r.cancellations)}
-                  {r.notArrived > 0 ? ` · не заехали ${fmtInt(r.notArrived)} на ${fmtMoney(r.notArrivedRevenue, r.currency)}` : ""}
+                  {noShowCount(r) > 0 ? ` · незаездов ${fmtInt(noShowCount(r))} на ${fmtMoney(noShowMoney(r), r.currency)}` : ""}
                 </Typography>
               </Box>
             ))
@@ -111,8 +119,8 @@ export const HotelPropertiesReport: React.FC<{ nav: ReportNav }> = ({ nav }) => 
                     <TableCell align="right">RevPAR</TableCell>
                     <TableCell align="right">Заезды</TableCell>
                     <TableCell align="right">Отмены</TableCell>
-                    <TableCell align="right" sx={{ pr: 2.5 }}>
-                      Не заехали
+                    <TableCell align="right" sx={{ pr: 2.5 }} title="Не приехавшие гости с заездом в периоде: закрытые ночным аудитом или ресепшеном и ещё не закрытые. В выручку и загрузку не входят.">
+                      Незаезды
                     </TableCell>
                   </TableRow>
                 </TableHead>
@@ -145,8 +153,8 @@ export const HotelPropertiesReport: React.FC<{ nav: ReportNav }> = ({ nav }) => 
                       <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
                         {fmtInt(r.cancellations)}
                       </TableCell>
-                      <TableCell align="right" sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: r.notArrived > 0 ? "warning.main" : "text.disabled" }}>
-                        {r.notArrived > 0 ? `${fmtInt(r.notArrived)} · ${fmtMoney(r.notArrivedRevenue, r.currency)}` : "—"}
+                      <TableCell align="right" sx={{ pr: 2.5, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: noShowCount(r) > 0 ? "warning.main" : "text.disabled" }}>
+                        {noShowCount(r) > 0 ? `${fmtInt(noShowCount(r))} · ${fmtMoney(noShowMoney(r), r.currency)}` : "—"}
                       </TableCell>
                     </TableRow>
                   ))}

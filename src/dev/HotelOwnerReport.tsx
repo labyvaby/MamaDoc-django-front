@@ -41,6 +41,7 @@ import {
   fetchPaymentRegister,
   reservationCheckIn,
   notArrivedSummary,
+  noShowSummary,
   revenueByCategory,
   revenueBySource,
   summarizeExpenses,
@@ -150,6 +151,13 @@ export const HotelOwnerReport: React.FC<{
   const sources = React.useMemo(() => revenueBySource(reservations, from, to, sourceLabel, asOf), [reservations, from, to, asOf]);
   // Не заехали и незаезд не закрыт — считаем по тем же броням, что и график (сервер отдаёт то же в occ.notArrived).
   const missed = React.useMemo(() => notArrivedSummary(reservations, from, to, todayStr), [reservations, from, to, todayStr]);
+  // Закрытые незаезды — с сервера (noShows), у старого сервера — по тем же броням периода.
+  // Новый сервер считает «Отмены» без незаездов; старый — вместе с ними, тогда отмены не показываем.
+  const localNoShows = React.useMemo(() => noShowSummary(reservations, from, to), [reservations, from, to]);
+  const noShows = occ?.noShows
+    ? { reservations: occ.noShows.reservations, nights: occ.noShows.nights, revenue: Number(occ.noShows.revenue) }
+    : localNoShows;
+  const cancellationsApart = occ?.noShows != null;
   const debtors = React.useMemo(
     () =>
       reservations
@@ -210,11 +218,13 @@ export const HotelOwnerReport: React.FC<{
             { label: "Доступно номеро-ночей", value: occ.availableRoomNights, kind: "int" },
             { label: "Заезды", value: occ.arrivals, kind: "int" },
             { label: "Выезды", value: occ.departures, kind: "int" },
-            { label: "Отмены", value: occ.cancellations, kind: "int" },
+            { label: cancellationsApart ? "Отмены" : "Отмены (вместе с незаездами)", value: occ.cancellations, kind: "int" },
             ...(canPayments ? [{ label: "Поступило по кассе", value: received, kind: "money" as const }] : []),
             ...(canExpenses ? [{ label: "Расходы", value: expenses.total, kind: "money" as const }] : []),
             ...(canPayments && canExpenses ? [{ label: "Остаток (поступило − расходы)", value: received - expenses.total, kind: "money" as const }] : []),
             { label: "Долги гостей", value: debtTotal, kind: "money" },
+            { label: "Незаезды, броней", value: noShows.reservations, kind: "int" },
+            { label: "Незаезды, сумма ночей", value: noShows.revenue, kind: "money" },
           ],
           tables: [],
         },
@@ -379,6 +389,17 @@ export const HotelOwnerReport: React.FC<{
                 hint="выручка на номер"
               />
             </Box>
+            {(noShows.reservations > 0 || (cancellationsApart && occ.cancellations > 0)) && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25 }}>
+                {noShows.reservations > 0 && (
+                  <>
+                    Незаезды: {bookingsLabel(noShows.reservations)} · {noShows.nights} {plural(noShows.nights, "ночь", "ночи", "ночей")} ·{" "}
+                    {fmtMoney(noShows.revenue, cur)} — закрыты, не в выручке и не в загрузке.
+                  </>
+                )}
+                {cancellationsApart && occ.cancellations > 0 && ` Отмены: ${fmtInt(occ.cancellations)}.`}
+              </Typography>
+            )}
             {(missed.reservations > 0 || Number(occ.leftEarlyNights ?? 0) > 0) && (
               <Alert
                 severity="warning"

@@ -220,6 +220,32 @@ export function notArrivedSummary(reservations: HotelReservation[], from: string
   return { reservations: ids.size, nights, revenue };
 }
 
+/**
+ * Закрытые незаезды (ночной аудит или ресепшен) с заездом в периоде: брони, их ночи в
+ * периоде и что те стоили. Пока сервер не отдаёт reports/occupancy → noShows, считаем
+ * так же по броням периода: после закрытия незаезды пропадали из отчётов совсем.
+ */
+export function noShowSummary(reservations: HotelReservation[], from: string, to: string): NotArrivedSummary {
+  const ids = new Set<number>();
+  let nights = 0;
+  let revenue = 0;
+  for (const r of reservations) {
+    if (r.status !== "no_show") continue;
+    const checkIn = reservationCheckIn(r);
+    if (checkIn == null || checkIn < from || checkIn > to) continue;
+    ids.add(r.id);
+    for (const item of r.items) {
+      if (item.isActive === false) continue;
+      for (const night of item.nights ?? []) {
+        if (night.date < from || night.date > to) continue;
+        nights += 1;
+        revenue += net(night);
+      }
+    }
+  }
+  return { reservations: ids.size, nights, revenue };
+}
+
 /** Дата заезда брони — у групповой самая ранняя по активным номерам. */
 export function reservationCheckIn(r: HotelReservation): string | null {
   if (r.checkIn) return r.checkIn;

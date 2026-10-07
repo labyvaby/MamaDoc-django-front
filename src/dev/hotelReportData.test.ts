@@ -8,6 +8,7 @@ import {
   breakfastCount,
   dailySeries,
   notArrivedSummary,
+  noShowSummary,
   deltaPercent,
   inWindow,
   isShiftExpense,
@@ -136,6 +137,19 @@ describe("notArrivedSummary", () => {
     const list = [reservation(), reservation({ id: 2, items: [item({ stayStatus: "checked_in" })] })];
     expect(notArrivedSummary(list, "2026-10-01", "2026-10-31", "2026-10-03")).toEqual({ reservations: 1, nights: 2, revenue: 6000 });
     expect(notArrivedSummary(list, "2026-10-01", "2026-10-31", "2026-10-01")).toEqual({ reservations: 0, nights: 0, revenue: 0 });
+  });
+});
+
+describe("noShowSummary", () => {
+  it("закрытые незаезды с заездом в периоде — брони, ночи в периоде и их цена", () => {
+    const list = [
+      reservation({ status: "no_show" }),
+      reservation({ id: 2, number: 2, status: "cancelled" }),
+      reservation({ id: 3, number: 3, status: "no_show", checkIn: "2026-11-01", checkOut: "2026-11-02" }),
+      reservation({ id: 4, number: 4 }),
+    ];
+    expect(noShowSummary(list, "2026-10-01", "2026-10-01")).toEqual({ reservations: 1, nights: 1, revenue: 3000 });
+    expect(noShowSummary(list, "2026-10-01", "2026-10-31")).toEqual({ reservations: 1, nights: 2, revenue: 6000 });
   });
 });
 
