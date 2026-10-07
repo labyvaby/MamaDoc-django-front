@@ -64,6 +64,7 @@ import {
   type HotelPricingChange,
 } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
+import { sendQueue, type QueuedEdit } from "./priceQueue";
 import { FormField } from "./formField";
 import { fieldError, type FieldRules } from "./formRules";
 import { DRAWER_WIDTH, DrawerFooter, DrawerHeader, DrawerSection, EmptyState, HotelPage, HotelPageHeader, Surface } from "./hotelUi";
@@ -78,6 +79,7 @@ const money = (v: string | number) => Number(v).toLocaleString("ru-RU", { maximu
 
 const PRICE_RULES: FieldRules = { kind: "decimal", min: 1, max: 10_000_000, maxDecimals: 2 };
 const MIN_NIGHTS_RULES: FieldRules = { kind: "int", min: 1, max: 90, maxLength: 2 };
+const MAX_NIGHTS_RULES: FieldRules = { kind: "int", min: 1, max: 365, maxLength: 3 };
 
 const STEP_LABELS: Record<string, string> = {
   rule: "Правило",
@@ -118,6 +120,29 @@ export const HotelPriceCalendarPage: React.FC = () => {
     staleTime: 5 * 60_000,
   });
   const plans = plansQuery.data ?? [];
+  // «Пакет правок»: правки разных тарифов копятся и уходят одним нажатием,
+  // чтобы канал-менеджер получил их одним запросом (см. priceQueue.ts).
+  const [queue, setQueue] = React.useState<QueuedEdit[]>([]);
+  const [sending, setSending] = React.useState(false);
+  const queryClient = useQueryClient();
+  const { enqueueSnackbar } = useSnackbar();
+  const queuedNights = queue.reduce((sum, e) => sum + e.nights, 0);
+  const sendBatch = async () => {
+    if (!queue.length || sending) return;
+    setSending(true);
+    const { saved, failed } = await sendQueue(queue);
+    setSending(false);
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "priceCalendar"] });
+    void queryClient.invalidateQueries({ queryKey: ["hotel", "pricingHistory"] });
+    if (failed.length) {
+      const failedIds = new Set(failed.map((f) => f.ratePlanId));
+      setQueue((q) => q.filter((e) => failedIds.has(e.ratePlanId)));
+      enqueueSnackbar(`Не принято по тарифам: ${failed.length}. ${getErrorMessage(failed[0].error, "Сервер не принял изменения")}`, { variant: "warning" });
+    } else {
+      setQueue([]);
+      enqueueSnackbar(`Пакет отправлен: ${saved} ночей`, { variant: "success" });
+    }
+  };
 
   const from = start.format("YYYY-MM-DD");
   const to = start.add(DAYS, "day").format("YYYY-MM-DD");
@@ -218,7 +243,35 @@ export const HotelPriceCalendarPage: React.FC = () => {
       ) : tab === "history" && property ? (
         <PricingHistoryPanel propertyId={property.id} roomTypeNames={new Map((calendar?.roomTypes ?? []).map((r) => [r.roomTypeId, r.roomTypeName]))} />
       ) : view === "year" && property ? (
-        <PriceYearView propertyId={property.id} ratePlanId={ratePlanId} canManage={canManage} onOpenNight={(roomType, night) => setSelected({ roomType, night })} />
+        <>
+          {queue.length > 0 && (
+            <Alert
+              severity="info"
+              variant="outlined"
+              sx={{ mb: 2 }}
+              action={
+                <Stack direction="row" gap={1}>
+                  <Button size="small" onClick={() => setQueue([])} disabled={sending}>
+                    Очистить
+                  </Button>
+                  <Button size="small" variant="contained" disableElevation onClick={() => void sendBatch()} disabled={sending}>
+                    {sending ? "Отправляем…" : "Отправить пакет"}
+                  </Button>
+                </Stack>
+              }
+            >
+              В пакете {queue.length} {queue.length === 1 ? "правка" : "правок"}, {queuedNights} ночей:{" "}
+              {queue.map((e) => e.ratePlanName || "основной тариф").join(", ")}
+            </Alert>
+          )}
+          <PriceYearView
+            propertyId={property.id}
+            ratePlanId={ratePlanId}
+            canManage={canManage}
+            onOpenNight={(roomType, night) => setSelected({ roomType, night })}
+            onQueue={(edit) => setQueue((q) => [...q, edit])}
+          />
+        </>
       ) : calendarQuery.isError ? (
         <Alert severity="error" variant="outlined">
           {getErrorMessage(calendarQuery.error, "Не удалось загрузить цены")}
@@ -414,6 +467,9 @@ const NightDrawer: React.FC<{
   const [reason, setReason] = React.useState("");
   const [stopSell, setStopSell] = React.useState(false);
   const [minNights, setMinNights] = React.useState("");
+  const [maxNights, setMaxNights] = React.useState("");
+  const [closedToArrival, setClosedToArrival] = React.useState(false);
+  const [closedToDeparture, setClosedToDeparture] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -427,6 +483,9 @@ const NightDrawer: React.FC<{
     setReason(target.night.overrideReason ?? "");
     setStopSell(target.night.stopSell);
     setMinNights(target.night.minNights ? String(target.night.minNights) : "");
+    setMaxNights(target.night.maxNights ? String(target.night.maxNights) : "");
+    setClosedToArrival(target.night.closedToArrival);
+    setClosedToDeparture(target.night.closedToDeparture);
     setError(null);
   }, [target]);
 
@@ -443,13 +502,20 @@ const NightDrawer: React.FC<{
   const nightsCount = !datesError && firstNight && lastNight ? lastNight.diff(firstNight, "day") + 1 : 0;
   const priceError = fieldError(price, PRICE_RULES);
   const minError = fieldError(minNights, MIN_NIGHTS_RULES);
+  const maxError = fieldError(maxNights, MAX_NIGHTS_RULES) ?? (minNights.trim() !== "" && maxNights.trim() !== "" && Number(maxNights) < Number(minNights) ? "Максимум меньше минимума" : null);
   const priceChanged = price.trim() !== "" && Number(price) !== Number(night.manualPrice ?? NaN);
   const stopChanged = stopSell !== night.stopSell;
   const minChanged = minNights.trim() !== (night.minNights ? String(night.minNights) : "");
+  const maxChanged = maxNights.trim() !== (night.maxNights ? String(night.maxNights) : "");
+  const arrivalChanged = closedToArrival !== night.closedToArrival;
+  const departureChanged = closedToDeparture !== night.closedToDeparture;
   // На диапазон — применяем то, что человек задал, даже если на первой ночи
   // значение совпадает: на остальных ночах оно могло быть другим.
   const multi = nightsCount > 1;
-  const hasChange = multi ? price.trim() !== "" || stopChanged || minChanged || stopSell : priceChanged || stopChanged || minChanged;
+  const otherChanged = maxChanged || arrivalChanged || departureChanged;
+  const hasChange = multi
+    ? price.trim() !== "" || stopChanged || minChanged || stopSell || otherChanged || closedToArrival || closedToDeparture
+    : priceChanged || stopChanged || minChanged || otherChanged;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["hotel", "priceCalendar"] });
@@ -478,7 +544,7 @@ const NightDrawer: React.FC<{
   };
 
   const handleSave = () => {
-    if (priceError || minError || datesError) return;
+    if (priceError || minError || maxError || datesError) return;
     void put(
       {
         price: price.trim() !== "" && (multi || priceChanged) ? String(Number(price)) : undefined,
@@ -486,6 +552,10 @@ const NightDrawer: React.FC<{
         stopSell: multi || stopChanged ? stopSell : undefined,
         minNights: minNights.trim() !== "" && (multi || minChanged) ? Number(minNights) : undefined,
         clearMinNights: minNights.trim() === "" && minChanged ? true : undefined,
+        maxNights: maxNights.trim() !== "" && (multi || maxChanged) ? Number(maxNights) : undefined,
+        clearMaxNights: maxNights.trim() === "" && maxChanged ? true : undefined,
+        closedToArrival: multi || arrivalChanged ? closedToArrival : undefined,
+        closedToDeparture: multi || departureChanged ? closedToDeparture : undefined,
       },
       "Сохранено",
     );
@@ -598,12 +668,39 @@ const NightDrawer: React.FC<{
                   helperText="Пусто — без ограничения"
                   sx={{ flex: 1, minWidth: 160 }}
                 />
+                <FormField
+                  icon={<NightsStayOutlined />}
+                  label="Максимум ночей"
+                  value={maxNights}
+                  onValueChange={setMaxNights}
+                  rules={MAX_NIGHTS_RULES}
+                  disabled={saving}
+                  helperText={maxError ?? "Пусто — без ограничения"}
+                  sx={{ flex: 1, minWidth: 160 }}
+                />
+              </Stack>
+              <Stack direction="row" gap={2} flexWrap="wrap">
                 <FormControlLabel
-                  sx={{ mt: 1 }}
                   control={<Switch checked={stopSell} onChange={(e) => setStopSell(e.target.checked)} color="error" disabled={saving} />}
                   label={
                     <Typography variant="body2" fontWeight={600}>
                       Стоп-продажа
+                    </Typography>
+                  }
+                />
+                <FormControlLabel
+                  control={<Switch checked={closedToArrival} onChange={(e) => setClosedToArrival(e.target.checked)} color="warning" disabled={saving} />}
+                  label={
+                    <Typography variant="body2" fontWeight={600}>
+                      Закрыто для заезда
+                    </Typography>
+                  }
+                />
+                <FormControlLabel
+                  control={<Switch checked={closedToDeparture} onChange={(e) => setClosedToDeparture(e.target.checked)} color="warning" disabled={saving} />}
+                  label={
+                    <Typography variant="body2" fontWeight={600}>
+                      Закрыто для выезда
                     </Typography>
                   }
                 />
@@ -638,7 +735,7 @@ const NightDrawer: React.FC<{
             variant="contained"
             disableElevation
             onClick={handleSave}
-            disabled={saving || !hasChange || priceError != null || minError != null || datesError != null}
+            disabled={saving || !hasChange || priceError != null || minError != null || maxError != null || datesError != null}
             sx={{ px: 3, borderRadius: "10px", fontWeight: 700 }}
           >
             {saving ? "Сохраняем…" : "Сохранить"}

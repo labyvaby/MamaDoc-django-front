@@ -99,6 +99,32 @@ describe("planBulkChanges", () => {
     ]);
   });
 
+  it("закрытия для заезда и выезда, максимум ночей — одним диапазоном", () => {
+    const plan = planBulkChanges({
+      selection: [cellKey(1, "2026-10-02"), cellKey(1, "2026-10-03")],
+      nights,
+      settings: { ...base, closedToArrival: "on", closedToDeparture: "off", maxNights: { mode: "set", value: 4 }, minNights: { mode: "set", value: 1 } },
+      allCategories: false,
+      today: "2026-10-01",
+    });
+    expect(plan.changes).toEqual([
+      { roomTypeId: 1, dateFrom: "2026-10-02", dateTo: "2026-10-04", closedToArrival: true, closedToDeparture: false, minNights: 1, maxNights: 4 },
+    ]);
+  });
+
+  it("«убрать максимум» шлёт clearMaxNights, «как есть» ничего не добавляет", () => {
+    const cleared = planBulkChanges({
+      selection: [cellKey(1, "2026-10-02")],
+      nights,
+      settings: { ...base, maxNights: { mode: "clear" } },
+      allCategories: false,
+      today: "2026-10-01",
+    });
+    expect(cleared.changes).toEqual([{ roomTypeId: 1, dateFrom: "2026-10-02", dateTo: "2026-10-03", clearMaxNights: true }]);
+    const kept = planBulkChanges({ selection: [cellKey(1, "2026-10-02")], nights, settings: { ...base, maxNights: { mode: "keep" } }, allCategories: false, today: "2026-10-01" });
+    expect(kept.changes).toEqual([]);
+  });
+
   it("авторасчёт и ничего не выбрано", () => {
     const auto = planBulkChanges({ selection: [cellKey(1, "2026-10-03")], nights, settings: { ...base, price: { mode: "auto" } }, allCategories: false, today: "2026-10-01" });
     expect(auto.changes).toEqual([{ roomTypeId: 1, dateFrom: "2026-10-03", dateTo: "2026-10-04", clearPrice: true }]);

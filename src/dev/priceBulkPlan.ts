@@ -28,6 +28,8 @@ export interface BulkSettings {
   minNights: { mode: "keep" } | { mode: "set"; value: number } | { mode: "clear" };
   closedToArrival: TriState;
   closedToDeparture: TriState;
+  /** Максимум ночей; не задан — «как есть». */
+  maxNights?: { mode: "keep" } | { mode: "set"; value: number } | { mode: "clear" };
   reason: string;
 }
 
@@ -98,6 +100,7 @@ export function planBulkChanges(opts: {
     ...(settings.closedToArrival !== "keep" ? { closedToArrival: settings.closedToArrival === "on" } : {}),
     ...(settings.closedToDeparture !== "keep" ? { closedToDeparture: settings.closedToDeparture === "on" } : {}),
     ...(settings.minNights.mode === "set" ? { minNights: settings.minNights.value } : settings.minNights.mode === "clear" ? { clearMinNights: true } : {}),
+    ...(settings.maxNights?.mode === "set" ? { maxNights: settings.maxNights.value } : settings.maxNights?.mode === "clear" ? { clearMaxNights: true } : {}),
   };
   const hasRestrictions = Object.keys(restrictions).length > 0;
   if (!priceChanges && !hasRestrictions) return { changes: [], nights: 0, avgBefore: null, avgAfter: null };

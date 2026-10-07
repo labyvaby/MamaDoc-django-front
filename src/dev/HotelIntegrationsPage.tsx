@@ -649,7 +649,7 @@ const ChannexPanel: React.FC<{ status: HotelChannexStatus; propertyId: number }>
                     <Chip
                       size="small"
                       label={push.status}
-                      color={push.error ? "error" : push.status === "success" ? "success" : "default"}
+                      color={push.error ? "error" : push.status === "ok" || push.status === "success" ? "success" : "default"}
                     />
                     {push.warningsCount > 0 && (
                       <Chip size="small" color="warning" label={`Предупреждений: ${push.warningsCount}`} />
@@ -658,6 +658,11 @@ const ChannexPanel: React.FC<{ status: HotelChannexStatus; propertyId: number }>
                   {(push.dateFrom || push.dateTo) && (
                     <Typography variant="caption" color="text.secondary" display="block">
                       {push.dateFrom ?? "…"} — {push.dateTo ?? "…"}, значений: {push.valuesCount}
+                    </Typography>
+                  )}
+                  {push.taskIds.length > 0 && (
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontFamily: "monospace", wordBreak: "break-all" }}>
+                      task: {push.taskIds.join(", ")}
                     </Typography>
                   )}
                   {push.error && (

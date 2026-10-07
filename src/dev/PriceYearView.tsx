@@ -27,6 +27,7 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -46,6 +47,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { cellKey, planBulkChanges, weekdayIndex, type BulkSettings, type PriceMode, type TriState } from "./priceBulkPlan";
 import { DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection, FilterChip, plural, Surface } from "./hotelUi";
 import { downloadXlsx } from "./hotelXlsx";
+import type { QueuedEdit } from "./priceQueue";
 
 const MONTHS = 12;
 /** Сервер ответил 404 на …/daily-rates/batch/ — до перезагрузки шлём диапазоны по одному. */
@@ -97,7 +99,9 @@ export const PriceYearView: React.FC<{
   ratePlanId: number | "";
   canManage: boolean;
   onOpenNight: (roomType: HotelPriceCalendarRoomType, night: HotelPriceNight) => void;
-}> = ({ propertyId, ratePlanId, canManage, onOpenNight }) => {
+  /** Положить правку в «пакет» вместо немедленной отправки (см. priceQueue.ts). */
+  onQueue?: (edit: QueuedEdit) => void;
+}> = ({ propertyId, ratePlanId, canManage, onOpenNight, onQueue }) => {
   const theme = useTheme();
   const dark = theme.palette.mode === "dark";
   const [start, setStart] = React.useState<Dayjs>(() => dayjs().startOf("month"));
@@ -539,6 +543,7 @@ export const PriceYearView: React.FC<{
           onClose={() => setBulkOpen(false)}
           selection={selection}
           data={data}
+          onQueue={onQueue}
           onDone={() => {
             setBulkOpen(false);
             setSelection(new Set());
@@ -568,7 +573,8 @@ const PriceBulkDrawer: React.FC<{
   selection: Set<string>;
   data: YearData;
   onDone: () => void;
-}> = ({ open, onClose, selection, data, onDone }) => {
+  onQueue?: (edit: QueuedEdit) => void;
+}> = ({ open, onClose, selection, data, onDone, onQueue }) => {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
@@ -585,6 +591,10 @@ const PriceBulkDrawer: React.FC<{
   const [stopSell, setStopSell] = React.useState<TriState>("keep");
   const [minNights, setMinNights] = React.useState("");
   const [minMode, setMinMode] = React.useState<"keep" | "set" | "clear">("keep");
+  const [maxNights, setMaxNights] = React.useState("");
+  const [maxMode, setMaxMode] = React.useState<"keep" | "set" | "clear">("keep");
+  const [closedToArrival, setClosedToArrival] = React.useState<TriState>("keep");
+  const [closedToDeparture, setClosedToDeparture] = React.useState<TriState>("keep");
   const [reason, setReason] = React.useState("");
   const [progress, setProgress] = React.useState<{ done: number; total: number; failed: number } | null>(null);
 
@@ -624,8 +634,9 @@ const PriceBulkDrawer: React.FC<{
     price,
     stopSell,
     minNights: minMode === "set" && Number(minNights) > 0 ? { mode: "set", value: Number(minNights) } : minMode === "clear" ? { mode: "clear" } : { mode: "keep" },
-    closedToArrival: "keep",
-    closedToDeparture: "keep",
+    closedToArrival,
+    closedToDeparture,
+    maxNights: maxMode === "set" && Number(maxNights) > 0 ? { mode: "set", value: Number(maxNights) } : maxMode === "clear" ? { mode: "clear" } : { mode: "keep" },
     reason,
   };
   const plan = React.useMemo(
@@ -635,6 +646,13 @@ const PriceBulkDrawer: React.FC<{
   );
   const dates = [...selection].map((k) => k.split("|")[1]).sort();
   const busy = progress != null && progress.done < progress.total;
+
+  const enqueue = () => {
+    if (data.ratePlanId == null || plan.changes.length === 0 || !onQueue) return;
+    onQueue({ ratePlanId: data.ratePlanId, ratePlanName: data.ratePlanName, changes: plan.changes, nights: plan.nights });
+    enqueueSnackbar(`В пакет: ${data.ratePlanName || "основной тариф"}, ${fmt(plan.nights)} ${plural(plan.nights, "ночь", "ночи", "ночей")}`, { variant: "info" });
+    onDone();
+  };
 
   const apply = async () => {
     if (data.ratePlanId == null || plan.changes.length === 0) return;
@@ -874,6 +892,41 @@ const PriceBulkDrawer: React.FC<{
               />
             )}
           </Stack>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5 }}>
+            Максимум ночей
+          </Typography>
+          <Stack direction="row" gap={1} alignItems="center" sx={{ mt: 0.5 }}>
+            <ToggleButtonGroup size="small" exclusive value={maxMode} sx={{ "& .MuiToggleButton-root": { whiteSpace: "nowrap", px: 1.25 } }}>
+              {seg("keep", maxMode, setMaxMode, "Как есть")}
+              {seg("set", maxMode, setMaxMode, "Задать")}
+              {seg("clear", maxMode, setMaxMode, "Убрать")}
+            </ToggleButtonGroup>
+            {maxMode === "set" && (
+              <TextField
+                size="small"
+                value={maxNights}
+                onChange={(e) => setMaxNights(e.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+                sx={{ width: 90 }}
+                slotProps={{ input: { endAdornment: <InputAdornment position="end">ноч.</InputAdornment> }, htmlInput: { inputMode: "numeric" } }}
+              />
+            )}
+          </Stack>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5 }}>
+            Закрыто для заезда
+          </Typography>
+          <ToggleButtonGroup size="small" exclusive value={closedToArrival} sx={{ width: "100%", mt: 0.5 }}>
+            {seg("keep", closedToArrival, setClosedToArrival, "Как есть")}
+            {seg("on", closedToArrival, setClosedToArrival, "Закрыть")}
+            {seg("off", closedToArrival, setClosedToArrival, "Открыть")}
+          </ToggleButtonGroup>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5 }}>
+            Закрыто для выезда
+          </Typography>
+          <ToggleButtonGroup size="small" exclusive value={closedToDeparture} sx={{ width: "100%", mt: 0.5 }}>
+            {seg("keep", closedToDeparture, setClosedToDeparture, "Как есть")}
+            {seg("on", closedToDeparture, setClosedToDeparture, "Закрыть")}
+            {seg("off", closedToDeparture, setClosedToDeparture, "Открыть")}
+          </ToggleButtonGroup>
         </DrawerSection>
 
         <DrawerSection label="Причина">
@@ -917,6 +970,15 @@ const PriceBulkDrawer: React.FC<{
         <Button onClick={onClose} disabled={busy}>
           Отмена
         </Button>
+        {onQueue && (
+          <Tooltip title="Накопить правки по нескольким тарифам и отправить всё разом">
+            <span>
+              <Button disabled={busy || plan.changes.length === 0 || data.ratePlanId == null} onClick={enqueue}>
+                В пакет
+              </Button>
+            </span>
+          </Tooltip>
+        )}
         <Button
           variant="contained"
           disableElevation
