@@ -396,6 +396,21 @@ export function inWindow(iso: string, window: { start: dayjs.Dayjs; end: dayjs.D
   return !t.isBefore(window.start) && t.isBefore(window.end);
 }
 
+/**
+ * Расход смены — как оплата по acceptedAt: проведён внутри окна смены (и не задним числом
+ * за прошлый день), либо внесён позже, задним числом, датой этой смены. Раньше расходы
+ * брались за календарную дату, а оплаты — за окно «09:00–09:00», и «В кассе» вычитало
+ * из ночных оплат дневные расходы чужой смены.
+ */
+export function isShiftExpense(
+  e: { expenseDate: string; createdAt: string },
+  date: string,
+  window: { start: dayjs.Dayjs; end: dayjs.Dayjs },
+): boolean {
+  if (inWindow(e.createdAt, window)) return e.expenseDate >= date;
+  return e.expenseDate === date && !dayjs(e.createdAt).isBefore(window.end);
+}
+
 /** Подпись способа для сводки: терминал безнала («ККБ», «МКасса») важнее общего «Карта». */
 export const paymentChannelLabel = (p: HotelPayment): string => p.cashlessMethodName || p.methodLabel || p.method;
 

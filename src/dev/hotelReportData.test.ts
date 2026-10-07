@@ -10,6 +10,7 @@ import {
   notArrivedSummary,
   deltaPercent,
   inWindow,
+  isShiftExpense,
   revenueByCategory,
   shiftWindow,
   summarizeExpenses,
@@ -199,6 +200,25 @@ describe("balanceRows", () => {
       [2, 0, 0],
     ]);
     expect(balanceTotals(rows).adr).toBe(2750);
+  });
+});
+
+describe("isShiftExpense", () => {
+  // Смена 07.10 с 09:00 до 09:00 08.10.
+  const shift = shiftWindow("2026-10-07", 9);
+  const e = (expenseDate: string, createdAt: string) => ({ expenseDate, createdAt });
+  it("ночной расход — в смену, которая шла ночью, а не в календарную дату", () => {
+    expect(isShiftExpense(e("2026-10-08", "2026-10-08T03:00:00+06:00"), "2026-10-07", shift)).toBe(true);
+    expect(isShiftExpense(e("2026-10-08", "2026-10-08T03:00:00+06:00"), "2026-10-08", shiftWindow("2026-10-08", 9))).toBe(false);
+  });
+  it("утро до пересменки — прошлая смена", () => {
+    expect(isShiftExpense(e("2026-10-07", "2026-10-07T08:00:00+06:00"), "2026-10-07", shift)).toBe(false);
+    expect(isShiftExpense(e("2026-10-07", "2026-10-07T08:00:00+06:00"), "2026-10-06", shiftWindow("2026-10-06", 9))).toBe(true);
+  });
+  it("задним числом: внесён позже — в смену своей даты, не в текущую", () => {
+    const late = e("2026-10-06", "2026-10-07T12:00:00+06:00");
+    expect(isShiftExpense(late, "2026-10-07", shift)).toBe(false);
+    expect(isShiftExpense(late, "2026-10-06", shiftWindow("2026-10-06", 9))).toBe(true);
   });
 });
 

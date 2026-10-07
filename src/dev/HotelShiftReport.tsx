@@ -65,6 +65,7 @@ import {
   fetchAllReservations,
   fetchPaymentRegister,
   inWindow,
+  isShiftExpense,
   paymentChannelLabel,
   reservationCheckIn,
   reservationCheckOut,
@@ -212,7 +213,8 @@ export const HotelShiftReport: React.FC<{
   });
   const expensesQuery = useQuery({
     queryKey: ["hotel", "reports", "shiftExpenses", orgId, branchId, date],
-    queryFn: ({ signal }) => fetchAllExpenses({ organizationId: orgId!, branchId, dateFrom: date, dateTo: date }, signal),
+    // Окно «с 09:00» захватывает утро следующего дня — берём расходы обеих дат, смену режем ниже (isShiftExpense).
+    queryFn: ({ signal }) => fetchAllExpenses({ organizationId: orgId!, branchId, dateFrom: date, dateTo: D(dayjs(date).add(1, "day")) }, signal),
     enabled: canExpenses && orgId != null,
     placeholderData: undefined,
   });
@@ -224,10 +226,14 @@ export const HotelShiftReport: React.FC<{
         .sort((a, b) => a.acceptedAt.localeCompare(b.acceptedAt)),
     [paymentsQuery.data, shift],
   );
+  const shiftExpenses = React.useMemo(
+    () => (expensesQuery.data?.rows ?? []).filter((e) => isShiftExpense(e, date, shift)),
+    [expensesQuery.data, date, shift],
+  );
   const admins = React.useMemo(() => {
-    const set = new Set(shiftPayments.map((p) => p.acceptedByName).filter(Boolean));
+    const set = new Set([...shiftPayments.map((p) => p.acceptedByName), ...shiftExpenses.map((e) => e.createdByName ?? "")].filter(Boolean));
     return [...set].sort();
-  }, [shiftPayments]);
+  }, [shiftPayments, shiftExpenses]);
   const visiblePayments = admin ? shiftPayments.filter((p) => p.acceptedByName === admin) : shiftPayments;
 
   // Брони для строк оплат: сначала из списков дня, недостающие — по одной (их немного).
@@ -271,7 +277,8 @@ export const HotelShiftReport: React.FC<{
     };
   });
   const payments = summarizePayments(visiblePayments);
-  const expenseRows = expensesQuery.data?.rows ?? [];
+  // Фильтр администратора режет и расходы: «В кассе» — его наличные минус его расходы.
+  const expenseRows = admin ? shiftExpenses.filter((e) => e.createdByName === admin) : shiftExpenses;
   const expenseSummary = summarizeExpenses(expenseRows);
   const expenseLines: ShiftExpenseLine[] = expenseRows.map((e) => ({
     id: e.id,
@@ -718,7 +725,7 @@ export const HotelShiftReport: React.FC<{
                   {expensesQuery.isPending ? (
                     <ReportEmpty>Загружаем…</ReportEmpty>
                   ) : expenseLines.length === 0 ? (
-                    <ReportEmpty>Расходов за день нет</ReportEmpty>
+                    <ReportEmpty>{admin ? "У администратора расходов за смену нет" : "Расходов за смену нет"}</ReportEmpty>
                   ) : (
                     <Table size="small" sx={tableSx}>
                       <TableBody>
