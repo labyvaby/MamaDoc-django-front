@@ -27,7 +27,7 @@ export const SALES_NO_METHOD_HINT =
 const REFUNDS_LABEL = "Возвраты";
 export const CERTIFICATES_LABEL = "Продажа сертификатов";
 export const CERTIFICATES_HINT =
-  "Не выручка: деньги за подарочные карты — аванс. Выручка появится, когда сертификатом оплатят товар. Возвраты — при аннулировании карты.";
+  "Не входит в остаток кассы и в выручку: деньги за подарочные карты откладывают отдельно. Выручка появится, когда сертификатом оплатят товар. Возвраты — при аннулировании карты.";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -95,6 +95,7 @@ function certificateRow(income: number, refunds: number, children: FlowSubRow[])
       amount: Math.abs(net),
       direction: net < 0 ? -1 : 1,
       hint: CERTIFICATES_HINT,
+      aside: true,
       children,
     },
   ];
@@ -212,7 +213,7 @@ export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
   const certificateMethods = certificateMethodSubRows(methods);
 
   return {
-    inflow: payments - refunds + sales + certificates - certificateRefunds,
+    inflow: payments - refunds + sales,
     outflow: expenses + supplies,
     breakdown: [
       paymentsRow(payments, refunds, cardPaymentSubRows(methods, refunds)),
@@ -253,16 +254,14 @@ export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
 
 /**
  * Наличный остаток по учёту: всё с начала записей до сегодня. Деньги за
- * подарочные сертификаты лежат в ящике, хотя выручкой не являются, — бэк
- * так же включает их в `netCashFlow` и `expectedCash` смены.
+ * подарочные сертификаты в остаток не входят (магазин откладывает их
+ * отдельно) — бэк так же не включает их в `netCashFlow` и `expectedCash`.
  */
 export function cashNet(s: CashboxSummary): number {
   return (
     num(s.cashIncome) +
-    num(s.salesCashIncome) +
-    num(s.certificateCashIncome) -
+    num(s.salesCashIncome) -
     num(s.cashRefunds) -
-    num(s.certificateCashRefunds) -
     num(s.cashExpenses) -
     num(s.supplyCashExpenses)
   );
@@ -283,7 +282,7 @@ export function cashFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
   const certificateRefunds = num(s?.certificateCashRefunds);
 
   return {
-    inflow: payments - refunds + sales + certificates - certificateRefunds,
+    inflow: payments - refunds + sales,
     outflow: expenses + supplies,
     breakdown: [
       paymentsRow(

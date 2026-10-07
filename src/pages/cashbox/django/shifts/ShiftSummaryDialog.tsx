@@ -108,12 +108,12 @@ const ShiftSummaryDialog: React.FC<Props> = ({ open, shift, onClose }) => {
             <Row label="Приход" value={`+ ${fmt(s.cashIncome)} с`} color="success.main" />
             <Row label="Возвраты" value={`− ${fmt(s.cashRefunds)} с`} color="success.main" />
             <Row label="Расходы" value={`− ${fmt(s.cashExpenses)} с`} color="success.main" />
-            {/* Сертификаты — в ящике и в ожидаемых наличных, но не выручка. */}
+            {/* Сертификаты откладывают отдельно: не входят в «Ожидается в кассе». */}
             {(parseFloat(s.certificateCashIncome ?? "0") !== 0 || parseFloat(s.certificateCashRefunds ?? "0") !== 0) && (
               <Row
-                label="Продажа сертификатов (не выручка)"
+                label="Продажа сертификатов (не входит в остаток)"
                 value={netSom(parseFloat(s.certificateCashIncome ?? "0") - parseFloat(s.certificateCashRefunds ?? "0"))}
-                color="success.main"
+                color="text.secondary"
               />
             )}
             <Row label="Ожидается в кассе" value={`${fmt(s.expectedCash)} с`} color="success.main" bold />
