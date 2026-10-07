@@ -1,8 +1,9 @@
 /**
  * «Кухня» — во сколько какие блюда готовить и сколько продуктов на это надо
  * купить. Реальный бэкенд — GET /hotel/kitchen/day-plan/ (см. src/api/hotel.ts)
- * одним вызовом отдаёт блюда+порции+список закупки. Порции — от числа гостей
- * (occupiedGuests × portionsPerGuest блюда), считает бэк.
+ * одним вызовом отдаёт блюда+порции+список закупки. Порции считает бэк: гости,
+ * у кого приём пищи блюда входит в питание брони (mealGuests), × portionsPerGuest;
+ * старый сервер — все проживающие (occupiedGuests).
  *
  * Три числа на продукт, не два: «Нужно по рецепту» (весь расход) — норма,
  * не редактируется; «Есть на складе» — то, что уже лежит на кухне с прошлой
@@ -193,12 +194,17 @@ export const HotelKitchenPage: React.FC = () => {
   };
 
   // Порции, «Нужно», «Докупить» и суммы — как есть от бэка: он считает
-  // round(гостей × порций на гостя) без минимума, при 0 гостей — 0. Фронт
+  // round(гостей с этим питанием × порций на гостя) без минимума. Фронт
   // ничего не пересчитывает. noGuests — только для подсказки и чтобы не
   // предлагать «Купил» на меню, по которому готовить не для кого.
   const noGuests = plan != null && plan.occupiedGuests === 0;
   const totalPlanned = plan ? Number(plan.plannedTotal) : 0;
   const totalPortions = plan ? plan.dishes.reduce((sum, d) => sum + d.portions, 0) : 0;
+  // Новый сервер считает порции по питанию в бронях (mealGuests): «без питания» не ест,
+  // завтрак — у ночевавших. Гости есть, а порций ноль — значит, их тарифы без питания.
+  const mealGuests = plan?.mealGuests && Object.keys(plan.mealGuests).length > 0 ? plan.mealGuests : null;
+  const noMeals = mealGuests != null && plan != null && plan.occupiedGuests > 0 && totalPortions === 0;
+  const guestsWord = (n: number) => `${n} ${plural(n, "гостя", "гостей", "гостей")}`;
   const purchasedCount = plan ? plan.shoppingList.filter((i) => i.purchase).length : 0;
 
   const toBuyCount = plan ? plan.shoppingList.filter((i) => Number(i.toBuyQty) > 0).length : 0;
@@ -209,7 +215,9 @@ export const HotelKitchenPage: React.FC = () => {
         title="Кухня"
         subtitle={
           tab === "plan" && plan
-            ? `Меню и закупка на ${plan.occupiedGuests} ${plural(plan.occupiedGuests, "гостя", "гостей", "гостей")}`
+            ? mealGuests
+              ? MEAL_ORDER.map((m) => `${MEAL_LABELS[m].toLowerCase()} на ${guestsWord(mealGuests[m] ?? 0)}`).join(" · ").replace(/^./, (c) => c.toUpperCase())
+              : `Меню и закупка на ${guestsWord(plan.occupiedGuests)}`
             : tab === "menu"
               ? "Блюда и рецепты — по ним считаются порции и закупка"
               : tab === "products"
@@ -218,7 +226,9 @@ export const HotelKitchenPage: React.FC = () => {
         }
         info={
           <>
-            Порции считаются от числа гостей на эту дату (взрослые и дети): гостей × порций на гостя у блюда. «Нужно» и «Докупить» не
+            Порции считаются по питанию в бронях: блюдо готовится на гостей (взрослые и дети), у кого его приём пищи входит в
+            тариф или бронь — полупансион это завтрак и ужин, полный пансион и «всё включено» — все три; гости «без питания» в порции не
+            входят. Завтрак на дату — для тех, кто ночевал в ночь перед ней. Порций = гостей × порций на гостя у блюда. «Нужно» и «Докупить» не
             редактируются: «Докупить» = нужно минус то, что есть на складе. «На складе» и «Куплено» — ввод
             сотрудника, их всегда можно поправить.
           </>
@@ -305,6 +315,15 @@ export const HotelKitchenPage: React.FC = () => {
             <MetricTile label="Докупить на сумму" value={`${totalPlanned.toLocaleString("ru-RU")} сом`} hint="по плановым ценам" />
           </Box>
 
+          {noMeals && (
+            <Surface sx={{ py: 1.75, bgcolor: "transparent", borderStyle: "dashed" }}>
+              <Typography variant="body2" color="text.secondary">
+                Гостей {plan.occupiedGuests}, но питание в их бронях не включено — по тарифам готовить не нужно. Если отель кормит
+                всех, укажите питание в тарифном плане или в брони.
+              </Typography>
+            </Surface>
+          )}
+
           {noGuests && (
             <Surface sx={{ py: 1.75, bgcolor: "transparent", borderStyle: "dashed" }}>
               <Typography variant="body2" color="text.secondary">
@@ -327,6 +346,11 @@ export const HotelKitchenPage: React.FC = () => {
                         {window.from} – {window.to}
                       </Typography>
                     </Stack>
+                    {mealGuests && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: -1, mb: 1 }}>
+                        {(mealGuests[meal] ?? 0) > 0 ? `на ${guestsWord(mealGuests[meal] ?? 0)} с питанием` : "по броням — никому"}
+                      </Typography>
+                    )}
                     {dishes.length === 0 ? (
                       <Typography variant="body2" color="text.disabled">
                         Блюд нет
