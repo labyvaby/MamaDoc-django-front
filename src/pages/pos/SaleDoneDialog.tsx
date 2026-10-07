@@ -51,10 +51,11 @@ export function SaleDoneDialog({
   const payments: Array<{ method: string }> = receipt?.payments?.length
     ? receipt.payments
     : certificates.flatMap((item) => item.payments ?? []).filter((payment) => payment.operation !== "refund");
+  const methods = [...new Set(payments.map((payment) => methodLabel(payment.method)))];
   const title = receipt ? `Чек №${receipt.number.slice(0, 8)}` : certificates.length === 1 ? `Сертификат ${certificates[0].code}` : `Сертификатов: ${certificates.length}`;
   const facts = [
     { label: "Позиций", value: `${(receipt?.lines.length ?? 0) + certificates.length} шт.` },
-    { label: "Способ оплаты", value: payments.length ? [...new Set(payments.map((payment) => methodLabel(payment.method)))].join(", ") : "—" },
+    { label: "Способ оплаты", value: methods.length ? methods.join(", ") : "—" },
     { label: "Клиент", value: receipt?.clientName || (receipt?.clientId ? `#${receipt.clientId}` : certificates[0]?.buyerName || "Без клиента") },
     { label: "Кассир", value: cashier },
   ];
@@ -121,8 +122,8 @@ export function SaleDoneDialog({
                             {title} · {new Date(createdAt).toLocaleString("ru-RU")}
                           </Typography>
                         </Box>
-                        {payments[0] ? (
-                          <Chip size="small" label={`Оплата: ${methodLabel(payments[0].method).toLowerCase()}`} sx={{ bgcolor: alpha(theme.palette.success.main, 0.15), color: c.positive, fontSize: 10, fontWeight: 700 }} />
+                        {methods.length ? (
+                          <Chip size="small" label={`Оплата: ${methods.length > 1 ? "частями" : methods[0].toLowerCase()}`} sx={{ bgcolor: alpha(theme.palette.success.main, 0.15), color: c.positive, fontSize: 10, fontWeight: 700 }} />
                         ) : null}
                       </Stack>
                       <Typography variant="h4" fontWeight={900} sx={{ mt: 1, color: c.text }}>
@@ -157,7 +158,8 @@ export function SaleDoneDialog({
                   {facts.map((item) => (
                     <Box key={item.label} sx={{ p: 1.25, borderRadius: 1.5, bgcolor: c.card, border: `1px solid ${c.hairline}`, minWidth: 0 }}>
                       <Typography variant="caption" color={c.textDim} noWrap component="div">{item.label}</Typography>
-                      <Typography fontWeight={700} noWrap>{item.value}</Typography>
+                      {/* «Наличные, Карта, Безналичные» в половине телефона — переносом, а не «Нал…». */}
+                      <Typography fontWeight={700} sx={{ lineHeight: 1.3, overflowWrap: "anywhere" }}>{item.value}</Typography>
                     </Box>
                   ))}
                 </Box>

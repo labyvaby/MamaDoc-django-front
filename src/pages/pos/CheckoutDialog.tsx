@@ -136,7 +136,7 @@ export function CheckoutDialog({ open, due, bootstrap, lines, subtotal, discount
   const actionsRow = (
     <Stack direction={{ xs: "column-reverse", md: "row" }} gap="8px">
       <ButtonBase onClick={onClose} disabled={pending} sx={{ flex: 1, minHeight: { xs: 48, md: 44 }, px: "14px", borderRadius: `${POS_RADIUS.control}px`, bgcolor: c.tile, border: `1px solid ${c.hairline}`, color: c.textSoft, fontSize: 13, fontWeight: 700 }}>Вернуться к чеку</ButtonBase>
-      <ButtonBase onClick={submit} disabled={!valid || pending} aria-label={splitBlocked ? `Нельзя принять оплату: ${split.problem}` : undefined} sx={{ flex: 1.4, minHeight: { xs: 52, md: 44 }, px: "14px", gap: "8px", borderRadius: `${POS_RADIUS.control}px`, bgcolor: c.accent, color: c.onAccent, fontSize: { xs: 15, md: 13 }, fontWeight: 800, textAlign: "center", "&.Mui-disabled": { opacity: splitBlocked ? 1 : .4, bgcolor: splitBlocked ? c.tile : c.accent, color: splitBlocked ? c.textSoft : c.onAccent, border: splitBlocked ? `1px dashed ${c.hairline}` : "none" } }}>
+      <ButtonBase onClick={submit} disabled={!valid || pending} aria-label={splitBlocked ? `Нельзя принять оплату: ${split.problem}` : undefined} sx={{ flex: 1.4, minHeight: { xs: 52, md: 44 }, px: "14px", gap: "8px", borderRadius: `${POS_RADIUS.control}px`, bgcolor: c.accent, color: c.onAccent, fontSize: splitBlocked ? 13 : { xs: 15, md: 13 }, lineHeight: 1.3, py: "6px", fontWeight: 800, textAlign: "center", "&.Mui-disabled": { opacity: splitBlocked ? 1 : .4, bgcolor: splitBlocked ? c.tile : c.accent, color: splitBlocked ? c.textSoft : c.onAccent, border: splitBlocked ? `1px dashed ${c.hairline}` : "none" } }}>
         {recalculating ? <CircularProgress size={14} sx={{ color: "inherit" }} /> : null}
         {payLabel}
         {!pending && !recalculating && !splitBlocked && amount > 0 && method !== "certificate" ? <Box component="span" sx={{ opacity: .8, whiteSpace: "nowrap" }}>· <PosAmount value={amount / 100} /></Box> : null}
@@ -156,13 +156,13 @@ export function CheckoutDialog({ open, due, bootstrap, lines, subtotal, discount
         : { m: { xs: 1, sm: 2 }, width: { xs: "calc(100% - 16px)", sm: 940 }, maxHeight: "min(780px, calc(100vh - 32px))", overflow: "hidden", borderRadius: `${POS_RADIUS.dialog}px`, bgcolor: c.page, color: c.text, border: `1px solid ${c.outline}`, backgroundImage: "none" } }}
     >
       <Box sx={{ flex: fullScreen ? 1 : undefined, overflowY: fullScreen ? "auto" : undefined, display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(230px, .75fr) minmax(460px, 1.25fr)" }, minHeight: { xs: 0, md: 470 } }}>
-        <Box sx={{ order: { xs: 2, md: 0 }, p: { xs: "16px", sm: "22px" }, bgcolor: c.checkArea, borderRight: { md: `1px solid ${c.outline}` }, borderTop: { xs: `1px solid ${c.outline}`, md: "none" }, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <Box sx={{ order: { xs: 2, md: 0 }, p: { xs: "16px", md: "22px" }, bgcolor: c.checkArea, borderRight: { md: `1px solid ${c.outline}` }, borderTop: { xs: `1px solid ${c.outline}`, md: "none" }, display: "flex", flexDirection: "column", minWidth: 0 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Typography sx={{ fontSize: 14, fontWeight: 800 }}>Чек</Typography><Typography sx={{ fontSize: 11, color: c.textDim, whiteSpace: "nowrap" }}>{countLabel}</Typography></Stack>
           <Typography sx={{ mt: { xs: "12px", md: "24px" }, mb: "10px", fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: c.textDim }}>Содержание чека</Typography>
           <Stack gap="7px" sx={{ overflowY: "auto", minHeight: 0 }}>{lines.map((line, index) => <Stack key={`${line.name}-${index}`} direction="row" justifyContent="space-between" gap={1}><Box sx={{ minWidth: 0 }}><Typography sx={{ fontSize: 12, lineHeight: 1.3, color: c.textSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line.certificate ? <CardGiftcardOutlined sx={{ fontSize: 13, mr: "4px", verticalAlign: "-2px", color: c.accentText }} /> : null}{line.name}</Typography><Typography sx={{ fontSize: 10, color: c.textDim }}>{line.certificate ? "сертификат · без скидок" : `${line.quantity} шт.`}{line.discountAmount ? <Box component="span" sx={{ color: c.discount }}> · скидка −{line.discountAmount.toLocaleString("ru-RU")} с</Box> : null}</Typography></Box><Typography sx={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}><PosAmount value={line.total} /></Typography></Stack>)}</Stack>
           <Stack gap="5px" sx={{ mt: "auto", pt: "20px" }}><SummaryRow label="Подытог" value={subtotal} /><SummaryRow label="Скидка" value={discount} negative tone="discount" />{benefits.map((item) => <SummaryRow key={item.label} label={item.label} value={item.value} negative={item.tone !== undefined} tone={item.tone} />)}<Box sx={{ height: 1, bgcolor: c.hairline, my: "8px" }} /><Stack direction="row" justifyContent="space-between" alignItems="flex-end"><Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: c.textDim }}>К оплате</Typography><Typography sx={{ fontSize: 24, fontWeight: 900 }}><PosAmount value={Number(due)} /></Typography></Stack></Stack>
         </Box>
-        <Box sx={{ order: { xs: 1, md: 0 }, p: { xs: "16px", sm: "22px" }, pt: { xs: "max(12px, env(safe-area-inset-top))", sm: "22px" }, minWidth: 0, overflowY: fullScreen ? undefined : "auto" }}>
+        <Box sx={{ order: { xs: 1, md: 0 }, p: { xs: "16px", md: "22px" }, pt: { xs: "max(12px, env(safe-area-inset-top))", md: "22px" }, minWidth: 0, overflowY: fullScreen ? undefined : "auto" }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between"><Typography sx={{ fontSize: { xs: 18, md: 14 }, fontWeight: 800 }}>Оплата</Typography><IconButton onClick={onClose} disabled={pending} aria-label="Закрыть" sx={{ width: 44, height: 44, color: c.textDim }}><CloseOutlined fontSize="small" /></IconButton></Stack>
           <Box role="tablist" aria-label="Способ оплаты" sx={{ mt: "2px", display: "flex", flexWrap: "wrap", gap: "7px" }}>{methods.map((value) => <MethodButton key={value} active={method === value} disabled={pending} onClick={() => setMethod(value)} label={METHOD_LABELS[value]} icon={value === "certificate" ? <CardGiftcardOutlined sx={{ fontSize: 15 }} /> : null} />)}</Box>
 
@@ -253,12 +253,19 @@ function SplitPanel({ due, rows, state, terminals, disabled, autoFocus, onChange
   const c = posColors(useTheme());
   const update = (kind: SplitKind, patch: Partial<SplitRow>) => onChange(rows.map((row) => (row.kind === kind ? { ...row, ...patch } : row)));
   const exact = state.ready && state.change === 0;
-  const tail = state.change > 0
+  // Card/QR over the sum: not «Осталось 0» in green, but how much is too much.
+  const over = Math.max(0, state.noncash - due);
+  const tail = over > 0
+    ? { label: "Лишнее", value: over, color: c.danger }
+    : state.change > 0
     ? { label: "Сдача", value: state.change, color: c.positive }
     : { label: "Осталось", value: state.remaining, color: state.remaining > 0 ? c.danger : c.positive };
   return (
     <Box sx={{ mt: "12px" }}>
-      <Box sx={{ p: "12px 14px", borderRadius: `${POS_RADIUS.card}px`, bgcolor: c.card, border: `1px solid ${state.ready ? c.positive : c.hairline}`, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "8px" }}>
+      {/* Three equal columns while the sums fit; a long sum (1 250 000 с on a
+          360px phone) wraps its metric onto the next line instead of running
+          into the neighbour. */}
+      <Box sx={{ p: "12px 14px", borderRadius: `${POS_RADIUS.card}px`, bgcolor: c.card, border: `1px solid ${state.ready ? c.positive : c.hairline}`, display: "flex", flexWrap: "wrap", gap: "8px 12px", "& > *": { flex: "1 1 0", minWidth: "max-content" } }}>
         <Metric label="К оплате" value={due / 100} />
         <Metric label="Внесено" value={state.entered / 100} />
         <Metric label={tail.label} value={tail.value / 100} color={tail.color} icon={exact ? <CheckCircleRounded sx={{ fontSize: 18 }} /> : null} />
@@ -362,7 +369,7 @@ function CertificatePicker({ options, due, disabled, moneyMethods, onPickMethod 
               <Box sx={{ width: 22, height: 22, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", border: `2px solid ${selected ? c.accent : c.hairline}`, color: c.accent }}>{selected ? <CheckCircleRounded sx={{ fontSize: 22 }} /> : null}</Box>
               <Stack gap="2px" sx={{ flex: 1, minWidth: 0 }}>
                 <Typography noWrap sx={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, letterSpacing: ".1em", color: c.text }}>{item.code}</Typography>
-                <Typography noWrap sx={{ fontSize: 12, color: c.textDim }}>{certificateExpiryLabel(item.expiresAt)} · номинал <PosAmount value={Number(item.nominal)} /></Typography>
+                <Typography sx={{ fontSize: 12, lineHeight: 1.35, color: c.textDim }}>{certificateExpiryLabel(item.expiresAt)} · номинал <PosAmount value={Number(item.nominal)} /></Typography>
               </Stack>
               <Stack alignItems="flex-end" sx={{ flexShrink: 0 }}>
                 <Typography sx={{ fontSize: 10, letterSpacing: ".06em", textTransform: "uppercase", color: c.textDim }}>Остаток</Typography>

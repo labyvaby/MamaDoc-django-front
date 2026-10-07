@@ -25,7 +25,8 @@ export const PosAmount: React.FC<{
 }> = ({ value, negative, sx }) => (
   <Box component="span" sx={sx}>
     {negative ? "-" : ""}
-    {formatPosAmount(value)}{" "}
+    {/* Неразрывный пробел: знак сома не уезжает на новую строку один. */}
+    {formatPosAmount(value)}{" "}
     <Box component="span" sx={{ textDecoration: "underline" }}>
       с
     </Box>

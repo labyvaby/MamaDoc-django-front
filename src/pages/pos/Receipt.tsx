@@ -53,7 +53,7 @@ const HeaderButton: React.FC<{ label: string; onClick: () => void; disabled?: bo
       disabled={disabled}
       title={title}
       sx={{
-        height: { xs: 40, lg: 30 },
+        height: { xs: 44, md: 40, lg: 30 },
         px: "12px",
         borderRadius: `${POS_RADIUS.pill}px`,
         bgcolor: danger ? "transparent" : c.tile,
