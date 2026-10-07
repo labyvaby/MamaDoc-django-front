@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Button, Typography } from "@mui/material";
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from "@mui/material";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -136,6 +136,8 @@ export function CommissionsTable({ rows, empty, hidePartner = false }: { rows: C
   const canManage = useCan("realty.manage");
   const approve = usePartnerAction((c: Commission) => approveCommission(c.id, scope), t("partners.toast.approved"));
   const pay = usePartnerAction((c: Commission) => payCommission(c.id, scope), t("partners.toast.paid"));
+  // Выплата — расход в «Кассе и банке»: только через подтверждение, как «Выплатить все утверждённые».
+  const [paying, setPaying] = React.useState<Commission | null>(null);
   const columns: GridColDef<Commission>[] = [
     { field: "number", headerName: t("partners.table.number"), width: 90, renderCell: ({ row }) => <Typography sx={{ fontSize: "0.8125rem", fontWeight: 700 }}>{row.number}</Typography> },
     ...(hidePartner ? [] : ([{ field: "partnerName", headerName: t("partners.table.partner"), flex: 1, minWidth: 170 }] as GridColDef<Commission>[])),
@@ -160,13 +162,38 @@ export function CommissionsTable({ rows, empty, hidePartner = false }: { rows: C
             {t("partners.table.approve")}
           </Button>
         ) : row.status === "approved" ? (
-          <Button size="small" variant="contained" disabled={pay.isPending} onClick={() => pay.mutate(row)}>
+          <Button size="small" variant="contained" disabled={pay.isPending} onClick={() => setPaying(row)}>
             {t("partners.table.pay")}
           </Button>
         ) : null,
     },
   ];
-  return <Grid rows={rows} columns={columns} empty={empty} />;
+  return (
+    <>
+      <Grid rows={rows} columns={columns} empty={empty} />
+      <Dialog open={paying != null} onClose={pay.isPending ? undefined : () => setPaying(null)} fullWidth PaperProps={{ sx: { maxWidth: 440 } }}>
+        <DialogTitle sx={{ fontWeight: 700 }}>{t("partners.payOneTitle", { number: paying?.number ?? "" })}</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{t("partners.payOneText", { partner: paying?.partnerName ?? "", total: formatKGS(paying?.commission ?? 0) })}</Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setPaying(null)} disabled={pay.isPending}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            variant="contained"
+            disabled={pay.isPending}
+            onClick={() => {
+              if (!paying) return;
+              pay.mutate(paying, { onSettled: () => setPaying(null) });
+            }}
+          >
+            {t("partners.table.pay")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
 }
 
 function Two({ top, bottom, strong = false }: { top: React.ReactNode; bottom?: React.ReactNode; strong?: boolean }) {
