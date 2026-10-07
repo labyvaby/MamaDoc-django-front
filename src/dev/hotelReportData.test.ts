@@ -167,8 +167,28 @@ describe("balanceRows", () => {
   });
 
   it("итоги и ADR", () => {
-    const rows = balanceRows(list, { from: "2026-10-01", to: "2026-10-02", balance: "all", status: "active" });
-    expect(balanceTotals(rows)).toEqual({ total: 18000, paid: 15000, balance: 3000, nights: 6, adr: 3000 });
+    const rows = balanceRows(list, { from: "2026-10-01", to: "2026-10-02", balance: "all", status: "active", today: "2026-09-30" });
+    expect(balanceTotals(rows)).toEqual({ total: 18000, paid: 15000, balance: 3000, nights: 6, adrNights: 6, adr: 3000 });
+  });
+
+  it("ADR — цены ночей, как в «Собственнику»: без допуслуг, скидок, незаездов и ночей после выезда", () => {
+    const withExtras = reservation({
+      // 6000 за ночи + 500 прачечная: сумма брони больше, ADR — нет.
+      totalAmount: "6500",
+      items: [item({ stayStatus: "checked_in", nights: [{ date: "2026-10-01", price: "3000", discount: "500", ratePlanName: "" }, { date: "2026-10-02", price: "3000", ratePlanName: "" }] })],
+    });
+    const leftBeforeStay = reservation({
+      id: 2,
+      number: 2,
+      // Заселили и выселили до первой ночи — ни одной прожитой ночи.
+      items: [item({ stayStatus: "checked_out", checkedOutAt: "2026-09-30T13:30:00+06:00" })],
+    });
+    const rows = balanceRows([withExtras, leftBeforeStay], { from: "2026-10-01", to: "2026-10-31", balance: "all", status: "active", today: "2026-10-05" });
+    expect(rows.map((r) => [r.number, r.adr, r.adrNights])).toEqual([
+      [1, 2750, 2],
+      [2, 0, 0],
+    ]);
+    expect(balanceTotals(rows).adr).toBe(2750);
   });
 });
 

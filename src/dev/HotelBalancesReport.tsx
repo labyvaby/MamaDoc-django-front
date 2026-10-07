@@ -276,13 +276,15 @@ export const HotelBalancesReport: React.FC<{
         align: "right",
         sort: "adr",
         def: true,
+        // Цена ночи без допуслуг, по ночам, которые гость прожил или проживёт — как ADR «Собственнику».
+        // Незаезд или выезд до первой ночи — ночей нет, ADR не показываем.
         cell: (r) => (
           <Typography variant="body2" color="text.secondary" sx={num}>
-            {fmtMoney(r.adr)}
+            {r.adrNights ? fmtMoney(r.adr) : "—"}
           </Typography>
         ),
-        text: (r) => fmtMoney(r.adr),
-        xlsx: { kind: "money", value: (r) => r.adr },
+        text: (r) => (r.adrNights ? fmtMoney(r.adr) : "—"),
+        xlsx: { kind: "money", value: (r) => (r.adrNights ? r.adr : null) },
       },
       {
         key: "total",
@@ -729,7 +731,7 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
               }
               onClick={balance === "debt" ? undefined : () => nav.setParams({ balance: "debt" })}
             />
-            <ReportKpi icon={<NightsStayOutlined />} tone="info" label="ADR" value={fmtMoney(totals.adr, cur)} hint={`${fmtInt(totals.nights)} ${plural(totals.nights, "ночь", "ночи", "ночей")}`} />
+            <ReportKpi icon={<NightsStayOutlined />} tone="info" label="ADR" value={fmtMoney(totals.adr, cur)} hint={`цена ночи без допуслуг · ${fmtInt(totals.adrNights)} ${plural(totals.adrNights, "ночь", "ночи", "ночей")}`} />
           </Box>
 
           <Surface padded={false} sx={{ overflow: "hidden", position: "relative" }}>

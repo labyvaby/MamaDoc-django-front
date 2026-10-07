@@ -248,7 +248,15 @@ export interface BalanceRow {
   nights: number;
   status: HotelReservation["status"];
   rooms: string;
+  /**
+   * Цена ночи — как ADR «Собственнику»: цены ночей минус скидки, делённые на
+   * ночи, которые гость прожил или ещё проживёт (nightCounts). Допуслуги и
+   * ночи незаезда / после выезда сюда не входят; 0 — таких ночей нет.
+   */
   adr: number;
+  /** Ночи для ADR и их сумма (без допуслуг) — итог считается по ним, а не по сумме брони. */
+  adrNights: number;
+  adrAmount: number;
   total: number;
   paid: number;
   balance: number;
@@ -290,6 +298,15 @@ export function balanceRows(
       const active = r.items.filter((i) => i.isActive !== false);
       const nights = active.reduce((s, i) => s + (i.nightsCount ?? i.nights?.length ?? 0), 0);
       const total = num(r.totalAmount);
+      let adrNights = 0;
+      let adrAmount = 0;
+      for (const item of active) {
+        for (const night of item.nights ?? []) {
+          if (!nightCounts(item, night.date, today)) continue;
+          adrNights += 1;
+          adrAmount += net(night);
+        }
+      }
       return {
         id: r.id,
         number: r.number,
@@ -302,7 +319,9 @@ export function balanceRows(
         nights,
         status: r.status,
         rooms: active.map((i) => i.roomNumber ?? "—").join(", "),
-        adr: nights ? Math.round((total / nights) * 100) / 100 : 0,
+        adr: adrNights ? Math.round((adrAmount / adrNights) * 100) / 100 : 0,
+        adrNights,
+        adrAmount,
         total,
         paid: num(r.paidAmount),
         balance: num(r.balanceDue),
@@ -331,12 +350,15 @@ export function balanceRows(
 export function balanceTotals(rows: BalanceRow[]) {
   const total = rows.reduce((s, r) => s + r.total, 0);
   const nights = rows.reduce((s, r) => s + r.nights, 0);
+  const adrNights = rows.reduce((s, r) => s + r.adrNights, 0);
+  const adrAmount = rows.reduce((s, r) => s + r.adrAmount, 0);
   return {
     total,
     paid: rows.reduce((s, r) => s + r.paid, 0),
     balance: rows.reduce((s, r) => s + r.balance, 0),
     nights,
-    adr: nights ? Math.round((total / nights) * 100) / 100 : 0,
+    adrNights,
+    adr: adrNights ? Math.round((adrAmount / adrNights) * 100) / 100 : 0,
   };
 }
 
