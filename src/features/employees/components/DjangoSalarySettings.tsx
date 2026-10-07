@@ -252,13 +252,20 @@ const DjangoSalarySettings: React.FC<Props> = ({
 }) => {
   const patch = (p: Partial<SalarySettingsValue>) => onChange({ ...value, ...p });
 
-  const addRule = () =>
+  // Второе и следующие правила сразу берут услуги, которых нет в прежних
+  // правилах: обычно новое правило — «всё остальное» по другой ставке.
+  const addRule = () => {
+    const taken = new Set(value.rules.flatMap((r) => r.serviceIds));
+    const rest = value.rules.length === 0
+      ? []
+      : services.map((s) => s.id).filter((id) => !taken.has(id));
     patch({
       rules: [
         ...value.rules,
-        { id: newRuleId(), serviceIds: [], percent: "", fixedAmount: "" },
+        { id: newRuleId(), serviceIds: rest, percent: "", fixedAmount: "" },
       ],
     });
+  };
 
   const removeRule = (id: string) =>
     patch({ rules: value.rules.filter((r) => r.id !== id) });
