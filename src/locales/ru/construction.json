@@ -820,7 +820,12 @@
       "factMissing": "Внесите факт по всем строкам",
       "history": "Прошлые инвентаризации",
       "none": "Инвентаризаций не было",
-      "counting": "Идёт подсчёт"
+      "counting": "Идёт подсчёт",
+      "status_completed": "завершена",
+      "status_done": "завершена",
+      "status_cancelled": "отменена",
+      "status_counting": "идёт подсчёт",
+      "numberFallback": "Опись №{{id}}"
     },
     "movementForm": {
       "title_in": "Приход на склад",

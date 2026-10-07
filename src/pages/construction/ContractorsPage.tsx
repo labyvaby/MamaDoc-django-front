@@ -73,6 +73,17 @@ function ContractorsScreen() {
   const acts = useQuery({ queryKey: constructionKeys.acts(scope), queryFn: ({ signal }) => getActs(scope, signal), enabled, staleTime: 30_000 });
   const projects = useConstructionProjects().data ?? [];
 
+  // Вкладка «Акты» по ссылке `?act=` выбрана неявно — закрывая акт, фиксируем её, иначе список прыгнет на «Подрядчиков».
+  const closeAct = () =>
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.delete("act");
+        if (!params.get("tab")) params.set("tab", "acts");
+        return params;
+      },
+      { replace: true },
+    );
   const setTab = (next: Tab) =>
     setSearchParams(
       (prev) => {
@@ -222,7 +233,7 @@ function ContractorsScreen() {
           )
         }
       />
-      <ActDrawer id={actId} preview={allActs.find((a) => a.id === actId) ?? null} canManage={canManage} onClose={() => openAct(null)} />
+      <ActDrawer id={actId} preview={allActs.find((a) => a.id === actId) ?? null} canManage={canManage} onClose={closeAct} />
       <ActFormDrawer preset={actPreset} onClose={() => setActPreset(null)} onCreated={(act) => openAct(act.id)} />
     </>
   );

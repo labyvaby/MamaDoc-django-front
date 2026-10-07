@@ -538,9 +538,9 @@ function InventoryPanel({ warehouse, canManage }: { warehouse: Warehouse | null;
           past.map((inv) => (
             <Box key={inv.id} sx={{ borderTop: 1, borderColor: "divider" }}>
               <Box sx={{ px: 2.25, py: 1.25, display: "flex", alignItems: "baseline", gap: 1 }}>
-                <Typography sx={{ flex: 1, fontSize: "0.875rem", fontWeight: 600 }}>{inv.number || `#${inv.id}`}</Typography>
+                <Typography sx={{ flex: 1, fontSize: "0.875rem", fontWeight: 600 }}>{inv.number || t("warehouse.inventory.numberFallback", { id: inv.id })}</Typography>
                 <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{fullDate(inv.completedAt ?? inv.startedAt)}</Typography>
-                <StatusPill label={inv.statusLabel || inv.status} tone={inv.status === "completed" || inv.status === "done" ? "success" : inv.status === "cancelled" ? null : "info"} />
+                <StatusPill label={inv.statusLabel || t(`warehouse.inventory.status_${inv.status}`, { defaultValue: inv.status })} tone={inv.status === "completed" || inv.status === "done" ? "success" : inv.status === "cancelled" ? null : "info"} />
               </Box>
               {inv.rows.some((r) => r.result && r.result !== "ok") && table({ ...inv, rows: inv.rows.filter((r) => r.result && r.result !== "ok") }, false)}
             </Box>
