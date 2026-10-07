@@ -15,7 +15,7 @@ import {
   type HotelReservation,
   type HotelReservationListParams,
 } from "../api/hotel";
-import { isMissedArrival, isNoShowCandidate, nightCounts } from "./hotelInHouse";
+import { isGuestDebt, isMissedArrival, isNoShowCandidate, nightCounts } from "./hotelInHouse";
 
 const PAGE = 200;
 /** Потолок страниц на один отчёт: 10 × 200 = 2000 строк — дальше честно говорим «показаны не все». */
@@ -220,6 +220,32 @@ export function notArrivedSummary(reservations: HotelReservation[], from: string
   return { reservations: ids.size, nights, revenue };
 }
 
+/**
+ * Закрытые незаезды (ночной аудит или ресепшен) с заездом в периоде: брони, их ночи в
+ * периоде и что те стоили. Пока сервер не отдаёт reports/occupancy → noShows, считаем
+ * так же по броням периода: после закрытия незаезды пропадали из отчётов совсем.
+ */
+export function noShowSummary(reservations: HotelReservation[], from: string, to: string): NotArrivedSummary {
+  const ids = new Set<number>();
+  let nights = 0;
+  let revenue = 0;
+  for (const r of reservations) {
+    if (r.status !== "no_show") continue;
+    const checkIn = reservationCheckIn(r);
+    if (checkIn == null || checkIn < from || checkIn > to) continue;
+    ids.add(r.id);
+    for (const item of r.items) {
+      if (item.isActive === false) continue;
+      for (const night of item.nights ?? []) {
+        if (night.date < from || night.date > to) continue;
+        nights += 1;
+        revenue += net(night);
+      }
+    }
+  }
+  return { reservations: ids.size, nights, revenue };
+}
+
 /** Дата заезда брони — у групповой самая ранняя по активным номерам. */
 export function reservationCheckIn(r: HotelReservation): string | null {
   if (r.checkIn) return r.checkIn;
@@ -235,6 +261,13 @@ export function reservationCheckOut(r: HotelReservation): string | null {
 
 export type BalanceFilter = "all" | "debt" | "overpaid" | "settled";
 export type BalanceStatusFilter = "active" | "all" | "cancelled";
+/**
+ * Какие брони берёт отчёт: «checkIn» — с заездом в периоде (обычные «Заезды»);
+ * «stay» — проживание пересекает период. Во второй режим ведут «Долги гостей»
+ * из «Собственнику»: там должники — гости, жившие в периоде, в том числе
+ * заехавшие раньше него, и по дате заезда список с суммой не сходился.
+ */
+export type BalanceSelect = "checkIn" | "stay";
 
 export interface BalanceRow {
   id: number;
@@ -248,7 +281,15 @@ export interface BalanceRow {
   nights: number;
   status: HotelReservation["status"];
   rooms: string;
+  /**
+   * Цена ночи — как ADR «Собственнику»: цены ночей минус скидки, делённые на
+   * ночи, которые гость прожил или ещё проживёт (nightCounts). Допуслуги и
+   * ночи незаезда / после выезда сюда не входят; 0 — таких ночей нет.
+   */
   adr: number;
+  /** Ночи для ADR и их сумма (без допуслуг) — итог считается по ним, а не по сумме брони. */
+  adrNights: number;
+  adrAmount: number;
   total: number;
   paid: number;
   balance: number;
@@ -269,12 +310,17 @@ export interface BalanceRow {
   expectedDepartureTime: string | null;
   /** Не заехал: ждали, день заезда прошёл, незаезд не закрыт — в «К оплате» не идёт. */
   missed: boolean;
+  /**
+   * Долг гостя — как «Долги гостей» в «Собственнику» (isGuestDebt): остаток к оплате у
+   * того, кто заселён или уже выехал. Не заехавший и тот, кто ещё приедет, — не должник.
+   */
+  debt: boolean;
   reservation: HotelReservation;
 }
 
 export function balanceRows(
   reservations: HotelReservation[],
-  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string; corporate?: string; today?: string },
+  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string; corporate?: string; today?: string; select?: BalanceSelect },
 ): BalanceRow[] {
   const today = opts.today ?? todayStr();
   return reservations
@@ -284,12 +330,26 @@ export function balanceRows(
       if (opts.source && r.source !== opts.source) return false;
       if (opts.corporate && (r.corporateName ?? "") !== opts.corporate) return false;
       const checkIn = reservationCheckIn(r);
-      return checkIn != null && checkIn >= opts.from && checkIn <= opts.to;
+      if (checkIn == null) return false;
+      if (opts.select === "stay") {
+        const checkOut = reservationCheckOut(r);
+        return checkIn <= opts.to && (checkOut == null || checkOut > opts.from);
+      }
+      return checkIn >= opts.from && checkIn <= opts.to;
     })
     .map((r) => {
       const active = r.items.filter((i) => i.isActive !== false);
       const nights = active.reduce((s, i) => s + (i.nightsCount ?? i.nights?.length ?? 0), 0);
       const total = num(r.totalAmount);
+      let adrNights = 0;
+      let adrAmount = 0;
+      for (const item of active) {
+        for (const night of item.nights ?? []) {
+          if (!nightCounts(item, night.date, today)) continue;
+          adrNights += 1;
+          adrAmount += net(night);
+        }
+      }
       return {
         id: r.id,
         number: r.number,
@@ -302,7 +362,9 @@ export function balanceRows(
         nights,
         status: r.status,
         rooms: active.map((i) => i.roomNumber ?? "—").join(", "),
-        adr: nights ? Math.round((total / nights) * 100) / 100 : 0,
+        adr: adrNights ? Math.round((adrAmount / adrNights) * 100) / 100 : 0,
+        adrNights,
+        adrAmount,
         total,
         paid: num(r.paidAmount),
         balance: num(r.balanceDue),
@@ -319,11 +381,12 @@ export function balanceRows(
         expectedArrivalTime: r.expectedArrivalTime ? r.expectedArrivalTime.slice(0, 5) : null,
         expectedDepartureTime: r.expectedDepartureTime ? r.expectedDepartureTime.slice(0, 5) : null,
         missed: isNoShowCandidate(r, today),
+        debt: isGuestDebt(r),
         reservation: r,
       };
     })
     .filter((row) =>
-      opts.balance === "debt" ? row.balance > 0 : opts.balance === "overpaid" ? row.balance < 0 : opts.balance === "settled" ? row.balance === 0 : true,
+      opts.balance === "debt" ? row.debt : opts.balance === "overpaid" ? row.balance < 0 : opts.balance === "settled" ? row.balance === 0 : true,
     )
     .sort((a, b) => (a.checkIn ?? "").localeCompare(b.checkIn ?? "") || a.number - b.number);
 }
@@ -331,12 +394,15 @@ export function balanceRows(
 export function balanceTotals(rows: BalanceRow[]) {
   const total = rows.reduce((s, r) => s + r.total, 0);
   const nights = rows.reduce((s, r) => s + r.nights, 0);
+  const adrNights = rows.reduce((s, r) => s + r.adrNights, 0);
+  const adrAmount = rows.reduce((s, r) => s + r.adrAmount, 0);
   return {
     total,
     paid: rows.reduce((s, r) => s + r.paid, 0),
     balance: rows.reduce((s, r) => s + r.balance, 0),
     nights,
-    adr: nights ? Math.round((total / nights) * 100) / 100 : 0,
+    adrNights,
+    adr: adrNights ? Math.round((adrAmount / adrNights) * 100) / 100 : 0,
   };
 }
 
@@ -354,6 +420,21 @@ export function shiftWindow(date: string, startHour: number): { start: dayjs.Day
 export function inWindow(iso: string, window: { start: dayjs.Dayjs; end: dayjs.Dayjs }): boolean {
   const t = dayjs(iso);
   return !t.isBefore(window.start) && t.isBefore(window.end);
+}
+
+/**
+ * Расход смены — как оплата по acceptedAt: проведён внутри окна смены (и не задним числом
+ * за прошлый день), либо внесён позже, задним числом, датой этой смены. Раньше расходы
+ * брались за календарную дату, а оплаты — за окно «09:00–09:00», и «В кассе» вычитало
+ * из ночных оплат дневные расходы чужой смены.
+ */
+export function isShiftExpense(
+  e: { expenseDate: string; createdAt: string },
+  date: string,
+  window: { start: dayjs.Dayjs; end: dayjs.Dayjs },
+): boolean {
+  if (inWindow(e.createdAt, window)) return e.expenseDate >= date;
+  return e.expenseDate === date && !dayjs(e.createdAt).isBefore(window.end);
 }
 
 /** Подпись способа для сводки: терминал безнала («ККБ», «МКасса») важнее общего «Карта». */

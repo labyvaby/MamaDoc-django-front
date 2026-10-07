@@ -8,8 +8,10 @@ import {
   breakfastCount,
   dailySeries,
   notArrivedSummary,
+  noShowSummary,
   deltaPercent,
   inWindow,
+  isShiftExpense,
   revenueByCategory,
   shiftWindow,
   summarizeExpenses,
@@ -138,6 +140,19 @@ describe("notArrivedSummary", () => {
   });
 });
 
+describe("noShowSummary", () => {
+  it("закрытые незаезды с заездом в периоде — брони, ночи в периоде и их цена", () => {
+    const list = [
+      reservation({ status: "no_show" }),
+      reservation({ id: 2, number: 2, status: "cancelled" }),
+      reservation({ id: 3, number: 3, status: "no_show", checkIn: "2026-11-01", checkOut: "2026-11-02" }),
+      reservation({ id: 4, number: 4 }),
+    ];
+    expect(noShowSummary(list, "2026-10-01", "2026-10-01")).toEqual({ reservations: 1, nights: 1, revenue: 3000 });
+    expect(noShowSummary(list, "2026-10-01", "2026-10-31")).toEqual({ reservations: 1, nights: 2, revenue: 6000 });
+  });
+});
+
 describe("revenueByCategory", () => {
   it("режет ночи по периоду и считает ADR", () => {
     const rows = revenueByCategory([reservation()], "2026-10-02", "2026-10-31", "2026-09-30");
@@ -160,15 +175,64 @@ describe("balanceRows", () => {
   });
 
   it("фильтр по балансу: долг, переплата, рассчитаны", () => {
-    const base = { from: "2026-10-01", to: "2026-10-31", status: "active" as const };
-    expect(balanceRows(list, { ...base, balance: "debt" }).map((r) => r.number)).toEqual([1, 5]);
-    expect(balanceRows(list, { ...base, balance: "overpaid" }).map((r) => r.number)).toEqual([3]);
-    expect(balanceRows(list, { ...base, balance: "settled" }).map((r) => r.number)).toEqual([2]);
+    const base = { from: "2026-10-01", to: "2026-10-31", status: "active" as const, today: "2026-10-02" };
+    // Долг — как в «Собственнику»: только у заселённых или выехавших (№1 заселён);
+    // №5 с остатком ещё не заехал — к оплате при заезде, не должник.
+    const withGuest = [reservation({ items: [item({ stayStatus: "checked_in" })] }), ...list.slice(1)];
+    expect(balanceRows(withGuest, { ...base, balance: "debt" }).map((r) => r.number)).toEqual([1]);
+    expect(balanceRows(withGuest, { ...base, balance: "overpaid" }).map((r) => r.number)).toEqual([3]);
+    expect(balanceRows(withGuest, { ...base, balance: "settled" }).map((r) => r.number)).toEqual([2]);
+  });
+
+  it("по проживанию в периоде — берёт и заехавших раньше него, как «Долги гостей» «Собственнику»", () => {
+    const earlier = reservation({ id: 6, number: 6, checkIn: "2026-09-28", checkOut: "2026-10-03", items: [item({ checkIn: "2026-09-28", checkOut: "2026-10-03", stayStatus: "checked_in" })] });
+    const opts = { from: "2026-10-01", to: "2026-10-02", balance: "debt" as const, status: "active" as const, today: "2026-10-02" };
+    expect(balanceRows([earlier], opts).map((r) => r.number)).toEqual([]);
+    expect(balanceRows([earlier], { ...opts, select: "stay" }).map((r) => r.number)).toEqual([6]);
   });
 
   it("итоги и ADR", () => {
-    const rows = balanceRows(list, { from: "2026-10-01", to: "2026-10-02", balance: "all", status: "active" });
-    expect(balanceTotals(rows)).toEqual({ total: 18000, paid: 15000, balance: 3000, nights: 6, adr: 3000 });
+    const rows = balanceRows(list, { from: "2026-10-01", to: "2026-10-02", balance: "all", status: "active", today: "2026-09-30" });
+    expect(balanceTotals(rows)).toEqual({ total: 18000, paid: 15000, balance: 3000, nights: 6, adrNights: 6, adr: 3000 });
+  });
+
+  it("ADR — цены ночей, как в «Собственнику»: без допуслуг, скидок, незаездов и ночей после выезда", () => {
+    const withExtras = reservation({
+      // 6000 за ночи + 500 прачечная: сумма брони больше, ADR — нет.
+      totalAmount: "6500",
+      items: [item({ stayStatus: "checked_in", nights: [{ date: "2026-10-01", price: "3000", discount: "500", ratePlanName: "" }, { date: "2026-10-02", price: "3000", ratePlanName: "" }] })],
+    });
+    const leftBeforeStay = reservation({
+      id: 2,
+      number: 2,
+      // Заселили и выселили до первой ночи — ни одной прожитой ночи.
+      items: [item({ stayStatus: "checked_out", checkedOutAt: "2026-09-30T13:30:00+06:00" })],
+    });
+    const rows = balanceRows([withExtras, leftBeforeStay], { from: "2026-10-01", to: "2026-10-31", balance: "all", status: "active", today: "2026-10-05" });
+    expect(rows.map((r) => [r.number, r.adr, r.adrNights])).toEqual([
+      [1, 2750, 2],
+      [2, 0, 0],
+    ]);
+    expect(balanceTotals(rows).adr).toBe(2750);
+  });
+});
+
+describe("isShiftExpense", () => {
+  // Смена 07.10 с 09:00 до 09:00 08.10.
+  const shift = shiftWindow("2026-10-07", 9);
+  const e = (expenseDate: string, createdAt: string) => ({ expenseDate, createdAt });
+  it("ночной расход — в смену, которая шла ночью, а не в календарную дату", () => {
+    expect(isShiftExpense(e("2026-10-08", "2026-10-08T03:00:00+06:00"), "2026-10-07", shift)).toBe(true);
+    expect(isShiftExpense(e("2026-10-08", "2026-10-08T03:00:00+06:00"), "2026-10-08", shiftWindow("2026-10-08", 9))).toBe(false);
+  });
+  it("утро до пересменки — прошлая смена", () => {
+    expect(isShiftExpense(e("2026-10-07", "2026-10-07T08:00:00+06:00"), "2026-10-07", shift)).toBe(false);
+    expect(isShiftExpense(e("2026-10-07", "2026-10-07T08:00:00+06:00"), "2026-10-06", shiftWindow("2026-10-06", 9))).toBe(true);
+  });
+  it("задним числом: внесён позже — в смену своей даты, не в текущую", () => {
+    const late = e("2026-10-06", "2026-10-07T12:00:00+06:00");
+    expect(isShiftExpense(late, "2026-10-07", shift)).toBe(false);
+    expect(isShiftExpense(late, "2026-10-06", shiftWindow("2026-10-06", 9))).toBe(true);
   });
 });
 

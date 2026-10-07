@@ -48,7 +48,7 @@ import { formatPhoneDisplay } from "../utility/phone";
 import { HOTEL_BOARD_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, HOTEL_GUARANTEE_METHOD_LABELS, HOTEL_RESERVATION_STATUS_LABELS, hotelSourceColor } from "./hotelDisplay";
 import { esc, printHtmlDocument } from "./hotelPrintDocs";
 import { fmtInt, fmtMoney } from "./hotelReportFormat";
-import { balanceRows, balanceTotals, fetchAllReservations, type BalanceFilter, type BalanceRow, type BalanceStatusFilter } from "./hotelReportData";
+import { balanceRows, balanceTotals, fetchAllReservations, type BalanceFilter, type BalanceRow, type BalanceSelect, type BalanceStatusFilter } from "./hotelReportData";
 import { ReportControls, ReportFilters, ReportKpi, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { matchesByParts } from "./searchParts";
 import { FilterChip, plural, Surface, useHotelTableSx } from "./hotelUi";
@@ -58,6 +58,11 @@ import { downloadXlsx, xlsxFileName, type XlsxKind, type XlsxValue } from "./hot
 type SortKey = "number" | "createdAt" | "customer" | "checkIn" | "checkOut" | "nights" | "rooms" | "adr" | "total" | "paid" | "balance";
 
 const BALANCE_LABELS: Record<BalanceFilter, string> = { all: "Все", debt: "С долгом", overpaid: "Переплата", settled: "Оплачены" };
+
+/** Факт (заселение/выезд) в тот же день, что дата брони. */
+const sameDay = (date: string | null, actual: string): boolean => date != null && dayjs(actual).format("YYYY-MM-DD") === date;
+/** Время факта; в другой день — с датой: «02.10 13:20». */
+const factTime = (date: string | null, actual: string): string => dayjs(actual).format(sameDay(date, actual) ? "HH:mm" : "DD.MM HH:mm");
 const STATUS_LABELS: Record<BalanceStatusFilter, string> = { active: "Активные", all: "Все", cancelled: "Отменённые" };
 /** Статус как в Exely: подтверждённая — «Активная». */
 const statusWord = (s: string) => (s === "confirmed" ? "Активная" : (HOTEL_RESERVATION_STATUS_LABELS[s] ?? s));
@@ -115,6 +120,8 @@ export const HotelBalancesReport: React.FC<{
   const status = ((nav.param("status") as BalanceStatusFilter | null) ?? "active") as BalanceStatusFilter;
   const source = nav.param("source") ?? "";
   const corporate = nav.param("corporate") ?? "";
+  // «stay» — из «Собственнику → Долги гостей»: проживание пересекает период, а не заезд в нём.
+  const select: BalanceSelect = nav.param("by") === "stay" ? "stay" : "checkIn";
   const [q, setQ] = React.useState("");
   const [sort, setSort] = React.useState<{ key: SortKey; dir: 1 | -1 }>({ key: "checkIn", dir: 1 });
   const [exporting, setExporting] = React.useState(false);
@@ -124,8 +131,13 @@ export const HotelBalancesReport: React.FC<{
   const outTime = checkOutTime ? checkOutTime.slice(0, 5) : null;
 
   const columnsAll: Column[] = React.useMemo(() => {
+    // Факт заселения/выезда — со своей датой, если он был не в день брони: иначе дата
+    // брони и время факта складывались в событие, которого не было (№18: «03.10 13:20 ·
+    // заселён», а заселили и выселили 02.10).
     const dateTime = (iso: string | null, planned: string | null, actual: string | null) =>
-      iso ? `${dayjs(iso).format("DD.MM.YYYY")}${actual ? ` ${dayjs(actual).format("HH:mm")}` : planned ? ` ${planned}` : ""}` : "—";
+      iso
+        ? `${dayjs(iso).format("DD.MM.YYYY")}${actual ? (sameDay(iso, actual) ? ` ${dayjs(actual).format("HH:mm")}` : ` (факт ${dayjs(actual).format("DD.MM.YYYY HH:mm")})`) : planned ? ` ${planned}` : ""}`
+        : "—";
     const num = { fontVariantNumeric: "tabular-nums" } as const;
     // Дата и время в две строки — так широкая таблица Exely помещается на экран без прокрутки.
     const twoLine = (iso: string | null, time: string | null, color?: string, title?: string) => (
@@ -211,12 +223,14 @@ export const HotelBalancesReport: React.FC<{
         cell: (r) =>
           twoLine(
             r.checkIn,
-            r.missed ? "не заехал" : r.checkedInAt ? `${dayjs(r.checkedInAt).format("HH:mm")} · заселён` : (r.expectedArrivalTime ?? inTime),
-            r.missed ? "error.main" : r.checkedInAt ? "success.main" : r.expectedArrivalTime ? "info.main" : undefined,
+            r.missed ? "не заехал" : r.checkedInAt ? `${factTime(r.checkIn, r.checkedInAt)} · заселён` : (r.expectedArrivalTime ?? inTime),
+            r.missed ? "error.main" : r.checkedInAt ? (sameDay(r.checkIn, r.checkedInAt) ? "success.main" : "warning.dark") : r.expectedArrivalTime ? "info.main" : undefined,
             r.missed
               ? "Ждали, гость не приехал, незаезд не закрыт: ресепшен → «Закрыть день»"
               : r.checkedInAt
-                ? "Время фактического заселения"
+                ? sameDay(r.checkIn, r.checkedInAt)
+                  ? "Время фактического заселения"
+                  : "Заселили не в день заезда по брони — дата и время факта"
                 : r.expectedArrivalTime
                   ? "Время заезда брони: ранний заезд или со слов гостя"
                   : "Время заезда по правилам объекта",
@@ -232,9 +246,15 @@ export const HotelBalancesReport: React.FC<{
         cell: (r) =>
           twoLine(
             r.checkOut,
-            r.checkedOutAt ? `${dayjs(r.checkedOutAt).format("HH:mm")} · выехал` : (r.expectedDepartureTime ?? outTime),
-            r.checkedOutAt ? undefined : r.expectedDepartureTime ? "warning.dark" : undefined,
-            r.checkedOutAt ? "Время фактического выезда" : r.expectedDepartureTime ? "Время выезда брони: поздний выезд" : "Время выезда по правилам объекта",
+            r.checkedOutAt ? `${factTime(r.checkOut, r.checkedOutAt)} · выехал` : (r.expectedDepartureTime ?? outTime),
+            r.checkedOutAt ? (sameDay(r.checkOut, r.checkedOutAt) ? undefined : "warning.dark") : r.expectedDepartureTime ? "warning.dark" : undefined,
+            r.checkedOutAt
+              ? sameDay(r.checkOut, r.checkedOutAt)
+                ? "Время фактического выезда"
+                : "Выехал не в день выезда по брони — дата и время факта"
+              : r.expectedDepartureTime
+                ? "Время выезда брони: поздний выезд"
+                : "Время выезда по правилам объекта",
           ),
         text: (r) => dateTime(r.checkOut, r.expectedDepartureTime ?? outTime, r.checkedOutAt),
         xlsx: { value: (r) => dateTime(r.checkOut, r.expectedDepartureTime ?? outTime, r.checkedOutAt) },
@@ -276,13 +296,15 @@ export const HotelBalancesReport: React.FC<{
         align: "right",
         sort: "adr",
         def: true,
+        // Цена ночи без допуслуг, по ночам, которые гость прожил или проживёт — как ADR «Собственнику».
+        // Незаезд или выезд до первой ночи — ночей нет, ADR не показываем.
         cell: (r) => (
           <Typography variant="body2" color="text.secondary" sx={num}>
-            {fmtMoney(r.adr)}
+            {r.adrNights ? fmtMoney(r.adr) : "—"}
           </Typography>
         ),
-        text: (r) => fmtMoney(r.adr),
-        xlsx: { kind: "money", value: (r) => r.adr },
+        text: (r) => (r.adrNights ? fmtMoney(r.adr) : "—"),
+        xlsx: { kind: "money", value: (r) => (r.adrNights ? r.adr : null) },
       },
       {
         key: "total",
@@ -343,17 +365,17 @@ export const HotelBalancesReport: React.FC<{
 
   // Пересечение [from, to+1) с проживанием — все, кто заезжает в период; дату заезда режем уже здесь.
   const query = useQuery({
-    queryKey: ["hotel", "reports", "balances", propertyId, from, to, status === "active" ? "confirmed" : "any"],
+    queryKey: ["hotel", "reports", "balances", propertyId, from, to, status === "active" ? "confirmed" : "any", select],
     // checkInFrom/checkInTo сервер с §10 применяет сам (меньше страниц), старый — пропускает; режем и здесь.
     queryFn: ({ signal }) =>
       fetchAllReservations(
-        { propertyId, from, to: D(dayjs(to).add(1, "day")), checkInFrom: from, checkInTo: to, ...(status === "active" ? { status: "confirmed" } : {}) },
+        { propertyId, from, to: D(dayjs(to).add(1, "day")), ...(select === "checkIn" ? { checkInFrom: from, checkInTo: to } : {}), ...(status === "active" ? { status: "confirmed" } : {}) },
         signal,
       ),
   });
 
   const rows = React.useMemo(() => {
-    const base = balanceRows(query.data?.rows ?? [], { from, to, balance, status, source: source || undefined, corporate: corporate || undefined, today });
+    const base = balanceRows(query.data?.rows ?? [], { from, to, balance, status, source: source || undefined, corporate: corporate || undefined, today, select });
     // По частям, как поиск на сервере (searchParts): «Бекова 201», «0555 11 10», «Альфа».
     const guestsOf = (r: BalanceRow) => r.reservation.items.flatMap((i) => i.guests);
     const filtered = q.trim()
@@ -371,10 +393,14 @@ export const HotelBalancesReport: React.FC<{
       const y = val(b);
       return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
     });
-  }, [query.data, from, to, balance, status, source, corporate, q, sort, today]);
+  }, [query.data, from, to, balance, status, source, corporate, q, sort, today, select]);
   const totals = balanceTotals(rows);
-  // Долг — у тех, кто заехал или ещё приедет; не заехавшие (незаезд не закрыт) — отдельно, как в «Собственнику».
-  const debt = rows.reduce((s, r) => s + (r.missed ? 0 : Math.max(0, r.balance)), 0);
+  // Долг — то же правило, что «Долги гостей» в «Собственнику»: остаток у заселённых и
+  // выехавших. Кто ещё приедет — «к оплате при заезде», не заехавшие — не считаем.
+  const debt = rows.reduce((s, r) => s + (r.debt ? r.balance : 0), 0);
+  const debtCount = rows.filter((r) => r.debt).length;
+  const upcomingDue = rows.reduce((s, r) => s + (!r.debt && !r.missed ? Math.max(0, r.balance) : 0), 0);
+  const upcomingCount = rows.filter((r) => !r.debt && !r.missed && r.balance > 0).length;
   const missedDebt = rows.reduce((s, r) => s + (r.missed ? Math.max(0, r.balance) : 0), 0);
   const missedCount = rows.filter((r) => r.missed && r.balance > 0).length;
   const overpaid = rows.reduce((s, r) => s + Math.max(0, -r.balance), 0);
@@ -516,7 +542,7 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
     const arrival = r.missed
       ? { text: "не заехал", color: "error.main" }
       : r.checkedInAt
-      ? { text: `заселён в ${dayjs(r.checkedInAt).format("HH:mm")}`, color: "success.main" }
+      ? { text: `заселён ${sameDay(r.checkIn, r.checkedInAt) ? "в " : ""}${factTime(r.checkIn, r.checkedInAt)}`, color: sameDay(r.checkIn, r.checkedInAt) ? "success.main" : "warning.dark" }
       : r.expectedArrivalTime
         ? { text: `заезд в ${r.expectedArrivalTime}`, color: "info.main" }
         : r.expectedDepartureTime && !r.checkedOutAt
@@ -706,6 +732,19 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
         <ReportSkeleton block={320} />
       ) : (
         <>
+          {select === "stay" && (
+            <Alert
+              severity="info"
+              variant="outlined"
+              action={
+                <Button color="inherit" size="small" onClick={() => nav.setParams({ by: null })} sx={{ whiteSpace: "nowrap" }}>
+                  По дате заезда
+                </Button>
+              }
+            >
+              Брони, проживание которых пересекает период, — как «Долги гостей» в «Собственнику», включая заехавших раньше него.
+            </Alert>
+          )}
           {query.data.truncated && (
             <Alert severity="warning" variant="outlined">
               Броней слишком много — показаны первые 2000. Сузьте период.
@@ -717,19 +756,22 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
             <ReportKpi
               icon={<AccountBalanceWalletOutlined />}
               tone="error"
-              label="К оплате"
+              label="Долг гостей"
               value={fmtMoney(debt, cur)}
               emphasis={debt > 0}
               hint={
-                missedDebt > 0
-                  ? `не заехали: ещё ${fmtMoney(missedDebt, cur)} (${missedCount}) — не считаем`
-                  : overpaid > 0
-                    ? `переплата ${fmtMoney(overpaid, cur)}`
-                    : `${rows.filter((r) => r.balance > 0 && !r.missed).length} с долгом`
+                [
+                  `${debtCount} ${plural(debtCount, "бронь", "брони", "броней")} с долгом`,
+                  upcomingDue > 0 ? `к оплате при заезде ${fmtMoney(upcomingDue, cur)} (${upcomingCount})` : null,
+                  missedDebt > 0 ? `не заехали ${fmtMoney(missedDebt, cur)} (${missedCount}) — не долг` : null,
+                  overpaid > 0 ? `переплата ${fmtMoney(overpaid, cur)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
               }
               onClick={balance === "debt" ? undefined : () => nav.setParams({ balance: "debt" })}
             />
-            <ReportKpi icon={<NightsStayOutlined />} tone="info" label="ADR" value={fmtMoney(totals.adr, cur)} hint={`${fmtInt(totals.nights)} ${plural(totals.nights, "ночь", "ночи", "ночей")}`} />
+            <ReportKpi icon={<NightsStayOutlined />} tone="info" label="ADR" value={fmtMoney(totals.adr, cur)} hint={`цена ночи без допуслуг · ${fmtInt(totals.adrNights)} ${plural(totals.adrNights, "ночь", "ночи", "ночей")}`} />
           </Box>
 
           <Surface padded={false} sx={{ overflow: "hidden", position: "relative" }}>

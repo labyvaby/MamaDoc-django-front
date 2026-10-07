@@ -2362,6 +2362,11 @@ export interface HotelOccupancyReport {
   /** Ночи после выезда гостя, оставшиеся в бронях: тоже не выручка. */
   leftEarlyNights?: number;
   leftEarlyRevenue?: Money;
+  /**
+   * Закрытые незаезды с заездом в периоде: брони, их ночи в периоде, сколько стоили.
+   * Есть поле — cancellations только отменённые; нет — сервер старый, незаезды внутри отмен.
+   */
+  noShows?: HotelNotArrived;
 }
 
 export interface HotelNotArrived {
@@ -2515,6 +2520,13 @@ export interface HotelKitchenDayPlan {
    */
   noShowGuests?: number;
   departedGuests?: number;
+  /**
+   * На скольких гостей готовится каждый приём пищи — у кого он входит в питание брони
+   * (полупансион — завтрак и ужин, полный пансион и «всё включено» — все три); завтрак —
+   * для ночевавших в ночь перед датой. Порции блюда — от этого числа, а не от
+   * occupiedGuests. Нет поля — старый сервер, порции на всех проживающих.
+   */
+  mealGuests?: Partial<Record<"breakfast" | "lunch" | "dinner", number>>;
   dishes: HotelPlannedDish[];
   shoppingList: HotelShoppingLine[];
   plannedTotal: Money;
@@ -3210,6 +3222,12 @@ export interface HotelPropertyComparisonRow {
   notArrivedRevenue: Money;
   leftEarlyNights?: number;
   leftEarlyRevenue?: Money;
+  /**
+   * Закрытые незаезды (ночной аудит или ресепшен) с заездом в периоде. Есть поле —
+   * cancellations только отменённые; нет — сервер старый и незаезды внутри отмен.
+   */
+  noShows?: number;
+  noShowRevenue?: Money;
 }
 
 export interface HotelPropertyComparison {

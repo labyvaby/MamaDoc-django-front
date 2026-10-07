@@ -27,7 +27,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 
-import { getOccupancyReport } from "../api/hotel";
+import { getOccupancyReport, getYieldReport } from "../api/hotel";
 import { CustomDatePicker } from "../components/ui";
 import { useCan } from "../hooks/useCan";
 import { usePermissions } from "../hooks/usePermissions";
@@ -41,6 +41,7 @@ import {
   fetchPaymentRegister,
   reservationCheckIn,
   notArrivedSummary,
+  noShowSummary,
   revenueByCategory,
   revenueBySource,
   summarizeExpenses,
@@ -107,6 +108,15 @@ export const HotelOwnerReport: React.FC<{
     enabled: canExpenses && orgId != null,
   });
 
+  // Номера в продаже по дням (без снятых и блоков на дату) — знаменатель линии загрузки,
+  // тот же, что у карточки «Загрузка» и «Номеров за день». Раньше линия делила на все
+  // номера фонда вместе со снятыми: 1 из 12 = 8,3% на графике против 9,1% в «Номерах за день».
+  const inventoryQuery = useQuery({
+    queryKey: ["hotel", "reports", "ownerInventory", propertyId, from, to],
+    queryFn: ({ signal }) => getYieldReport({ propertyId, from, to }, signal),
+    retry: false,
+  });
+
   const occ = occupancyQuery.data;
   const prev = prevQuery.data;
   const reservations = React.useMemo(() => reservationsQuery.data?.rows ?? [], [reservationsQuery.data]);
@@ -115,20 +125,39 @@ export const HotelOwnerReport: React.FC<{
   // чтобы цифры на одной странице сходились между собой; новый (есть notArrived) — по прожитым ночам.
   const serverExcludesMissed = occ == null || "notArrived" in occ;
   const asOf = serverExcludesMissed ? todayStr : null;
+  const availableByDate = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const inv of inventoryQuery.data?.inventory ?? []) map.set(inv.date, (map.get(inv.date) ?? 0) + inv.available);
+    return map;
+  }, [inventoryQuery.data]);
+  // Без разбивки по дням (сервер её не отдал) — среднее «в продаже» за период из той же
+  // карточки «Загрузка», а не весь фонд.
+  const averageAvailable = occ && days > 0 ? Number(occ.availableRoomNights) / days : roomsCount;
   const series = React.useMemo(
     () =>
-      dailySeries(reservations, from, to, asOf).map((p) => ({
-        ...p,
-        label: dayjs(p.date).format(days > 45 ? "DD.MM" : "D MMM"),
-        occupancy: roomsCount > 0 ? Math.round((p.soldRooms / roomsCount) * 1000) / 10 : 0,
-      })),
-    [reservations, from, to, asOf, roomsCount, days],
+      dailySeries(reservations, from, to, asOf).map((p) => {
+        const available = availableByDate.get(p.date) ?? averageAvailable;
+        return {
+          ...p,
+          available,
+          label: dayjs(p.date).format(days > 45 ? "DD.MM" : "D MMM"),
+          occupancy: available > 0 ? Math.round((p.soldRooms / available) * 1000) / 10 : 0,
+        };
+      }),
+    [reservations, from, to, asOf, availableByDate, averageAvailable, days],
   );
   const moneyTicks = React.useMemo(() => niceTicks(Math.max(0, ...series.map((p) => p.revenue))), [series]);
   const categories = React.useMemo(() => revenueByCategory(reservations, from, to, asOf), [reservations, from, to, asOf]);
   const sources = React.useMemo(() => revenueBySource(reservations, from, to, sourceLabel, asOf), [reservations, from, to, asOf]);
   // Не заехали и незаезд не закрыт — считаем по тем же броням, что и график (сервер отдаёт то же в occ.notArrived).
   const missed = React.useMemo(() => notArrivedSummary(reservations, from, to, todayStr), [reservations, from, to, todayStr]);
+  // Закрытые незаезды — с сервера (noShows), у старого сервера — по тем же броням периода.
+  // Новый сервер считает «Отмены» без незаездов; старый — вместе с ними, тогда отмены не показываем.
+  const localNoShows = React.useMemo(() => noShowSummary(reservations, from, to), [reservations, from, to]);
+  const noShows = occ?.noShows
+    ? { reservations: occ.noShows.reservations, nights: occ.noShows.nights, revenue: Number(occ.noShows.revenue) }
+    : localNoShows;
+  const cancellationsApart = occ?.noShows != null;
   const debtors = React.useMemo(
     () =>
       reservations
@@ -189,23 +218,31 @@ export const HotelOwnerReport: React.FC<{
             { label: "Доступно номеро-ночей", value: occ.availableRoomNights, kind: "int" },
             { label: "Заезды", value: occ.arrivals, kind: "int" },
             { label: "Выезды", value: occ.departures, kind: "int" },
-            { label: "Отмены", value: occ.cancellations, kind: "int" },
+            { label: cancellationsApart ? "Отмены" : "Отмены (вместе с незаездами)", value: occ.cancellations, kind: "int" },
             ...(canPayments ? [{ label: "Поступило по кассе", value: received, kind: "money" as const }] : []),
             ...(canExpenses ? [{ label: "Расходы", value: expenses.total, kind: "money" as const }] : []),
             ...(canPayments && canExpenses ? [{ label: "Остаток (поступило − расходы)", value: received - expenses.total, kind: "money" as const }] : []),
             { label: "Долги гостей", value: debtTotal, kind: "money" },
+            { label: "Незаезды, броней", value: noShows.reservations, kind: "int" },
+            { label: "Незаезды, сумма ночей", value: noShows.revenue, kind: "money" },
           ],
           tables: [],
         },
         {
           name: "По дням",
           title: "Динамика по дням",
-          meta: [`Номеров в фонде: ${roomsCount}`],
+          meta: [`Номеров в фонде: ${roomsCount}`, "Загрузка — от номеров в продаже на эту дату (без снятых с продажи)"],
           tables: [
             {
-              columns: [{ header: "Дата", kind: "date" }, { header: "Продано номеров", kind: "int" }, { header: "Загрузка, %", kind: "percent" }, { header: `Выручка (${cur})`, kind: "money" }],
-              rows: series.map((p) => [p.date, p.soldRooms, p.occupancy, p.revenue]),
-              totals: ["Итого", series.reduce((s, p) => s + p.soldRooms, 0), null, series.reduce((s, p) => s + p.revenue, 0)],
+              columns: [
+                { header: "Дата", kind: "date" },
+                { header: "Продано номеров", kind: "int" },
+                { header: "В продаже", kind: "int" },
+                { header: "Загрузка, %", kind: "percent" },
+                { header: `Выручка (${cur})`, kind: "money" },
+              ],
+              rows: series.map((p) => [p.date, p.soldRooms, Math.round(p.available * 10) / 10, p.occupancy, p.revenue]),
+              totals: ["Итого", series.reduce((s, p) => s + p.soldRooms, 0), null, null, series.reduce((s, p) => s + p.revenue, 0)],
             },
           ],
         },
@@ -352,6 +389,17 @@ export const HotelOwnerReport: React.FC<{
                 hint="выручка на номер"
               />
             </Box>
+            {(noShows.reservations > 0 || (cancellationsApart && occ.cancellations > 0)) && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1.25 }}>
+                {noShows.reservations > 0 && (
+                  <>
+                    Незаезды: {bookingsLabel(noShows.reservations)} · {noShows.nights} {plural(noShows.nights, "ночь", "ночи", "ночей")} ·{" "}
+                    {fmtMoney(noShows.revenue, cur)} — закрыты, не в выручке и не в загрузке.
+                  </>
+                )}
+                {cancellationsApart && occ.cancellations > 0 && ` Отмены: ${fmtInt(occ.cancellations)}.`}
+              </Typography>
+            )}
             {(missed.reservations > 0 || Number(occ.leftEarlyNights ?? 0) > 0) && (
               <Alert
                 severity="warning"
@@ -380,6 +428,16 @@ export const HotelOwnerReport: React.FC<{
               </Alert>
             )}
           </Box>
+
+          {reservationsQuery.data?.truncated && (
+            // Карточки сверху и «Поступило» считает сервер целиком, а график, каналы,
+            // категории и должники — по загруженным броням: без предупреждения они молча
+            // не сходились бы с выручкой в карточке.
+            <Alert severity="warning" variant="outlined">
+              Броней за период слишком много — график, каналы, категории и должники посчитаны по первым 2000. Карточки сверху и «Поступило» — по всем.
+              Сузьте период, чтобы цифры сошлись.
+            </Alert>
+          )}
 
           <Box>
             <SectionLabel>Деньги</SectionLabel>
@@ -416,7 +474,7 @@ export const HotelOwnerReport: React.FC<{
                 value={reservationsQuery.isPending ? "…" : fmtMoney(debtTotal, cur)}
                 goodWhenUp={false}
                 hint={`${bookingsLabel(debtors.length)} с долгом`}
-                onClick={() => nav.go("balances", { from, to: to < todayStr ? to : todayStr, balance: "debt" })}
+                onClick={() => nav.go("balances", { from, to: to < todayStr ? to : todayStr, balance: "debt", by: "stay" })}
               />
             </Box>
           </Box>
@@ -572,7 +630,7 @@ export const HotelOwnerReport: React.FC<{
             <ReportSection
               title="Должники"
               subtitle="Заехали или уже выехали и не рассчитались. Кто не приехал — на ресепшене, в «Требуют внимания»"
-              action={<ReportLink label="Все долги" onClick={() => nav.go("balances", { from, to: to < todayStr ? to : todayStr, balance: "debt" })} />}
+              action={<ReportLink label="Все долги" onClick={() => nav.go("balances", { from, to: to < todayStr ? to : todayStr, balance: "debt", by: "stay" })} />}
             >
               {reservationsQuery.isPending ? (
                 <ReportEmpty>Загружаем…</ReportEmpty>
