@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, CircularProgress, IconButton, InputAdornment, MenuItem, Select, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Box, CircularProgress, IconButton, InputAdornment, ListSubheader, MenuItem, Select, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import CakeOutlined from "@mui/icons-material/CakeOutlined";
 import ClearOutlined from "@mui/icons-material/ClearOutlined";
@@ -204,14 +204,21 @@ export default function ClientsPage() {
     </Box>
   );
 
+  // Подпись прямо в поле: одно «Октябрь» без контекста читали как непонятный селект.
+  const birthMonthLabel = birthMonth === ""
+    ? (isMobile ? "ДР: все" : "День рождения: все")
+    : isMobile
+      ? `ДР: ${MONTHS[birthMonth - 1]?.label.slice(0, 3)}`
+      : `День рождения: ${MONTHS[birthMonth - 1]?.label}`;
   const birthMonthFilter = (
+    <Tooltip title="Фильтр клиентов по месяцу дня рождения" placement="bottom">
     <Select
       size="small"
       displayEmpty
       value={birthMonth}
       onChange={(event) => setBirthMonth(event.target.value === "" ? "" : Number(event.target.value))}
-      aria-label="Месяц рождения"
-      renderValue={() => (birthMonth === "" ? (isMobile ? "ДР" : "Все месяцы ДР") : MONTHS[birthMonth - 1]?.label)}
+      aria-label="Фильтр по месяцу дня рождения"
+      renderValue={() => birthMonthLabel}
       startAdornment={<InputAdornment position="start"><CakeOutlined fontSize="small" color={birthMonth === "" ? "action" : "primary"} /></InputAdornment>}
       endAdornment={birthMonth !== "" ? (
         <InputAdornment position="end" sx={{ mr: 2 }}>
@@ -224,15 +231,17 @@ export default function ClientsPage() {
       sx={(t) => ({
         // Та же высота, что у поля поиска рядом: строка шапки ровная.
         height: t.appLayout.controls.inputHeight,
-        minWidth: { xs: 112, md: 210 },
-        maxWidth: { xs: 150, md: 240 },
+        minWidth: { xs: 112, md: 250 },
+        maxWidth: { xs: 150, md: 300 },
         flexShrink: 0,
         ...(birthMonth !== "" ? { "& .MuiOutlinedInput-notchedOutline": { borderColor: "primary.main" } } : {}),
       })}
     >
-      <MenuItem value="">Все месяцы рождения</MenuItem>
+      <ListSubheader sx={{ lineHeight: "36px" }}>Месяц дня рождения</ListSubheader>
+      <MenuItem value="">Все клиенты</MenuItem>
       {MONTHS.map((month) => <MenuItem key={month.value} value={month.value}>{month.label}</MenuItem>)}
     </Select>
+    </Tooltip>
   );
 
   return <Box sx={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
