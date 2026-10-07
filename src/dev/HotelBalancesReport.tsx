@@ -58,6 +58,11 @@ import { downloadXlsx, xlsxFileName, type XlsxKind, type XlsxValue } from "./hot
 type SortKey = "number" | "createdAt" | "customer" | "checkIn" | "checkOut" | "nights" | "rooms" | "adr" | "total" | "paid" | "balance";
 
 const BALANCE_LABELS: Record<BalanceFilter, string> = { all: "Все", debt: "С долгом", overpaid: "Переплата", settled: "Оплачены" };
+
+/** Факт (заселение/выезд) в тот же день, что дата брони. */
+const sameDay = (date: string | null, actual: string): boolean => date != null && dayjs(actual).format("YYYY-MM-DD") === date;
+/** Время факта; в другой день — с датой: «02.10 13:20». */
+const factTime = (date: string | null, actual: string): string => dayjs(actual).format(sameDay(date, actual) ? "HH:mm" : "DD.MM HH:mm");
 const STATUS_LABELS: Record<BalanceStatusFilter, string> = { active: "Активные", all: "Все", cancelled: "Отменённые" };
 /** Статус как в Exely: подтверждённая — «Активная». */
 const statusWord = (s: string) => (s === "confirmed" ? "Активная" : (HOTEL_RESERVATION_STATUS_LABELS[s] ?? s));
@@ -124,8 +129,13 @@ export const HotelBalancesReport: React.FC<{
   const outTime = checkOutTime ? checkOutTime.slice(0, 5) : null;
 
   const columnsAll: Column[] = React.useMemo(() => {
+    // Факт заселения/выезда — со своей датой, если он был не в день брони: иначе дата
+    // брони и время факта складывались в событие, которого не было (№18: «03.10 13:20 ·
+    // заселён», а заселили и выселили 02.10).
     const dateTime = (iso: string | null, planned: string | null, actual: string | null) =>
-      iso ? `${dayjs(iso).format("DD.MM.YYYY")}${actual ? ` ${dayjs(actual).format("HH:mm")}` : planned ? ` ${planned}` : ""}` : "—";
+      iso
+        ? `${dayjs(iso).format("DD.MM.YYYY")}${actual ? (sameDay(iso, actual) ? ` ${dayjs(actual).format("HH:mm")}` : ` (факт ${dayjs(actual).format("DD.MM.YYYY HH:mm")})`) : planned ? ` ${planned}` : ""}`
+        : "—";
     const num = { fontVariantNumeric: "tabular-nums" } as const;
     // Дата и время в две строки — так широкая таблица Exely помещается на экран без прокрутки.
     const twoLine = (iso: string | null, time: string | null, color?: string, title?: string) => (
@@ -211,12 +221,14 @@ export const HotelBalancesReport: React.FC<{
         cell: (r) =>
           twoLine(
             r.checkIn,
-            r.missed ? "не заехал" : r.checkedInAt ? `${dayjs(r.checkedInAt).format("HH:mm")} · заселён` : (r.expectedArrivalTime ?? inTime),
-            r.missed ? "error.main" : r.checkedInAt ? "success.main" : r.expectedArrivalTime ? "info.main" : undefined,
+            r.missed ? "не заехал" : r.checkedInAt ? `${factTime(r.checkIn, r.checkedInAt)} · заселён` : (r.expectedArrivalTime ?? inTime),
+            r.missed ? "error.main" : r.checkedInAt ? (sameDay(r.checkIn, r.checkedInAt) ? "success.main" : "warning.dark") : r.expectedArrivalTime ? "info.main" : undefined,
             r.missed
               ? "Ждали, гость не приехал, незаезд не закрыт: ресепшен → «Закрыть день»"
               : r.checkedInAt
-                ? "Время фактического заселения"
+                ? sameDay(r.checkIn, r.checkedInAt)
+                  ? "Время фактического заселения"
+                  : "Заселили не в день заезда по брони — дата и время факта"
                 : r.expectedArrivalTime
                   ? "Время заезда брони: ранний заезд или со слов гостя"
                   : "Время заезда по правилам объекта",
@@ -232,9 +244,15 @@ export const HotelBalancesReport: React.FC<{
         cell: (r) =>
           twoLine(
             r.checkOut,
-            r.checkedOutAt ? `${dayjs(r.checkedOutAt).format("HH:mm")} · выехал` : (r.expectedDepartureTime ?? outTime),
-            r.checkedOutAt ? undefined : r.expectedDepartureTime ? "warning.dark" : undefined,
-            r.checkedOutAt ? "Время фактического выезда" : r.expectedDepartureTime ? "Время выезда брони: поздний выезд" : "Время выезда по правилам объекта",
+            r.checkedOutAt ? `${factTime(r.checkOut, r.checkedOutAt)} · выехал` : (r.expectedDepartureTime ?? outTime),
+            r.checkedOutAt ? (sameDay(r.checkOut, r.checkedOutAt) ? undefined : "warning.dark") : r.expectedDepartureTime ? "warning.dark" : undefined,
+            r.checkedOutAt
+              ? sameDay(r.checkOut, r.checkedOutAt)
+                ? "Время фактического выезда"
+                : "Выехал не в день выезда по брони — дата и время факта"
+              : r.expectedDepartureTime
+                ? "Время выезда брони: поздний выезд"
+                : "Время выезда по правилам объекта",
           ),
         text: (r) => dateTime(r.checkOut, r.expectedDepartureTime ?? outTime, r.checkedOutAt),
         xlsx: { value: (r) => dateTime(r.checkOut, r.expectedDepartureTime ?? outTime, r.checkedOutAt) },
@@ -518,7 +536,7 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
     const arrival = r.missed
       ? { text: "не заехал", color: "error.main" }
       : r.checkedInAt
-      ? { text: `заселён в ${dayjs(r.checkedInAt).format("HH:mm")}`, color: "success.main" }
+      ? { text: `заселён ${sameDay(r.checkIn, r.checkedInAt) ? "в " : ""}${factTime(r.checkIn, r.checkedInAt)}`, color: sameDay(r.checkIn, r.checkedInAt) ? "success.main" : "warning.dark" }
       : r.expectedArrivalTime
         ? { text: `заезд в ${r.expectedArrivalTime}`, color: "info.main" }
         : r.expectedDepartureTime && !r.checkedOutAt
