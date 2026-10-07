@@ -809,7 +809,7 @@ export default function PosSalesHistoryPage() {
         }}
       />
 
-      <ReceiptPrintForm receipt={selected} organization={auth.activeOrganization?.name} branch={auth.activeBranch?.name} />
+      <ReceiptPrintForm receipt={selected} organization={auth.activeOrganization?.name} branch={auth.activeBranch?.name} cashlessMethods={bootstrap.data?.cashlessMethods} />
     </Box>
   );
 }

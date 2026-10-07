@@ -24,11 +24,15 @@ export const RECEIPT_STATUS_META: Record<string, { label: string; tone: ToneName
 export const receiptStatusMeta = (status: string) =>
   RECEIPT_STATUS_META[status] ?? { label: status, tone: null as ToneName };
 
-/** `ReceiptPaymentMethod` бэка — все семь, а не только три «живых». */
+/**
+ * `ReceiptPaymentMethod` бэка — все семь, а не только три «живых».
+ * `cashless` в кассе — оплата по QR-коду банка: так он назван в окне оплаты,
+ * так же и в «Оплата прошла», истории и печатном чеке.
+ */
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: "Наличные",
   card: "Карта",
-  cashless: "Безналичные",
+  cashless: "QR",
   bonus: "Бонусы",
   certificate: "Сертификат",
   voucher: "Ваучер",
@@ -36,6 +40,23 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
 };
 
 export const paymentMethodLabel = (method: string) => PAYMENT_METHOD_LABELS[method] ?? method;
+
+/**
+ * Способ оплаты с терминалом банка: «QR · POS МБанк», «Карта · POS Бакай».
+ * Имя терминала берётся из справочника кассы (`bootstrap.cashlessMethods`)
+ * по `cashlessMethodId` оплаты, а у денег сертификата приходит готовым.
+ * Терминала нет или он уже не в справочнике — только способ.
+ */
+export const paymentLabelWithTerminal = (
+  payment: { method: string; cashlessMethodId?: number | null; cashlessMethodName?: string | null },
+  terminals: ReadonlyArray<{ id: number; name: string }> = [],
+) => {
+  const terminal =
+    payment.cashlessMethodName?.trim() ||
+    (payment.cashlessMethodId != null ? terminals.find((item) => item.id === payment.cashlessMethodId)?.name : undefined);
+  const label = paymentMethodLabel(payment.method);
+  return terminal ? `${label} · ${terminal}` : label;
+};
 
 /** Действия журнала чека (`ReceiptAuditLog.action`). */
 export const AUDIT_ACTION_LABELS: Record<string, string> = {

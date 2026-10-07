@@ -5,6 +5,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
 import CloseRounded from "@mui/icons-material/CloseRounded";
 import DownloadRounded from "@mui/icons-material/DownloadRounded";
+import PauseCircleRounded from "@mui/icons-material/PauseCircleRounded";
 import PrintRounded from "@mui/icons-material/PrintRounded";
 import QrCode2Rounded from "@mui/icons-material/QrCode2Rounded";
 
@@ -12,12 +13,22 @@ import type { PosSavedReceipt } from "../../api/pos";
 import type { GiftCertificateDetail } from "../../api/promotions";
 import { certificateExpiryLabel } from "../certificates/certificateMeta";
 import type { PosSaleResult } from "./certificateCart";
+import { showMinus } from "./format";
 import { GiftCard } from "./GiftCard";
+import { paymentLabelWithTerminal } from "./historyMeta";
 import { posColors } from "./layout";
 
 const money = (value: string | number) => `${Number(value).toLocaleString("ru-RU")} сом`;
-const methodLabel = (method: string) =>
-  method === "cash" ? "Наличные" : method === "card" ? "Карта" : method === "certificate" ? "Сертификат" : method === "bonus" ? "Бонусы" : "Безналичные";
+/** «Оплата: наличными» на плашке — как кассир говорит это вслух. */
+const CHIP_METHOD: Record<string, string> = {
+  cash: "наличными",
+  card: "картой",
+  cashless: "по QR",
+  certificate: "сертификатом",
+  bonus: "бонусами",
+};
+type Terminals = ReadonlyArray<{ id: number; name: string }>;
+type DonePayment = { method: string; amount?: string; cashlessMethodId?: number | null; cashlessMethodName?: string | null };
 
 /**
  * «Оплата прошла» — товарный чек и проданные сертификаты, готовые к печати.
@@ -27,16 +38,22 @@ const methodLabel = (method: string) =>
 export function SaleDoneDialog({
   sale,
   organizationName,
+  organizationLogoUrl,
   branchName,
   cashier,
   canPrint,
+  cashlessMethods = [],
   onClose,
 }: {
   sale: PosSaleResult | null;
   organizationName: string;
+  /** Логотип организации — печать на подарочной карте. */
+  organizationLogoUrl?: string | null;
   branchName: string;
   cashier: string;
   canPrint: boolean;
+  /** Терминалы кассы: «QR · POS МБанк» вместо просто «QR». */
+  cashlessMethods?: Terminals;
   onClose: () => void;
 }) {
   const theme = useTheme();
@@ -48,14 +65,22 @@ export function SaleDoneDialog({
   const total = Number(receipt?.totalAmount ?? 0) + certificatesTotal;
   const createdAt = receipt?.createdAt ?? certificates[0]?.soldAt ?? certificates[0]?.createdAt ?? new Date().toISOString();
   // Чек только из сертификатов: способы оплаты берём из денег самих сертификатов.
-  const payments: Array<{ method: string }> = receipt?.payments?.length
+  const payments: DonePayment[] = receipt?.payments?.length
     ? receipt.payments
     : certificates.flatMap((item) => item.payments ?? []).filter((payment) => payment.operation !== "refund");
-  const methods = [...new Set(payments.map((payment) => methodLabel(payment.method)))];
+  // Из истории сюда открывают и отложенный чек: денег по нему ещё нет.
+  const held = receipt?.status === "held";
+  const methods = [...new Set(payments.map((payment) => paymentLabelWithTerminal(payment, cashlessMethods)))];
+  const kinds = [...new Set(payments.map((payment) => payment.method))];
+  const chip = kinds.length > 1 ? "Оплата частями" : kinds.length ? `Оплата ${CHIP_METHOD[kinds[0]] ?? methods[0]}` : "";
+  // Частями — ниже отдельный блок: каждая часть своей строкой с терминалом и суммой.
+  const parts = payments.length > 1 ? payments : [];
   const title = receipt ? `Чек №${receipt.number.slice(0, 8)}` : certificates.length === 1 ? `Сертификат ${certificates[0].code}` : `Сертификатов: ${certificates.length}`;
   const facts = [
     { label: "Позиций", value: `${(receipt?.lines.length ?? 0) + certificates.length} шт.` },
-    { label: "Способ оплаты", value: methods.length ? methods.join(", ") : "—" },
+    held
+      ? { label: "Оплата", value: "Не принята" }
+      : { label: "Способ оплаты", value: parts.length ? "Частями" : methods.length ? methods.join(", ") : "—" },
     { label: "Клиент", value: receipt?.clientName || (receipt?.clientId ? `#${receipt.clientId}` : certificates[0]?.buyerName || "Без клиента") },
     { label: "Кассир", value: cashier },
   ];
@@ -96,7 +121,7 @@ export function SaleDoneDialog({
                   id="pos-print"
                   sx={{ bgcolor: "#fff", color: "#141722", p: { xs: 2, sm: 2.5 }, borderRadius: 1.5, boxShadow: "0 18px 50px rgba(0,0,0,.35)", minHeight: { md: 470 }, maxHeight: { md: 560 }, overflowY: { md: "auto" } }}
                 >
-                  {receipt ? <ReceiptPrint receipt={receipt} organizationName={organizationName} branchName={branchName} /> : null}
+                  {receipt ? <ReceiptPrint receipt={receipt} organizationName={organizationName} branchName={branchName} cashlessMethods={cashlessMethods} /> : null}
                   {certificates.map((certificate, index) => (
                     <CertificatePrint
                       key={certificate.id ?? certificate.code}
@@ -109,21 +134,21 @@ export function SaleDoneDialog({
                 </Box>
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Box sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2.5, bgcolor: theme.palette.success.lighter, border: `1px solid ${alpha(theme.palette.success.main, 0.35)}` }}>
+                <Box sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2.5, bgcolor: held ? alpha(theme.palette.warning.main, 0.1) : theme.palette.success.lighter, border: `1px solid ${alpha(held ? theme.palette.warning.main : theme.palette.success.main, 0.35)}` }}>
                   <Stack direction="row" gap={1.25} alignItems="flex-start">
-                    <CheckCircleRounded sx={{ color: c.positive, fontSize: 28 }} />
+                    {held ? <PauseCircleRounded sx={{ color: theme.palette.warning.main, fontSize: 28 }} /> : <CheckCircleRounded sx={{ color: c.positive, fontSize: 28 }} />}
                     <Box sx={{ minWidth: 0, flex: 1 }}>
                       <Stack direction="row" justifyContent="space-between" gap={1} flexWrap="wrap">
                         <Box>
-                          <Typography fontWeight={800} color={c.positive}>
-                            {receipt ? "Оплата прошла успешно" : certificates.length > 1 ? "Сертификаты проданы" : "Сертификат продан"}
+                          <Typography fontWeight={800} color={held ? theme.palette.warning.dark : c.positive}>
+                            {held ? "Чек отложен — оплата не принята" : receipt ? "Оплата прошла успешно" : certificates.length > 1 ? "Сертификаты проданы" : "Сертификат продан"}
                           </Typography>
                           <Typography variant="caption" color={c.textDim}>
                             {title} · {new Date(createdAt).toLocaleString("ru-RU")}
                           </Typography>
                         </Box>
-                        {methods.length ? (
-                          <Chip size="small" label={`Оплата: ${methods.length > 1 ? "частями" : methods[0].toLowerCase()}`} sx={{ bgcolor: alpha(theme.palette.success.main, 0.15), color: c.positive, fontSize: 10, fontWeight: 700 }} />
+                        {chip && !held ? (
+                          <Chip size="small" label={chip} sx={{ bgcolor: alpha(theme.palette.success.main, 0.15), color: c.positive, fontSize: 10, fontWeight: 700 }} />
                         ) : null}
                       </Stack>
                       <Typography variant="h4" fontWeight={900} sx={{ mt: 1, color: c.text }}>
@@ -144,6 +169,7 @@ export function SaleDoneDialog({
                       <Box key={`card-${certificate.id ?? certificate.code}`} sx={{ maxWidth: 420 }}>
                         <GiftCard
                           organizationName={organizationName}
+                          logoUrl={organizationLogoUrl}
                           amountCents={Math.round(Number(certificate.nominal) * 100)}
                           holderName={certificate.buyerName}
                           expiryLabel={certificateExpiryLabel(certificate.expiresAt)}
@@ -158,11 +184,24 @@ export function SaleDoneDialog({
                   {facts.map((item) => (
                     <Box key={item.label} sx={{ p: 1.25, borderRadius: 1.5, bgcolor: c.card, border: `1px solid ${c.hairline}`, minWidth: 0 }}>
                       <Typography variant="caption" color={c.textDim} noWrap component="div">{item.label}</Typography>
-                      {/* «Наличные, Карта, Безналичные» в половине телефона — переносом, а не «Нал…». */}
+                      {/* «QR · POS МБанк» в половине телефона — переносом, а не «QR · PO…». */}
                       <Typography fontWeight={700} sx={{ lineHeight: 1.3, overflowWrap: "anywhere" }}>{item.value}</Typography>
                     </Box>
                   ))}
                 </Box>
+                {parts.length > 0 && !held ? (
+                  <Box sx={{ mt: 1, p: 1.25, borderRadius: 1.5, bgcolor: c.card, border: `1px solid ${c.hairline}` }}>
+                    <Typography variant="caption" color={c.textDim} component="div">Из чего сложилась оплата</Typography>
+                    <Stack component="ul" gap={0.5} sx={{ m: 0, mt: 0.5, p: 0, listStyle: "none" }}>
+                      {parts.map((payment, index) => (
+                        <Stack component="li" key={`${payment.method}-${index}`} direction="row" justifyContent="space-between" alignItems="baseline" gap={1.5}>
+                          <Typography fontWeight={700} sx={{ minWidth: 0, lineHeight: 1.3, overflowWrap: "anywhere" }}>{paymentLabelWithTerminal(payment, cashlessMethods)}</Typography>
+                          <Typography fontWeight={800} sx={{ flexShrink: 0, whiteSpace: "nowrap" }}>{money(payment.amount ?? 0)}</Typography>
+                        </Stack>
+                      ))}
+                    </Stack>
+                  </Box>
+                ) : null}
                 <Button fullWidth variant="contained" onClick={onClose} sx={{ mt: 1.5, minHeight: 48, borderRadius: 2, fontWeight: 800 }}>
                   Новый чек
                   <Box component="span" sx={{ ml: 1, opacity: 0.65, fontSize: 11, display: { xs: "none", md: "inline" } }}>Enter</Box>
@@ -186,7 +225,7 @@ export function SaleDoneDialog({
   );
 }
 
-function ReceiptPrint({ receipt, organizationName, branchName }: { receipt: PosSavedReceipt; organizationName: string; branchName: string }) {
+function ReceiptPrint({ receipt, organizationName, branchName, cashlessMethods }: { receipt: PosSavedReceipt; organizationName: string; branchName: string; cashlessMethods: Terminals }) {
   return (
     <>
       <Stack alignItems="center" gap={0.25} mb={2}>
@@ -214,9 +253,22 @@ function ReceiptPrint({ receipt, organizationName, branchName }: { receipt: PosS
       </Box>
       <Stack gap={0.5} mt={1.5}>
         <Stack direction="row" justifyContent="space-between"><Typography variant="caption">Подытог</Typography><Typography variant="caption">{money(receipt.subtotal)}</Typography></Stack>
-        <Stack direction="row" justifyContent="space-between"><Typography variant="caption">Скидка</Typography><Typography variant="caption">− {money(receipt.discountTotal)}</Typography></Stack>
+        {/* Без скидки строки нет: «− 0 сом» на чеке читается как ошибка. */}
+        {showMinus(Number(receipt.discountTotal), true) ? (
+          <Stack direction="row" justifyContent="space-between"><Typography variant="caption">Скидка</Typography><Typography variant="caption">− {money(receipt.discountTotal)}</Typography></Stack>
+        ) : null}
         <Stack direction="row" justifyContent="space-between" mt={0.5}><Typography fontWeight={800}>ИТОГО</Typography><Typography fontWeight={900}>{money(receipt.totalAmount)}</Typography></Stack>
       </Stack>
+      {receipt.payments.length > 0 ? (
+        <Stack gap={0.25} mt={1} pt={1} sx={{ borderTop: "1px dashed #adb0ba" }}>
+          {receipt.payments.map((payment) => (
+            <Stack key={payment.id} direction="row" justifyContent="space-between" gap={1}>
+              <Typography variant="caption">{paymentLabelWithTerminal(payment, cashlessMethods)}</Typography>
+              <Typography variant="caption" whiteSpace="nowrap">{money(payment.amount)}</Typography>
+            </Stack>
+          ))}
+        </Stack>
+      ) : null}
       <Stack alignItems="center" mt={2}>
         <QrCode2Rounded sx={{ fontSize: 76, color: "#191c26" }} />
         <Typography fontSize={9} color="#777">Проверить чек</Typography>

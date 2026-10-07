@@ -4,7 +4,7 @@ import { useTheme } from "@mui/material/styles";
 
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
 
-import { formatPosAmount } from "./format";
+import { formatPosAmount, showMinus } from "./format";
 import { POS_RADIUS, posColors } from "./layout";
 
 /**
@@ -19,12 +19,12 @@ import { POS_RADIUS, posColors } from "./layout";
  */
 export const PosAmount: React.FC<{
   value: number;
-  /** Знак минуса перед суммой — для строк списаний в итогах. */
+  /** Знак минуса перед суммой — для строк списаний в итогах; у нуля его нет. */
   negative?: boolean;
   sx?: React.ComponentProps<typeof Box>["sx"];
 }> = ({ value, negative, sx }) => (
   <Box component="span" sx={sx}>
-    {negative ? "-" : ""}
+    {showMinus(value, negative) ? "-" : ""}
     {/* Неразрывный пробел: знак сома не уезжает на новую строку один. */}
     {formatPosAmount(value)}{" "}
     <Box component="span" sx={{ textDecoration: "underline" }}>

@@ -4,12 +4,14 @@ import dayjs from "dayjs";
 
 import type { PosSavedReceipt } from "../../api/pos";
 import { formatPosAmount } from "./format";
-import { clientLabel, paymentMethodLabel, receiptDateFull, receiptNumber } from "./historyMeta";
+import { clientLabel, paymentLabelWithTerminal, receiptDateFull, receiptNumber } from "./historyMeta";
 
 type Props = {
   receipt: PosSavedReceipt | null;
   organization?: string;
   branch?: string;
+  /** Терминалы кассы — чтобы на чеке было «QR · POS МБанк», а не просто «QR». */
+  cashlessMethods?: ReadonlyArray<{ id: number; name: string }>;
 };
 
 /**
@@ -20,7 +22,7 @@ type Props = {
  * совпадал с тем, что покупатель получил у кассы. Помечен как дубликат,
  * иначе две одинаковые бумажки на возврате не отличить.
  */
-export const ReceiptPrintForm: React.FC<Props> = ({ receipt, organization, branch }) => {
+export const ReceiptPrintForm: React.FC<Props> = ({ receipt, organization, branch, cashlessMethods }) => {
   if (!receipt) return null;
   const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 8 };
   const muted: React.CSSProperties = { color: "#555", fontSize: 10 };
@@ -71,7 +73,7 @@ export const ReceiptPrintForm: React.FC<Props> = ({ receipt, organization, branc
           <div style={{ marginTop: 8, borderTop: "1px dashed #999", paddingTop: 6 }}>
             {receipt.payments.map((payment) => (
               <div key={payment.id} style={row}>
-                <span>{paymentMethodLabel(payment.method)}</span>
+                <span>{paymentLabelWithTerminal(payment, cashlessMethods)}</span>
                 <span>{formatPosAmount(Number(payment.amount))} с</span>
               </div>
             ))}

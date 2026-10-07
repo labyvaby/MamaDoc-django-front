@@ -24,6 +24,7 @@ import QrCodeScannerOutlined from "@mui/icons-material/QrCodeScannerOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import PauseCircleOutlineRounded from "@mui/icons-material/PauseCircleOutlineRounded";
 import { apiRequest } from "../../api/client";
 import { uploadClientPhoto, type CreateClientPayload, type DjangoClientStatus } from "../../api/clients";
 import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
@@ -75,6 +76,7 @@ import {
   type PosSaleResult,
 } from "./certificateCart";
 import { SaleDoneDialog } from "./SaleDoneDialog";
+import { heldNoticeFor, type HeldNotice } from "./holdNotice";
 
 type CartRow = {
   product: PosProduct;
@@ -251,6 +253,9 @@ export default function LivePosPage() {
   const ready = Boolean(
     scope.organizationId && scope.branchId && auth.hasModule("pos")
   );
+  // Сертификат — карта организации, поэтому печать на ней — логотип
+  // организации, а не филиала. `/auth/me/` отдаёт его вместе с организацией.
+  const organizationLogoUrl = auth.activeOrganization?.logoUrl ?? null;
   const prefix = ["pos-workspace", scope.organizationId, scope.branchId];
   const bootstrap = useQuery({
     queryKey: [...prefix, "bootstrap"],
@@ -315,6 +320,7 @@ export default function LivePosPage() {
     []
   );
   const [addedNotice, setAddedNotice] = React.useState<{ key: number; text: string } | null>(null);
+  const [heldNotice, setHeldNotice] = React.useState<HeldNotice | null>(null);
   const [sale, setSale] = React.useState<PosSaleResult | null>(null);
   const [confirmRequest, setConfirmRequest] =
     React.useState<PosConfirmRequest | null>(null);
@@ -861,7 +867,10 @@ export default function LivePosPage() {
       setCheckoutOpen(false);
       setHoldOpen(false);
       if (phone) setTab("products");
-      setSale(result);
+      // Отложенный чек не оплачен: окна «Оплата прошла» нет — только
+      // подтверждение, что чек лежит в отложенных.
+      if (status === "held") setHeldNotice(heldNoticeFor(result.receipt, comment));
+      else setSale(result);
       invalidate();
       if (soldCertificates) {
         // Деньги за сертификат — операция кассы и смены, а не выручка чека.
@@ -1450,6 +1459,43 @@ export default function LivePosPage() {
         // На телефоне — над липкой кнопкой оплаты и вкладками.
         sx={{ bottom: phone ? "calc(136px + env(safe-area-inset-bottom)) !important" : undefined }}
       />
+      <Snackbar
+        key={heldNotice?.key}
+        open={heldNotice !== null}
+        autoHideDuration={8000}
+        onClose={(_, reason) => {
+          // Случайный клик по кассе не должен прятать подтверждение раньше времени.
+          if (reason !== "clickaway") setHeldNotice(null);
+        }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        sx={{ bottom: phone ? "calc(136px + env(safe-area-inset-bottom)) !important" : undefined }}
+      >
+        <Alert
+          severity="info"
+          icon={<PauseCircleOutlineRounded fontSize="inherit" />}
+          onClose={() => setHeldNotice(null)}
+          sx={{ width: { xs: "calc(100vw - 32px)", md: 380 }, maxWidth: 420, alignItems: "flex-start", boxShadow: 6, "& .MuiAlert-message": { minWidth: 0, flex: 1 } }}
+        >
+          <Typography sx={{ fontSize: 14, fontWeight: 800, lineHeight: 1.3 }}>{heldNotice?.title}</Typography>
+          <Typography sx={{ mt: "2px", fontSize: 12, lineHeight: 1.35, color: "text.secondary", overflowWrap: "anywhere" }}>
+            {heldNotice?.comment ? `«${heldNotice.comment}» · ` : ""}оплата не принята, чек ждёт в отложенных
+          </Typography>
+          {actions.hold ? (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                setHeldNotice(null);
+                setListOffset(0);
+                setList("held");
+              }}
+              sx={{ mt: 1, minHeight: 36, fontWeight: 800 }}
+            >
+              Открыть отложенные
+            </Button>
+          ) : null}
+        </Alert>
+      </Snackbar>
       <PosConfirmDialog
         request={confirmRequest}
         onClose={() => setConfirmRequest(null)}
@@ -1464,6 +1510,7 @@ export default function LivePosPage() {
           open={certificateSellOpen}
           scope={scope}
           organizationName={data.organization.name}
+          organizationLogoUrl={organizationLogoUrl}
           canSearchClients={Boolean(actions.clients)}
           buyer={certificateBuyer}
           onBuyerChange={setCertificateBuyer}
@@ -1653,9 +1700,11 @@ export default function LivePosPage() {
       <SaleDoneDialog
         sale={sale}
         organizationName={data.organization.name}
+        organizationLogoUrl={organizationLogoUrl}
         branchName={data.branch.name}
         cashier={data.cashier}
         canPrint={Boolean(actions.print)}
+        cashlessMethods={data.cashlessMethods}
         onClose={() => setSale(null)}
       />
       <Dialog
