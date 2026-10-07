@@ -45,6 +45,8 @@ type Props = {
   open: boolean;
   scope: PosScope;
   organizationName: string;
+  /** Логотип организации — печать на карте; нет — монограмма. */
+  organizationLogoUrl?: string | null;
   /** Право искать клиентов кассы (`actions.clients`). */
   canSearchClients: boolean;
   buyer: PosClient | null;
@@ -59,6 +61,7 @@ export function CertificateSellDialog({
   open,
   scope,
   organizationName,
+  organizationLogoUrl,
   canSearchClients,
   buyer,
   onBuyerChange,
@@ -191,6 +194,7 @@ export function CertificateSellDialog({
         <Box sx={{ pt: 0.5, pb: 2.5, maxWidth: { md: 470 }, mx: "auto" }}>
           <GiftCard
             organizationName={organizationName}
+            logoUrl={organizationLogoUrl}
             amountCents={nominalCents}
             holderName={buyer?.name}
             expiryLabel={expiryLabel}

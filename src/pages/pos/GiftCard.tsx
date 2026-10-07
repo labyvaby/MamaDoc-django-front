@@ -6,9 +6,14 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { giftCardAmountLabel, giftCardHolderName } from "./certificateCart";
 
 /**
- * Подарочная карта в окне продажи сертификата: как банковская карта
+ * Подарочная карта в окне продажи сертификата: формат пластиковой карты
  * (ISO/IEC 7810 ID-1, 85,6 × 53,98 мм → 1,586 : 1), тёмная, с оттенком
  * акцента кассы. Сумма, имя покупателя и срок «заполняются» по мере ввода.
+ *
+ * Это не банковская карта — ни чипа, ни «•••• ••••». Вместо них печать
+ * магазина: логотип организации маленьким квадратом (название на нём уже
+ * есть, поэтому вторым словом его не пишем), а без логотипа — монограмма с
+ * первой буквой названия в золотом кольце и название рядом.
  *
  * Размеры шрифтов — в `cqw` от ширины карты: на телефоне карта во всю ширину,
  * на десктопе ~470 px, и пропорции везде одинаковые.
@@ -70,15 +75,69 @@ type Props = {
   expiryLabel: string;
   /** Номер карты; до оплаты его нет — сервер выдаст при продаже. */
   code?: string | null;
+  /** Логотип организации (`/auth/me/` → organization.logoUrl). Нет — монограмма. */
+  logoUrl?: string | null;
 };
 
-export const GiftCard: React.FC<Props> = ({ organizationName, amountCents, holderName, expiryLabel, code }) => {
+/**
+ * Печать магазина в углу карты. Логотип — квадратом в тонкой золотой рамке;
+ * не загрузился или его нет — монограмма: первая буква названия в кольце.
+ */
+const BrandSeal: React.FC<{ brand: string; logoUrl: string | null; onLogoError: () => void }> = ({ brand, logoUrl, onLogoError }) => {
+  if (logoUrl)
+    return (
+      <Box
+        component="img"
+        src={logoUrl}
+        alt=""
+        aria-hidden
+        onError={onLogoError}
+        sx={{
+          display: "block",
+          flexShrink: 0,
+          width: "16.5cqw",
+          height: "16.5cqw",
+          objectFit: "cover",
+          borderRadius: "2.2cqw",
+          bgcolor: "rgba(255,255,255,.06)",
+          boxShadow: "0 0 0 .45cqw rgba(214,178,106,.75), 0 0 0 .9cqw rgba(18,15,34,.9), 0 0 0 1.15cqw rgba(214,178,106,.35), 0 1.6cqw 3.6cqw rgba(0,0,0,.45)",
+        }}
+      />
+    );
+  const letter = (Array.from(brand.trim())[0] ?? "★").toUpperCase();
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        flexShrink: 0,
+        width: "13cqw",
+        height: "13cqw",
+        borderRadius: "50%",
+        display: "grid",
+        placeItems: "center",
+        background: "radial-gradient(circle at 35% 30%, rgba(255,255,255,.10), transparent 60%), #15112a",
+        border: ".45cqw solid #c9a35c",
+        boxShadow: "inset 0 0 0 .7cqw #15112a, inset 0 0 0 .95cqw rgba(214,178,106,.55), 0 1.2cqw 3cqw rgba(0,0,0,.4)",
+      }}
+    >
+      <Box component="span" sx={{ ...goldText, fontFamily: SERIF, fontWeight: 600, fontSize: "7.2cqw", lineHeight: 1, transform: "translateY(-.2cqw)" }}>
+        {letter}
+      </Box>
+    </Box>
+  );
+};
+
+export const GiftCard: React.FC<Props> = ({ organizationName, amountCents, holderName, expiryLabel, code, logoUrl }) => {
   const theme = useTheme();
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)", { noSsr: true });
   const target = Number.isFinite(amountCents) && amountCents > 0 ? Math.round(amountCents) : 0;
   const shown = useAnimatedNumber(target, reduced);
   const holder = giftCardHolderName(holderName);
   const brand = organizationName.trim() || "ErkinAI";
+  const [logoBroken, setLogoBroken] = React.useState(false);
+  React.useEffect(() => setLogoBroken(false), [logoUrl]);
+  // С логотипом название уже на печати — словом его не повторяем.
+  const logo = logoUrl && !logoBroken ? logoUrl : null;
   const accent = theme.palette.primary.main;
   const dated = /^до\s+/i.test(expiryLabel);
   const expiry = dated ? expiryLabel.replace(/^до\s+/i, "") : expiryLabel;
@@ -138,24 +197,29 @@ export const GiftCard: React.FC<Props> = ({ organizationName, amountCents, holde
             gridTemplateRows: "auto 1fr auto auto",
           }}
         >
-          {/* Шапка: бренд организации и тип карты. */}
+          {/* Шапка: печать магазина (и название, если логотипа нет) и тип карты. */}
           <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "3cqw" }}>
-            <Box
-              sx={{
-                ...goldText,
-                minWidth: 0,
-                fontFamily: SERIF,
-                fontWeight: 600,
-                fontSize: "6.2cqw",
-                lineHeight: 1,
-                letterSpacing: ".2em",
-                textTransform: "uppercase",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {brand}
+            <Box sx={{ minWidth: 0, display: "flex", alignItems: "center", gap: "3.2cqw" }}>
+              <BrandSeal brand={brand} logoUrl={logo} onLogoError={() => setLogoBroken(true)} />
+              {logo ? null : (
+                <Box
+                  sx={{
+                    ...goldText,
+                    minWidth: 0,
+                    fontFamily: SERIF,
+                    fontWeight: 600,
+                    fontSize: "5.4cqw",
+                    lineHeight: 1,
+                    letterSpacing: ".18em",
+                    textTransform: "uppercase",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {brand}
+                </Box>
+              )}
             </Box>
             <Box
               sx={{
@@ -175,33 +239,18 @@ export const GiftCard: React.FC<Props> = ({ organizationName, amountCents, holde
             </Box>
           </Box>
 
-          {/* Чип и номер — как у банковской карты. */}
-          <Box sx={{ alignSelf: "center", display: "flex", alignItems: "center", gap: "4cqw" }}>
-            <Box
-              aria-hidden
-              sx={{
-                width: "11.5cqw",
-                aspectRatio: "1.3 / 1",
-                borderRadius: "1.6cqw",
-                backgroundImage: [
-                  "linear-gradient(90deg, transparent 32%, rgba(80,58,20,.45) 32% 34%, transparent 34% 66%, rgba(80,58,20,.45) 66% 68%, transparent 68%)",
-                  "linear-gradient(0deg, transparent 46%, rgba(80,58,20,.45) 46% 54%, transparent 54%)",
-                  GOLD,
-                ].join(", "),
-                boxShadow: "inset 0 0 0 1px rgba(255,240,200,.35)",
-              }}
-            />
-            <Box
-              sx={{
-                fontFamily: MONO,
-                fontSize: "3.6cqw",
-                letterSpacing: ".24em",
-                color: code ? "rgba(247,243,234,.9)" : "rgba(247,243,234,.42)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {code || "•••• ••••"}
-            </Box>
+          {/* Номер — только когда он уже есть: до оплаты его выдаст сервер. */}
+          <Box sx={{ alignSelf: "center", minHeight: "4cqw" }}>
+            {code ? (
+              <Box sx={{ display: "flex", alignItems: "baseline", gap: "2.4cqw", whiteSpace: "nowrap" }}>
+                <Box component="span" sx={{ fontSize: "2.2cqw", letterSpacing: ".22em", textTransform: "uppercase", color: "rgba(247,243,234,.5)" }}>
+                  №
+                </Box>
+                <Box component="span" sx={{ fontFamily: MONO, fontSize: "3.6cqw", letterSpacing: ".2em", color: "rgba(247,243,234,.9)" }}>
+                  {code}
+                </Box>
+              </Box>
+            ) : null}
           </Box>
 
           {/* Сумма. */}

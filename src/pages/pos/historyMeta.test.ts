@@ -6,6 +6,8 @@ import {
   clientLabel,
   historyPreset,
   linesSummary,
+  paymentLabelWithTerminal,
+  paymentMethodLabel,
   paymentsSummary,
   receiptDateLabel,
   receiptInRange,
@@ -57,6 +59,18 @@ describe("history line and payment summaries", () => {
     expect(paymentsSummary([])).toBe("Без оплаты");
     expect(paymentsSummary([payment("card"), payment("cash"), payment("card")])).toBe("Карта + Наличные");
     expect(paymentsSummary([payment("debt")])).toBe("В долг");
+  });
+
+  it("calls cashless «QR», as the payment window does, and names the terminal", () => {
+    const terminals = [{ id: 10, name: "POS Бакай" }, { id: 11, name: "POS МБанк" }];
+    expect(paymentMethodLabel("cashless")).toBe("QR");
+    expect(paymentLabelWithTerminal({ method: "cashless", cashlessMethodId: 11 }, terminals)).toBe("QR · POS МБанк");
+    expect(paymentLabelWithTerminal({ method: "card", cashlessMethodId: 10 }, terminals)).toBe("Карта · POS Бакай");
+    // Certificate money rows carry the name themselves.
+    expect(paymentLabelWithTerminal({ method: "card", cashlessMethodId: 99, cashlessMethodName: "POS Оптима" })).toBe("Карта · POS Оптима");
+    // A terminal gone from the directory is not guessed.
+    expect(paymentLabelWithTerminal({ method: "cashless", cashlessMethodId: 99 }, terminals)).toBe("QR");
+    expect(paymentLabelWithTerminal({ method: "cash", cashlessMethodId: null }, terminals)).toBe("Наличные");
   });
 });
 
