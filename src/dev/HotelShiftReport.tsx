@@ -2,7 +2,7 @@
  * «Смена администратора» — отчёт, который ресепшен Viva вёл в Google Sheets
  * («отчёт админов»), теперь из самой системы: поступления за смену по
  * номерам (наличка / безнал / терминал), расходы смены с добавлением прямо
- * здесь, выручка и касса, завтраки на утро, звонки и сообщения, заезды дня.
+ * здесь, поступления и касса, завтраки на утро, звонки и сообщения, заезды дня.
  * Смена — календарные сутки или сутки с часа пересменки (суточные смены).
  * Печать в формате их таблицы и выгрузка в Excel.
  *
@@ -329,10 +329,10 @@ export const HotelShiftReport: React.FC<{
           title: "Отчёт администратора за смену",
           meta: [`${propertyName} · ${windowLabel}`, `Дата: ${dayjs(date).format("DD.MM.YYYY")}`, `Админ: ${adminName || "—"}`, `Валюта: ${currency}`],
           summary: [
-            { label: "Выручка — наличка", value: payments.cash, kind: "money" },
-            { label: "Выручка — безнал", value: payments.cashless, kind: "money" },
+            { label: "Поступило — наличные", value: payments.cash, kind: "money" },
+            { label: "Поступило — безнал", value: payments.cashless, kind: "money" },
             ...payments.byChannel.map((c) => ({ label: `   в т.ч. ${c.label}`, value: c.amount, kind: "money" as const })),
-            { label: "Выручка — всего", value: payments.total, kind: "money" },
+            { label: "Поступило — всего", value: payments.total, kind: "money" },
             { label: "Расходы", value: expenseSummary.total, kind: "money" },
             { label: "Касса (наличные − расходы наличными)", value: kassa, kind: "money" },
             { label: "Кол-во завтраков", value: breakfasts, kind: "int" },
@@ -543,7 +543,7 @@ export const HotelShiftReport: React.FC<{
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(3, 1fr)", lg: "repeat(6, 1fr)" }, gap: 1.5 }}>
             <ReportKpi icon={<PaymentsOutlined />} tone="success" label="Наличные" value={fmtMoney(payments.cash, currency)} hint={`${lines.filter((l) => l.cash != null).length} оплат`} />
             <ReportKpi icon={<CreditCardOutlined />} tone="info" label="Безнал" value={fmtMoney(payments.cashless, currency)} hint={payments.byChannel.map((c) => c.label).slice(0, 3).join(", ") || "—"} />
-            <ReportKpi icon={<ReceiptLongOutlined />} label="Выручка" value={fmtMoney(payments.total, currency)} hint={payments.refunds ? `возвраты ${fmtMoney(payments.refunds, currency)}` : "за смену"} />
+            <ReportKpi icon={<ReceiptLongOutlined />} label="Поступило" value={fmtMoney(payments.total, currency)} hint={payments.refunds ? `оплаты за смену, возвраты ${fmtMoney(payments.refunds, currency)}` : "оплаты за смену"} />
             <ReportKpi icon={<ShoppingCartOutlined />} tone="warning" label="Расходы" value={canExpenses ? fmtMoney(expenseSummary.total, currency) : "нет доступа"} hint={canExpenses ? `наличными ${fmtMoney(expenseSummary.cash, currency)}` : undefined} />
             <ReportKpi icon={<PointOfSaleOutlined />} tone="primary" emphasis label="В кассе" value={fmtMoney(kassa, currency)} hint="наличные − расходы" />
             <ReportKpi icon={<FreeBreakfastOutlined />} tone="warning" label="Завтраков" value={breakfasts} hint={`утром ${dayjs(date).format("D MMM")}`} />
@@ -753,10 +753,10 @@ export const HotelShiftReport: React.FC<{
               <ReportSection title="Итог смены" subtitle="Как в нижнем блоке отчёта админа">
                 <Stack gap={0.75} sx={{ pt: 0.5 }}>
                   {[
-                    { label: "Выручка — наличка", value: payments.cash },
-                    { label: "Выручка — безнал", value: payments.cashless },
+                    { label: "Поступило — наличные", value: payments.cash },
+                    { label: "Поступило — безнал", value: payments.cashless },
                     ...payments.byChannel.map((c) => ({ label: `в т.ч. ${c.label}`, value: c.amount, sub: true })),
-                    { label: "Выручка — всего", value: payments.total, strong: true },
+                    { label: "Поступило — всего", value: payments.total, strong: true },
                     { label: "Расходы наличными", value: expenseSummary.cash ? -expenseSummary.cash : 0 },
                     { label: "Касса (наличные)", value: kassa, strong: true, accent: true },
                     ...payments.foreignCash.map((f) => ({ label: `в т.ч. валютой, ${f.currency}`, value: f.amount, sub: true, foreign: f.currency })),

@@ -1,7 +1,7 @@
 /**
  * Печатная форма «Отчёт администратора за смену» — в раскладке таблицы,
  * которую Viva ведёт в Google Sheets: поступления по номерам (наличка /
- * безнал / способ), расходы, выручка и касса, завтраки, звонки и сообщения,
+ * безнал / способ), расходы, поступления и касса, завтраки, звонки и сообщения,
  * подписи сдал/принял. Альбомный A4.
  */
 import dayjs from "dayjs";
@@ -163,7 +163,7 @@ export function buildShiftReportHtml(p: ShiftPrintInput): string {
     <div class="sum">
       <div>Наличка<b>${money(p.payments.cash)}</b></div>
       <div>Безнал<b>${money(p.payments.cashless)}</b></div>
-      <div class="accent">Выручка всего<b>${money(p.payments.total)}</b></div>
+      <div class="accent">Поступило всего<b>${money(p.payments.total)}</b></div>
       <div>Расходы (нал.)<b>${money(p.expenseSummary.cash)}</b></div>
       <div class="accent">Касса (нал.)<b>${money(kassa)}</b>${p.payments.foreignCash.length ? `<span class="muted">в т.ч. ${p.payments.foreignCash.map((f) => `${f.amount.toLocaleString("ru-RU")} ${esc(f.currency)}`).join(", ")}</span>` : ""}</div>
       <div>Завтраков<b>${p.breakfasts}</b></div>
