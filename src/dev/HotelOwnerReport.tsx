@@ -453,7 +453,7 @@ export const HotelOwnerReport: React.FC<{
                 value={reservationsQuery.isPending ? "…" : fmtMoney(debtTotal, cur)}
                 goodWhenUp={false}
                 hint={`${bookingsLabel(debtors.length)} с долгом`}
-                onClick={() => nav.go("balances", { from, to: to < todayStr ? to : todayStr, balance: "debt" })}
+                onClick={() => nav.go("balances", { from, to: to < todayStr ? to : todayStr, balance: "debt", by: "stay" })}
               />
             </Box>
           </Box>
@@ -609,7 +609,7 @@ export const HotelOwnerReport: React.FC<{
             <ReportSection
               title="Должники"
               subtitle="Заехали или уже выехали и не рассчитались. Кто не приехал — на ресепшене, в «Требуют внимания»"
-              action={<ReportLink label="Все долги" onClick={() => nav.go("balances", { from, to: to < todayStr ? to : todayStr, balance: "debt" })} />}
+              action={<ReportLink label="Все долги" onClick={() => nav.go("balances", { from, to: to < todayStr ? to : todayStr, balance: "debt", by: "stay" })} />}
             >
               {reservationsQuery.isPending ? (
                 <ReportEmpty>Загружаем…</ReportEmpty>

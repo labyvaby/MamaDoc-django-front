@@ -160,10 +160,20 @@ describe("balanceRows", () => {
   });
 
   it("фильтр по балансу: долг, переплата, рассчитаны", () => {
-    const base = { from: "2026-10-01", to: "2026-10-31", status: "active" as const };
-    expect(balanceRows(list, { ...base, balance: "debt" }).map((r) => r.number)).toEqual([1, 5]);
-    expect(balanceRows(list, { ...base, balance: "overpaid" }).map((r) => r.number)).toEqual([3]);
-    expect(balanceRows(list, { ...base, balance: "settled" }).map((r) => r.number)).toEqual([2]);
+    const base = { from: "2026-10-01", to: "2026-10-31", status: "active" as const, today: "2026-10-02" };
+    // Долг — как в «Собственнику»: только у заселённых или выехавших (№1 заселён);
+    // №5 с остатком ещё не заехал — к оплате при заезде, не должник.
+    const withGuest = [reservation({ items: [item({ stayStatus: "checked_in" })] }), ...list.slice(1)];
+    expect(balanceRows(withGuest, { ...base, balance: "debt" }).map((r) => r.number)).toEqual([1]);
+    expect(balanceRows(withGuest, { ...base, balance: "overpaid" }).map((r) => r.number)).toEqual([3]);
+    expect(balanceRows(withGuest, { ...base, balance: "settled" }).map((r) => r.number)).toEqual([2]);
+  });
+
+  it("по проживанию в периоде — берёт и заехавших раньше него, как «Долги гостей» «Собственнику»", () => {
+    const earlier = reservation({ id: 6, number: 6, checkIn: "2026-09-28", checkOut: "2026-10-03", items: [item({ checkIn: "2026-09-28", checkOut: "2026-10-03", stayStatus: "checked_in" })] });
+    const opts = { from: "2026-10-01", to: "2026-10-02", balance: "debt" as const, status: "active" as const, today: "2026-10-02" };
+    expect(balanceRows([earlier], opts).map((r) => r.number)).toEqual([]);
+    expect(balanceRows([earlier], { ...opts, select: "stay" }).map((r) => r.number)).toEqual([6]);
   });
 
   it("итоги и ADR", () => {

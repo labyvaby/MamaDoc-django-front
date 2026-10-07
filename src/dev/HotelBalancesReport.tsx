@@ -48,7 +48,7 @@ import { formatPhoneDisplay } from "../utility/phone";
 import { HOTEL_BOARD_TYPE_LABELS, HOTEL_BOOKING_SOURCE_LABELS, HOTEL_GUARANTEE_METHOD_LABELS, HOTEL_RESERVATION_STATUS_LABELS, hotelSourceColor } from "./hotelDisplay";
 import { esc, printHtmlDocument } from "./hotelPrintDocs";
 import { fmtInt, fmtMoney } from "./hotelReportFormat";
-import { balanceRows, balanceTotals, fetchAllReservations, type BalanceFilter, type BalanceRow, type BalanceStatusFilter } from "./hotelReportData";
+import { balanceRows, balanceTotals, fetchAllReservations, type BalanceFilter, type BalanceRow, type BalanceSelect, type BalanceStatusFilter } from "./hotelReportData";
 import { ReportControls, ReportFilters, ReportKpi, ReportSkeleton, type ReportNav } from "./hotelReportUi";
 import { matchesByParts } from "./searchParts";
 import { FilterChip, plural, Surface, useHotelTableSx } from "./hotelUi";
@@ -120,6 +120,8 @@ export const HotelBalancesReport: React.FC<{
   const status = ((nav.param("status") as BalanceStatusFilter | null) ?? "active") as BalanceStatusFilter;
   const source = nav.param("source") ?? "";
   const corporate = nav.param("corporate") ?? "";
+  // «stay» — из «Собственнику → Долги гостей»: проживание пересекает период, а не заезд в нём.
+  const select: BalanceSelect = nav.param("by") === "stay" ? "stay" : "checkIn";
   const [q, setQ] = React.useState("");
   const [sort, setSort] = React.useState<{ key: SortKey; dir: 1 | -1 }>({ key: "checkIn", dir: 1 });
   const [exporting, setExporting] = React.useState(false);
@@ -363,17 +365,17 @@ export const HotelBalancesReport: React.FC<{
 
   // Пересечение [from, to+1) с проживанием — все, кто заезжает в период; дату заезда режем уже здесь.
   const query = useQuery({
-    queryKey: ["hotel", "reports", "balances", propertyId, from, to, status === "active" ? "confirmed" : "any"],
+    queryKey: ["hotel", "reports", "balances", propertyId, from, to, status === "active" ? "confirmed" : "any", select],
     // checkInFrom/checkInTo сервер с §10 применяет сам (меньше страниц), старый — пропускает; режем и здесь.
     queryFn: ({ signal }) =>
       fetchAllReservations(
-        { propertyId, from, to: D(dayjs(to).add(1, "day")), checkInFrom: from, checkInTo: to, ...(status === "active" ? { status: "confirmed" } : {}) },
+        { propertyId, from, to: D(dayjs(to).add(1, "day")), ...(select === "checkIn" ? { checkInFrom: from, checkInTo: to } : {}), ...(status === "active" ? { status: "confirmed" } : {}) },
         signal,
       ),
   });
 
   const rows = React.useMemo(() => {
-    const base = balanceRows(query.data?.rows ?? [], { from, to, balance, status, source: source || undefined, corporate: corporate || undefined, today });
+    const base = balanceRows(query.data?.rows ?? [], { from, to, balance, status, source: source || undefined, corporate: corporate || undefined, today, select });
     // По частям, как поиск на сервере (searchParts): «Бекова 201», «0555 11 10», «Альфа».
     const guestsOf = (r: BalanceRow) => r.reservation.items.flatMap((i) => i.guests);
     const filtered = q.trim()
@@ -391,10 +393,14 @@ export const HotelBalancesReport: React.FC<{
       const y = val(b);
       return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
     });
-  }, [query.data, from, to, balance, status, source, corporate, q, sort, today]);
+  }, [query.data, from, to, balance, status, source, corporate, q, sort, today, select]);
   const totals = balanceTotals(rows);
-  // Долг — у тех, кто заехал или ещё приедет; не заехавшие (незаезд не закрыт) — отдельно, как в «Собственнику».
-  const debt = rows.reduce((s, r) => s + (r.missed ? 0 : Math.max(0, r.balance)), 0);
+  // Долг — то же правило, что «Долги гостей» в «Собственнику»: остаток у заселённых и
+  // выехавших. Кто ещё приедет — «к оплате при заезде», не заехавшие — не считаем.
+  const debt = rows.reduce((s, r) => s + (r.debt ? r.balance : 0), 0);
+  const debtCount = rows.filter((r) => r.debt).length;
+  const upcomingDue = rows.reduce((s, r) => s + (!r.debt && !r.missed ? Math.max(0, r.balance) : 0), 0);
+  const upcomingCount = rows.filter((r) => !r.debt && !r.missed && r.balance > 0).length;
   const missedDebt = rows.reduce((s, r) => s + (r.missed ? Math.max(0, r.balance) : 0), 0);
   const missedCount = rows.filter((r) => r.missed && r.balance > 0).length;
   const overpaid = rows.reduce((s, r) => s + Math.max(0, -r.balance), 0);
@@ -726,6 +732,19 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
         <ReportSkeleton block={320} />
       ) : (
         <>
+          {select === "stay" && (
+            <Alert
+              severity="info"
+              variant="outlined"
+              action={
+                <Button color="inherit" size="small" onClick={() => nav.setParams({ by: null })} sx={{ whiteSpace: "nowrap" }}>
+                  По дате заезда
+                </Button>
+              }
+            >
+              Брони, проживание которых пересекает период, — как «Долги гостей» в «Собственнику», включая заехавших раньше него.
+            </Alert>
+          )}
           {query.data.truncated && (
             <Alert severity="warning" variant="outlined">
               Броней слишком много — показаны первые 2000. Сузьте период.
@@ -737,15 +756,18 @@ tr.total td { font-weight: 700; background: #eef2f7; border-top: 1.5px solid #0f
             <ReportKpi
               icon={<AccountBalanceWalletOutlined />}
               tone="error"
-              label="К оплате"
+              label="Долг гостей"
               value={fmtMoney(debt, cur)}
               emphasis={debt > 0}
               hint={
-                missedDebt > 0
-                  ? `не заехали: ещё ${fmtMoney(missedDebt, cur)} (${missedCount}) — не считаем`
-                  : overpaid > 0
-                    ? `переплата ${fmtMoney(overpaid, cur)}`
-                    : `${rows.filter((r) => r.balance > 0 && !r.missed).length} с долгом`
+                [
+                  `${debtCount} ${plural(debtCount, "бронь", "брони", "броней")} с долгом`,
+                  upcomingDue > 0 ? `к оплате при заезде ${fmtMoney(upcomingDue, cur)} (${upcomingCount})` : null,
+                  missedDebt > 0 ? `не заехали ${fmtMoney(missedDebt, cur)} (${missedCount}) — не долг` : null,
+                  overpaid > 0 ? `переплата ${fmtMoney(overpaid, cur)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
               }
               onClick={balance === "debt" ? undefined : () => nav.setParams({ balance: "debt" })}
             />

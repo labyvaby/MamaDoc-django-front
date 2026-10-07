@@ -15,7 +15,7 @@ import {
   type HotelReservation,
   type HotelReservationListParams,
 } from "../api/hotel";
-import { isMissedArrival, isNoShowCandidate, nightCounts } from "./hotelInHouse";
+import { isGuestDebt, isMissedArrival, isNoShowCandidate, nightCounts } from "./hotelInHouse";
 
 const PAGE = 200;
 /** Потолок страниц на один отчёт: 10 × 200 = 2000 строк — дальше честно говорим «показаны не все». */
@@ -235,6 +235,13 @@ export function reservationCheckOut(r: HotelReservation): string | null {
 
 export type BalanceFilter = "all" | "debt" | "overpaid" | "settled";
 export type BalanceStatusFilter = "active" | "all" | "cancelled";
+/**
+ * Какие брони берёт отчёт: «checkIn» — с заездом в периоде (обычные «Заезды»);
+ * «stay» — проживание пересекает период. Во второй режим ведут «Долги гостей»
+ * из «Собственнику»: там должники — гости, жившие в периоде, в том числе
+ * заехавшие раньше него, и по дате заезда список с суммой не сходился.
+ */
+export type BalanceSelect = "checkIn" | "stay";
 
 export interface BalanceRow {
   id: number;
@@ -277,12 +284,17 @@ export interface BalanceRow {
   expectedDepartureTime: string | null;
   /** Не заехал: ждали, день заезда прошёл, незаезд не закрыт — в «К оплате» не идёт. */
   missed: boolean;
+  /**
+   * Долг гостя — как «Долги гостей» в «Собственнику» (isGuestDebt): остаток к оплате у
+   * того, кто заселён или уже выехал. Не заехавший и тот, кто ещё приедет, — не должник.
+   */
+  debt: boolean;
   reservation: HotelReservation;
 }
 
 export function balanceRows(
   reservations: HotelReservation[],
-  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string; corporate?: string; today?: string },
+  opts: { from: string; to: string; balance: BalanceFilter; status: BalanceStatusFilter; source?: string; corporate?: string; today?: string; select?: BalanceSelect },
 ): BalanceRow[] {
   const today = opts.today ?? todayStr();
   return reservations
@@ -292,7 +304,12 @@ export function balanceRows(
       if (opts.source && r.source !== opts.source) return false;
       if (opts.corporate && (r.corporateName ?? "") !== opts.corporate) return false;
       const checkIn = reservationCheckIn(r);
-      return checkIn != null && checkIn >= opts.from && checkIn <= opts.to;
+      if (checkIn == null) return false;
+      if (opts.select === "stay") {
+        const checkOut = reservationCheckOut(r);
+        return checkIn <= opts.to && (checkOut == null || checkOut > opts.from);
+      }
+      return checkIn >= opts.from && checkIn <= opts.to;
     })
     .map((r) => {
       const active = r.items.filter((i) => i.isActive !== false);
@@ -338,11 +355,12 @@ export function balanceRows(
         expectedArrivalTime: r.expectedArrivalTime ? r.expectedArrivalTime.slice(0, 5) : null,
         expectedDepartureTime: r.expectedDepartureTime ? r.expectedDepartureTime.slice(0, 5) : null,
         missed: isNoShowCandidate(r, today),
+        debt: isGuestDebt(r),
         reservation: r,
       };
     })
     .filter((row) =>
-      opts.balance === "debt" ? row.balance > 0 : opts.balance === "overpaid" ? row.balance < 0 : opts.balance === "settled" ? row.balance === 0 : true,
+      opts.balance === "debt" ? row.debt : opts.balance === "overpaid" ? row.balance < 0 : opts.balance === "settled" ? row.balance === 0 : true,
     )
     .sort((a, b) => (a.checkIn ?? "").localeCompare(b.checkIn ?? "") || a.number - b.number);
 }
