@@ -45,6 +45,11 @@ export type FlowBreakdownRow = {
   hint?: string;
   /** Деньги вне справочника способов — приглушаем, как и в подстроках. */
   muted?: boolean;
+  /**
+   * Показывается отдельным блоком «Не входит в остаток» и не попадает ни в
+   * приход, ни в расход, ни в рейку (деньги за подарочные сертификаты).
+   */
+  aside?: boolean;
   /** Разрез суммы. Пустой массив = раскрывать нечего, шеврона не будет. */
   children?: FlowSubRow[];
 };
@@ -433,8 +438,9 @@ export const FlowBreakdownBlock: React.FC<Props> = ({
     </Stack>
   );
 
-  const inRows = breakdown.filter((r) => r.direction > 0);
-  const outRows = breakdown.filter((r) => r.direction < 0);
+  const inRows = breakdown.filter((r) => r.direction > 0 && !r.aside);
+  const outRows = breakdown.filter((r) => r.direction < 0 && !r.aside);
+  const asideRows = breakdown.filter((r) => r.aside);
 
   return (
     <>
@@ -477,6 +483,15 @@ export const FlowBreakdownBlock: React.FC<Props> = ({
         <Box sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.25, mt: 1.25 }}>
           {sectionHeader("Расход", Math.abs(outflow), outflow < 0 ? 1 : -1)}
           {outRows.map((r, i) => renderRow(r, -1, i === outRows.length - 1))}
+        </Box>
+      )}
+
+      {asideRows.length > 0 && (
+        <Box sx={{ borderTop: "1px dashed", borderColor: "divider", pt: 1.25, mt: 1.25 }}>
+          <Typography variant="caption" sx={{ display: "block", mb: 0.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "text.secondary" }}>
+            Не входит в остаток
+          </Typography>
+          {asideRows.map((r, i) => renderRow({ ...r, muted: true }, r.direction, i === asideRows.length - 1))}
         </Box>
       )}
     </>

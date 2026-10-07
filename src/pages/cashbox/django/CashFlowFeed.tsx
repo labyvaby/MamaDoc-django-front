@@ -671,7 +671,8 @@ const CashFlowFeed: React.FC<Props> = ({
           />
         ) : (
           groups.map(([dayKey, dayRows]) => {
-            const dayNet = dayRows.reduce(
+            // Gift-certificate money is listed but kept out of the day total.
+            const dayNet = dayRows.filter((e) => !isCertificate(e)).reduce(
               (acc, e) => acc + parseFloat(e.amount) * (isInflow(e) ? 1 : -1),
               0,
             );
