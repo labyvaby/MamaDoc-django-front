@@ -1,5 +1,6 @@
 import { tt } from "../i18n/t";
 import { accessEndedMessage, rememberAccessEnded } from "./accessEnded";
+import { noteServerClock } from "./serverClock";
 
 export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
@@ -415,6 +416,7 @@ export async function apiRequest<T>(
   const isFormData = options.formData !== undefined;
 
   let response: Response;
+  const startedAt = Date.now();
   try {
     response = await fetch(`${API_URL}${path}`, {
       credentials: "include",
@@ -440,6 +442,8 @@ export async function apiRequest<T>(
     if (import.meta.env.DEV) console.error("[api] network error:", err);
     throw new ApiError(NETWORK_ERROR_MESSAGE, 0, null);
   }
+  // Сверка часов компьютера с сервером — для предупреждения о неверных часах.
+  noteServerClock(response, startedAt, Date.now());
 
   // 204 No Content — return undefined (void endpoints)
   if (response.status === 204) {
