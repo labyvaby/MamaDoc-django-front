@@ -180,6 +180,10 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   const [actionBusy, setActionBusy] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [checkInNeedsForce, setCheckInNeedsForce] = React.useState(false);
+  // Сервер отказал: заезд по брони позже сегодняшней даты объекта (409 CHECK_IN_TOO_EARLY) —
+  // его текст и выход «Изменить даты». Кнопка «Заселить» до даты заезда и так неактивна,
+  // но ответ возможен: карточка открыта со вчера, второй администратор, старая вкладка.
+  const [checkInRefused, setCheckInRefused] = React.useState<string | null>(null);
   // Паспорт при брони необязателен, а заселить без него нельзя — сначала панель документа.
   const [checkInNeedsDocument, setCheckInNeedsDocument] = React.useState(false);
   const [documentSaved, setDocumentSaved] = React.useState(false);
@@ -222,6 +226,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     setActiveItemId(initialItemId ?? null);
     setActionError(null);
     setCheckInNeedsForce(false);
+    setCheckInRefused(null);
     setCheckInNeedsDocument(false);
     setDocumentSaved(false);
     setCheckOutNeedsForce(false);
@@ -349,10 +354,18 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
         ...(force ? { forceDirty: true, forceReason: "Подтверждено сотрудником при заселении" } : {}),
       });
       setCheckInNeedsForce(false);
+      setCheckInRefused(null);
       invalidateReservation();
     } catch (err) {
       if (!force && err instanceof ApiError && err.code === "ROOM_NOT_READY") {
         setCheckInNeedsForce(true);
+        return;
+      }
+      if (err instanceof ApiError && err.code === "CHECK_IN_TOO_EARLY") {
+        setCheckInNeedsForce(false);
+        setCheckInRefused(getErrorMessage(err, "Заселить можно с даты заезда по брони. Чтобы заселить раньше, измените даты брони."));
+        // Бронь на сервере не изменилась, но карточка могла устареть (дата сменилась, пока была открыта).
+        invalidateReservation();
         return;
       }
       setActionError(getErrorMessage(err, "Не удалось заселить"));
@@ -922,6 +935,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                         setActiveItemId(it.id);
                         setEditMode(null);
                         setCheckInNeedsForce(false);
+                        setCheckInRefused(null);
                         setCheckOutNeedsForce(false);
                         setActionError(null);
                       }}
@@ -1018,6 +1032,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
 
             {(actionError ||
               checkInNeedsForce ||
+              checkInRefused ||
               checkInNeedsDocument ||
               documentSaved ||
               checkOutNeedsForce ||
@@ -1063,6 +1078,29 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                 {actionError && (
                   <Alert severity="error" onClose={() => setActionError(null)}>
                     {actionError}
+                  </Alert>
+                )}
+                {checkInRefused && (
+                  <Alert
+                    severity="warning"
+                    onClose={() => setCheckInRefused(null)}
+                    action={
+                      canManageReservation ? (
+                        <Button
+                          size="small"
+                          color="inherit"
+                          onClick={() => {
+                            setCheckInRefused(null);
+                            setEditMode("edit");
+                          }}
+                          sx={{ whiteSpace: "nowrap" }}
+                        >
+                          Изменить даты
+                        </Button>
+                      ) : undefined
+                    }
+                  >
+                    {checkInRefused}
                   </Alert>
                 )}
                 {checkInNeedsForce && (

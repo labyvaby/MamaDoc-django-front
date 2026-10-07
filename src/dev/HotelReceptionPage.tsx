@@ -500,6 +500,12 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
       if (err instanceof ApiError && err.code === "ROOM_NOT_READY") {
         enqueueSnackbar("Номер не убран — решите в карточке брони", { variant: "warning" });
         onOpen(reservation.id);
+      } else if (err instanceof ApiError && err.code === "CHECK_IN_TOO_EARLY") {
+        // Страница открыта со вчера, а заезд — сегодня по брони не наступил (или наоборот, смена
+        // суток): текст сервера и карточка, где «Изменить даты». Список перечитываем — даты сдвинулись.
+        enqueueSnackbar(getErrorMessage(err, "Заселить можно с даты заезда по брони"), { variant: "warning" });
+        void queryClient.invalidateQueries({ queryKey: ["hotel", "reservations"] });
+        onOpen(reservation.id);
       } else if (err instanceof ApiError && err.code === "HAS_DEBT") {
         enqueueSnackbar("У гостя долг — примите оплату или выселите с долгом в карточке брони", { variant: "warning" });
         onOpen(reservation.id);
