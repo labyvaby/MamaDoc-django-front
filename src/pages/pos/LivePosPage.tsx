@@ -600,6 +600,7 @@ export default function LivePosPage() {
       due: (total - bonusesUsed - certificate + certificatesTotal).toFixed(2),
       certificatesTotal: certificatesTotal.toFixed(2),
       promotionApplied: previous?.promotionApplied,
+      appliedPromotions: previous?.appliedPromotions,
       lines: [],
     };
   };
@@ -1176,6 +1177,7 @@ export default function LivePosPage() {
       certificatesTotal={held ? 0 : Number(quote?.certificatesTotal ?? certificatesTotal)}
       hidePayButton={phone}
       payDisabledReason={payDisabledReason}
+      activePromotionsCount={data.activePromotionsCount}
     />
   );
   /** Телефон, вкладка «Товары»: найденные товары — списком во всю ширину. */

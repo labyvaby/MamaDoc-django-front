@@ -22,10 +22,16 @@ export type PosBootstrap = {
   cashier: string;
   shiftId: number | null;
   warehouses: Array<{ id: number; name: string }>;
-  cashlessMethods: Array<{ id: number; name: string }>;
+  /** Терминалы банков; `isDefault` — преднабор в окне оплаты (сервер отдаёт его первым). */
+  cashlessMethods: Array<{ id: number; name: string; isDefault?: boolean }>;
   categories: Array<{ id: number; name: string }>;
   actions: Record<string, boolean>;
   rules: Record<string, boolean | number | string>;
+  /**
+   * Активные автоматические акции (без промокода) организации в этом филиале.
+   * 0 — кнопке «Акции» нечего применять. Нет поля — старый бэкенд, неизвестно.
+   */
+  activePromotionsCount?: number;
 };
 export type PosTender = {
   method: "cash" | "card" | "cashless";
@@ -75,6 +81,8 @@ export type PosQuote = {
   certificates?: Array<PosCertificateInput & { clientName: string }>;
   /** True only when a promotion produced a larger discount than the manual one. */
   promotionApplied?: boolean;
+  /** Какие акции дали скидку и сколько каждая; есть, только когда `promotionApplied`. */
+  appliedPromotions?: Array<{ id: number; name: string; amount: string }>;
   lines: Array<{
     productId: number;
     quantity: string;

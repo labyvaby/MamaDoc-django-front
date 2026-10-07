@@ -14,6 +14,7 @@ import type { PosQuote } from "../../api/pos";
 import type { DiscountKind } from "../../api/promotions";
 import { QUICK_DISCOUNT_PERCENTS, normalizeManualDiscount, normalizeManualPercent } from "./discountInput";
 import { POS_LAYOUT, POS_RADIUS, posColors } from "./layout";
+import { promotionCardView } from "./promotionCard";
 import { PosAmount } from "./ui";
 
 /**
@@ -67,7 +68,9 @@ const ApplyButton: React.FC<{
   disabled?: boolean;
   onClick: () => void;
   width?: number;
-}> = ({ applied, appliedLabel, disabled, onClick, width }) => {
+  /** Подпись вместо «Применить», когда правило включено, но не сработало. */
+  label?: string | null;
+}> = ({ applied, appliedLabel, disabled, onClick, width, label }) => {
   const c = posColors(useTheme());
   return (
     <ButtonBase
@@ -92,7 +95,7 @@ const ApplyButton: React.FC<{
       }}
     >
       {applied ? <CheckOutlined sx={{ fontSize: 12 }} /> : null}
-      {applied ? appliedLabel ?? "Применено" : "Применить"}
+      {applied ? appliedLabel ?? "Применено" : label ?? "Применить"}
     </ButtonBase>
   );
 };
@@ -105,15 +108,19 @@ const RedemptionCard: React.FC<{
   appliedLabel?: React.ReactNode;
   disabled?: boolean;
   onToggle: () => void;
-}> = ({ title, hint, applied, appliedLabel, disabled, onToggle }) => {
+  /** `warning` — правило включено, но ничего не дало; `applied` — сработало. */
+  hintTone?: "dim" | "warning" | "applied";
+  buttonLabel?: string | null;
+}> = ({ title, hint, applied, appliedLabel, disabled, onToggle, hintTone = "dim", buttonLabel }) => {
   const c = posColors(useTheme());
+  const hintColor = hintTone === "warning" ? c.danger : hintTone === "applied" ? c.positive : c.textDim;
   return (
     <Box
       sx={{
         p: "12px",
         borderRadius: `${POS_RADIUS.card}px`,
         bgcolor: applied ? c.accentBg : c.card,
-        border: `1px solid ${applied ? c.accent : c.hairline}`,
+        border: `1px solid ${applied ? c.accent : hintTone === "warning" ? c.danger : c.hairline}`,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -122,9 +129,9 @@ const RedemptionCard: React.FC<{
     >
       <Stack gap="2px" sx={{ minWidth: 0 }}>
         <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text }}>{title}</Typography>
-        <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{hint}</Typography>
+        <Typography aria-live="polite" sx={{ fontSize: 14, lineHeight: 1.25, color: hintColor, fontWeight: hintTone === "dim" ? 400 : 600 }}>{hint}</Typography>
       </Stack>
-      <ApplyButton applied={applied} appliedLabel={appliedLabel} disabled={disabled} onClick={onToggle} />
+      <ApplyButton applied={applied} appliedLabel={appliedLabel} disabled={disabled} onClick={onToggle} label={buttonLabel} />
     </Box>
   );
 };
@@ -330,6 +337,7 @@ export function LivePaymentPanel({
   certificatesTotal = 0,
   hidePayButton = false,
   payDisabledReason = null,
+  activePromotionsCount,
 }: {
   actions: Record<string, boolean>;
   /**
@@ -362,6 +370,8 @@ export function LivePaymentPanel({
   hidePayButton?: boolean;
   /** Почему оплатить нельзя (например, бэкенд не поддерживает сертификаты в чеке). */
   payDisabledReason?: string | null;
+  /** `activePromotionsCount` бутстрапа: 0 — акций нет, кнопка «Акции» неактивна. */
+  activePromotionsCount?: number;
 }) {
   const c = posColors(useTheme());
   const [kindsOpen, setKindsOpen] = React.useState(false);
@@ -384,6 +394,15 @@ export function LivePaymentPanel({
     patch({ discount: value, discountKindId: null, ...(Number(value) > 0 ? { discountPercent: "0" } : {}) });
   const showKinds = discountMode !== "manual" && discountKinds.length > 0;
   const showManual = discountMode !== "kinds";
+  const promotionView = promotionCardView({
+    count: activePromotionsCount,
+    enabled: benefits.promotions,
+    quote,
+    busy,
+    frozen,
+    manualDiscount: manualActive || selectedKind !== null || lineDiscounts.length > 0,
+    clientDiscount: benefits.clientDiscount,
+  });
   const showDiscountCard = actions.client_discount || (actions.discount && (showKinds || showManual));
 
   const cardSx = {
@@ -593,20 +612,12 @@ export function LivePaymentPanel({
           {actions.promotions && (
             <RedemptionCard
               title="Акции"
-              hint={
-                !benefits.promotions
-                  ? "автоматические скидки по акциям"
-                  : busy
-                    ? "Проверяем подходящие акции…"
-                    : quote?.promotionApplied
-                      ? "Акция применена к этому чеку"
-                      : quote
-                        ? "Нет подходящих акций или скидка меньше уже выбранной"
-                        : "автоматические скидки по акциям"
-              }
-              applied={Boolean(benefits.promotions && quote?.promotionApplied)}
-              appliedLabel="Применена"
-              disabled={frozen}
+              hint={promotionView.hint}
+              hintTone={promotionView.tone}
+              applied={promotionView.applied}
+              appliedLabel={<PosAmount value={amount(quote?.discount)} negative />}
+              buttonLabel={promotionView.buttonLabel}
+              disabled={promotionView.disabled}
               onToggle={() => patch({ promotions: !benefits.promotions })}
             />
           )}
