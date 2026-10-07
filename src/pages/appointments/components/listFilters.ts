@@ -503,8 +503,9 @@ export function employeeMoneyTotals(
     if (isCancelledStatus(appt.status)) continue; // отмена и неявка (см. slotAvailability)
     // Полный возврат: деньги отдали. ⚠ `paidTotal` в списке — сумма ДО
     // возврата (прод 06.10.2026, приём 20322), без этой проверки возврат
-    // числился в «оплачено» у врача. Частичный возврат по списку не виден —
-    // тикет `docs/backend_ticket_appointments_list_refunds.md`.
+    // числился в «оплачено» у врача. Частичный вычитаем ниже по
+    // `refundedTotal` — где бэк его уже отдаёт (тикет
+    // `docs/backend_ticket_appointments_list_refunds.md`).
     if (appt.paymentStatus === "refunded") continue;
 
     const lineSum = appt.services
@@ -515,8 +516,12 @@ export function employeeMoneyTotals(
     // Скидка приёма живёт на чеке, а не в строках (см. discountFactor) —
     // без неё сумма группы завышена на весь размер скидки.
     const net = lineSum * discountFactor(appt);
+    // Возврат разносим по строкам долей от чека — так же, как оплату.
+    const payable = payableTotal(appt);
+    const refunded = parseFloat(appt.refundedTotal ?? "") || 0;
+    const refundShare = payable > 0 ? Math.min(1, refunded / payable) : 0;
     accrued += net;
-    paid += net * paidShare(appt);
+    paid += net * Math.max(0, paidShare(appt) - refundShare);
   }
 
   return { accrued, paid };

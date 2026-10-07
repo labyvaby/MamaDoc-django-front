@@ -255,16 +255,21 @@ export const RegistryJournalView: React.FC<Props> = ({
   const isStale = isPlaceholderData;
   const isLoading = loading || isStale || extraLoading;
 
-  // Возвраты из ленты кассы — пока бэк не отдаёт refundedTotal в списке.
-  const refundsByAppointment = useRegistryRefunds({ periodFrom, enabled: canViewFinance });
+  // Возвраты из ленты кассы — только там, где бэк ещё не отдаёт refundedTotal
+  // в списке (прод на 06.10.2026). Поле приходит у всех приёмов сразу, поэтому
+  // смотрим первый; пока список не загружен, кассу не дёргаем.
+  const listHasRefunds = rawAppointments.length > 0 && rawAppointments[0].refundedTotal != null;
+  const refundsByAppointment = useRegistryRefunds({
+    periodFrom,
+    enabled: canViewFinance && !loading && rawAppointments.length > 0 && !listHasRefunds,
+  });
 
   // ── Срез ───────────────────────────────────────────────────────────────────
   const scoped = React.useMemo(() => {
     const visible = isVisible ? rawAppointments.filter(isVisible) : rawAppointments;
     if (!refundsByAppointment || refundsByAppointment.size === 0) return visible;
     // Новый объект только у приёмов с возвратом: строки ленты мемоизированы по
-    // ссылке на приём, остальные не перерисовываются. Поле бэка, когда оно
-    // появится, главнее кассы.
+    // ссылке на приём, остальные не перерисовываются. Поле бэка главнее кассы.
     return visible.map((appt) => {
       const refunded = refundsByAppointment.get(appt.id);
       return refunded != null && appt.refundedTotal == null

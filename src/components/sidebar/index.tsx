@@ -59,6 +59,8 @@ import ViewTimelineOutlined from "@mui/icons-material/ViewTimelineOutlined";
 import EngineeringOutlined from "@mui/icons-material/EngineeringOutlined";
 import ReportProblemOutlined from "@mui/icons-material/ReportProblemOutlined";
 import CalculateOutlined from "@mui/icons-material/CalculateOutlined";
+import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
+import SensorDoorOutlined from "@mui/icons-material/SensorDoorOutlined";
 import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
@@ -97,6 +99,10 @@ import { getRealtyTasks, realtyTaskKeys } from "../../api/realtyTasks";
 import { getCashForecast, getDebtSummary, treasuryKeys } from "../../api/treasury";
 import { constructionKeys, getActsSummary, getDefectsSummary, getStages } from "../../api/construction";
 import { getStockSummary, getSupplySummary, supplyKeys } from "../../api/supply";
+import { hasPendingPayroll, payrollKeys } from "../../api/salaryPayroll";
+import { acsKeys, getMyShift } from "../../api/acs";
+import { estateOpsKeys, getHandoverSummary, getRequestsSummary } from "../../api/estateOps";
+import { estateSettingsKeys, getIntegrationsSummary } from "../../api/estateSettings";
 import {
   djangoQueryKeys,
   DJANGO_LIST_STALE_TIME_MS,
@@ -125,6 +131,11 @@ import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 import ManageAccountsOutlined from "@mui/icons-material/ManageAccountsOutlined";
 import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
+import KeyOutlined from "@mui/icons-material/KeyOutlined";
+import SupportAgentOutlined from "@mui/icons-material/SupportAgentOutlined";
+import PhoneIphoneOutlined from "@mui/icons-material/PhoneIphoneOutlined";
+import SyncAltOutlined from "@mui/icons-material/SyncAltOutlined";
+import ListAltOutlined from "@mui/icons-material/ListAltOutlined";
 
 type NavGroup = "all" | "my-work" | "org" | "storage" | "management";
 
@@ -437,6 +448,9 @@ const RealEstateSidebarMenu: React.FC = () => {
   const seen = (screen: string) => estateNav?.(screen) ?? true;
 
   const canDashboard = can(PAGE_PERMISSIONS.estateDashboard) && seen("dashboard");
+  // «Аналитика» AIVIO (гайд frontend-dashboard-analytics §5–6): пункты — по canSee матрицы (в макете у ceo и cfo).
+  const canCrmAnalytics = can(PAGE_PERMISSIONS.realtySales) && seen("analytics");
+  const canBi = can(PAGE_PERMISSIONS.estateDashboard) && seen("bi");
   const canChessboard = moduleGate("realty") && seen("inventory");
   const canFunnel = can(PAGE_PERMISSIONS.realtySales) && seen("funnel");
   const canLeads = can(PAGE_PERMISSIONS.realtySales) && seen("leads");
@@ -471,7 +485,23 @@ const RealEstateSidebarMenu: React.FC = () => {
   const canSmeta = canSupply && seen("smeta");
   const canProcurement = canSupply && seen("procurement");
   const canWarehouse = canSupply && seen("warehouse");
+  // «Персонал» AIVIO (гайд frontend-hr-ops §0): кадры — personnel.view, ведомость — salary.view.
+  const canStaff = can(PAGE_PERMISSIONS.personnel) && seen("staff");
+  const canTimesheet = can(PAGE_PERMISSIONS.personnel) && seen("timesheet");
+  const canPayroll = can(PAGE_PERMISSIONS.estatePayroll) && seen("payroll");
+  // СКУД AIVIO (гайд frontend-acs §2): attendance.view, пункт — по матрице (canSee.acs).
+  const canAcs = can(PAGE_PERMISSIONS.attendance) && estateNav != null && seen("acs");
   const canSalesDocs = can(PAGE_PERMISSIONS.salesDocuments) && seen("documents");
+  // «Эксплуатация» AIVIO (гайд frontend-hr-ops §4–6): приёмка и сервис — estate_ops.view, приложение — resident_app.view.
+  const canHandover = can(PAGE_PERMISSIONS.estateOps) && seen("handover");
+  const canResidents = can(PAGE_PERMISSIONS.estateOps) && seen("residents");
+  const canMobileApp = can(PAGE_PERMISSIONS.residentApp) && seen("mobileapp");
+  // «Настройки» AIVIO (гайд frontend-settings §2–5): всё на integrations.view, «Роли и права» — ещё rbac.*.
+  const canEstateSettings = can(PAGE_PERMISSIONS.estateSettings);
+  const canRoles = canEstateSettings && (can("rbac.roles.view") || can("rbac.memberships.view")) && seen("roles");
+  const canDictionaries = canEstateSettings && seen("dictionaries");
+  const canIntegrations = canEstateSettings && seen("integrations");
+  const canAudit = canEstateSettings && seen("audit");
   const canEdo = can(PAGE_PERMISSIONS.edo);
   const docsItems = canEdo
     ? ([
@@ -549,6 +579,46 @@ const RealEstateSidebarMenu: React.FC = () => {
     staleTime: 5 * 60_000,
     retry: false,
   }).data?.lowCount;
+  // «●» у «СКУД» — моя смена идёт (гайд frontend-acs §4).
+  const shiftActive =
+    useQuery({
+      queryKey: acsKeys.shift(realtyScope),
+      queryFn: ({ signal }) => getMyShift(realtyScope, signal),
+      enabled: canAcs && realtyScope.orgReady !== false,
+      staleTime: 5 * 60_000,
+      retry: false,
+    }).data?.status === "active";
+  // «!» у «Зарплаты» — есть рассчитанная или утверждённая, но не выплаченная ведомость (гайд §3).
+  const payrollPending = useQuery({
+    queryKey: payrollKeys.pending(realtyScope),
+    queryFn: ({ signal }) => hasPendingPayroll(realtyScope, signal),
+    enabled: canPayroll && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data;
+  // Бейджи «Приёмка и ключи» — приёмки сегодня, «Сервис жильцов» — новые обращения (гайд §4, §5).
+  const handoversToday = useQuery({
+    queryKey: estateOpsKeys.handoverSummary(realtyScope, null),
+    queryFn: ({ signal }) => getHandoverSummary(null, realtyScope, signal),
+    enabled: canHandover && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.today;
+  const newResidentRequests = useQuery({
+    queryKey: estateOpsKeys.requestsSummary(realtyScope, null),
+    queryFn: ({ signal }) => getRequestsSummary(null, realtyScope, signal),
+    enabled: canResidents && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.new;
+  // Бейдж «Интеграции и 1С» — ошибки обмена (гайд settings §4.1: `summary.queueErrors`, 0 — не показывать).
+  const integrationErrors = useQuery({
+    queryKey: estateSettingsKeys.summary(realtyScope),
+    queryFn: ({ signal }) => getIntegrationsSummary(realtyScope, signal),
+    enabled: canIntegrations && realtyScope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data?.queueErrors;
   const tasksBadgeColor: "error" | "primary" = todayTasks?.some((task) => task.overdue && !task.done) ? "error" : "primary";
 
   const sectionLabel = (text: string) =>
@@ -622,11 +692,34 @@ const RealEstateSidebarMenu: React.FC = () => {
       )}
       {canBilling && <SidebarMenuItem to="/finance/billing" icon={<AccountBalanceWalletOutlined />} label="Биллинг" collapsed={siderCollapsed} />}
 
-      {(canEmployees || canMotivation) && sectionLabel("Персонал")}
-      {canEmployees && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />}
+      {(canStaff || canTimesheet || canPayroll || canAcs || canEmployees || canMotivation) && sectionLabel("Персонал")}
+      {canStaff ? (
+        <SidebarMenuItem to="/personnel/staff" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
+      ) : (
+        // Без кадров AIVIO (personnel.view) — прежний экран MamaDoc, чтобы пункт не пропал.
+        canEmployees && !can(PAGE_PERMISSIONS.personnel) && <SidebarMenuItem to="/employees" icon={<BadgeOutlined />} label="Сотрудники" collapsed={siderCollapsed} />
+      )}
+      {canTimesheet && <SidebarMenuItem to="/personnel/timesheet" icon={<EventNoteOutlined />} label="Табель" collapsed={siderCollapsed} />}
+      {canPayroll && <SidebarMenuItem to="/personnel/payroll" icon={<PaidOutlined />} label="Зарплата" collapsed={siderCollapsed} badgeText={payrollPending ? "!" : undefined} badgeColor="warning" />}
+      {canAcs && <SidebarMenuItem to="/personnel/acs" icon={<SensorDoorOutlined />} label="СКУД" collapsed={siderCollapsed} badgeText={shiftActive ? "●" : undefined} badgeColor="primary" />}
       {canMotivation && <SidebarMenuItem to="/realestate/motivation" icon={<EmojiEventsOutlined />} label="Планы и мотивация" collapsed={siderCollapsed} />}
 
-      {canSettings && sectionLabel("Компания")}
+      {(canHandover || canResidents || canMobileApp) && sectionLabel("Эксплуатация")}
+      {canHandover && <SidebarMenuItem to="/ops/handover" icon={<KeyOutlined />} label="Приёмка и ключи" collapsed={siderCollapsed} badgeCount={handoversToday ?? 0} badgeColor="primary" />}
+      {canResidents && <SidebarMenuItem to="/ops/residents" icon={<SupportAgentOutlined />} label="Сервис жильцов" collapsed={siderCollapsed} badgeCount={newResidentRequests ?? 0} badgeColor="error" />}
+      {canMobileApp && <SidebarMenuItem to="/ops/mobileapp" icon={<PhoneIphoneOutlined />} label="Мобильное приложение" collapsed={siderCollapsed} />}
+
+      {(canBi || canCrmAnalytics) && sectionLabel("Аналитика")}
+      {canBi && <SidebarMenuItem to="/realestate/bi" icon={<QueryStatsOutlined />} label="Сводная аналитика" collapsed={siderCollapsed} />}
+      {canCrmAnalytics && <SidebarMenuItem to="/realestate/analytics" icon={<AnalyticsOutlined />} label="Аналитика CRM" collapsed={siderCollapsed} />}
+
+      {(canSettings || canRoles || canDictionaries || canIntegrations || canAudit) && sectionLabel("Настройки")}
+      {canRoles && <SidebarMenuItem to="/company/roles" icon={<ManageAccountsOutlined />} label="Роли и права" collapsed={siderCollapsed} />}
+      {canDictionaries && <SidebarMenuItem to="/company/dictionaries" icon={<ListAltOutlined />} label="Справочники" collapsed={siderCollapsed} />}
+      {canIntegrations && (
+        <SidebarMenuItem to="/company/integrations" icon={<SyncAltOutlined />} label="Интеграции и 1С" collapsed={siderCollapsed} badgeCount={integrationErrors ?? 0} badgeColor="error" />
+      )}
+      {canAudit && <SidebarMenuItem to="/company/audit" icon={<HistoryOutlined />} label="Аудит" collapsed={siderCollapsed} />}
       {canSettings && (
         <SidebarMenuItem to="/settings" icon={<TuneOutlined />} label="Настройки" collapsed={siderCollapsed} excludePaths={["/settings/notifications"]} />
       )}

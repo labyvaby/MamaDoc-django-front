@@ -71,6 +71,17 @@ export const PAGE_PERMISSIONS = {
   construction: "construction.view",
   // Сметы, снабжение, склад — /api/v2/supply/, кнопки — supply.manage / supply.approve.
   supply: "supply.view",
+  // Кадры застройщика: сотрудники и табель — /api/v2/personnel/, кнопки — personnel.manage (+ staff.update).
+  personnel: "personnel.view",
+  // Ведомость зарплаты застройщика — /api/v2/salary/runs/, кнопки — salary.manage + уровень payroll в матрице.
+  estatePayroll: "salary.view",
+  // Эксплуатация застройщика: приёмка и ключи, сервис жильцов — /api/v2/estate-ops/, кнопки — estate_ops.manage.
+  estateOps: "estate_ops.view",
+  // Мобильное приложение жильца — /api/v2/resident-app/, действия — resident_app.manage (по умолчанию ни у одной роли).
+  residentApp: "resident_app.view",
+  // Настройки застройщика: роли и права, справочники, интеграции и 1С, аудит — /api/v2/integrations/,
+  // кнопки — integrations.manage (+ rbac.* у ролей и пользователей).
+  estateSettings: "integrations.view",
   // Рабочий стол застройщика: экран и его панели — estate_dashboard.view,
   // остальные панели бэк режет правами своих модулей сам.
   estateDashboard: "estate_dashboard.view",

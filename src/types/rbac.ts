@@ -252,6 +252,17 @@ export const PERMISSIONS = {
   SUPPLY_VIEW: 'supply.view',
   SUPPLY_MANAGE: 'supply.manage',
   SUPPLY_APPROVE: 'supply.approve',
+  // Кадры застройщика (AIVIO): сотрудники и табель — personnel.*, ведомость — salary.*.
+  PERSONNEL_VIEW: 'personnel.view',
+  PERSONNEL_MANAGE: 'personnel.manage',
+  // Эксплуатация застройщика (AIVIO): приёмка и сервис жильцов — estate_ops.*, приложение жильца — resident_app.*.
+  ESTATE_OPS_VIEW: 'estate_ops.view',
+  ESTATE_OPS_MANAGE: 'estate_ops.manage',
+  RESIDENT_APP_VIEW: 'resident_app.view',
+  RESIDENT_APP_MANAGE: 'resident_app.manage',
+  // Настройки застройщика (AIVIO): справочники, интеграции, аудит — integrations.*; роли и пользователи — ещё rbac.*.
+  INTEGRATIONS_VIEW: 'integrations.view',
+  INTEGRATIONS_MANAGE: 'integrations.manage',
 
   // ЭДО и документы застройщика (AIVIO, 04.10.2026)
   EDO_VIEW: 'edo.view',

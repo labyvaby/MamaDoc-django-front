@@ -23,7 +23,7 @@ import { useT } from "../../i18n/VerticalProvider";
 import { formatKGS } from "../../utility/format";
 import { isoDate } from "../realty-sales/catalogFormat";
 import { fullDate, pct, positiveAmount, signedSum } from "./format";
-import { useProjectOptions, useRefreshTreasury, useTreasuryAccounts, useTreasuryMeta } from "./hooks";
+import { useAccountCurrency, useProjectOptions, useRefreshTreasury, useTreasuryAccounts, useTreasuryMeta } from "./hooks";
 import { AccountSelect, ConfirmDialog, FormDrawer, InfoRow, ProjectSelect, SubPill } from "./shared";
 
 const accountBalance = (a: TreasuryAccount) => (a.currency === "KGS" ? formatKGS(a.balance) : `${a.fx.toLocaleString("ru-RU")} ${a.currency}`);
@@ -266,6 +266,7 @@ export function OperationDrawer({ id, preview, canManage, onClose }: { id: numbe
     staleTime: 30_000,
   });
   const op = query.data ?? (preview && preview.id === id ? preview : null);
+  const currencyOf = useAccountCurrency(id != null);
   const cancel = useMutation({
     mutationFn: () => cancelCashOperation(id as number, reason, scope),
     onSuccess: () => {
@@ -296,7 +297,7 @@ export function OperationDrawer({ id, preview, canManage, onClose }: { id: numbe
         {op && (
           <>
             <Typography sx={{ fontSize: "1.6rem", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: op.status === "cancelled" ? "text.disabled" : op.type === "in" ? "success.main" : "text.primary", textDecoration: op.status === "cancelled" ? "line-through" : "none" }}>
-              {signedSum(op.type, op.amount)}
+              {signedSum(op.type, op.amount, currencyOf(op.accountId))}
             </Typography>
             <Typography sx={{ mb: 2, fontSize: "0.875rem", color: "text.secondary" }}>{op.doc || op.articleName}</Typography>
             {op.isTransfer && <Alert severity="info" sx={{ mb: 2 }}>{t("cashbank.operation.transfer")}</Alert>}

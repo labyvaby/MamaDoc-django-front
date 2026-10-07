@@ -106,6 +106,8 @@ const KnowledgeArticlePage = lazy(() => import("./pages/knowledge/ArticleViewPag
 const RealEstateChessboardPage = lazy(() => import("./pages/realestate"));
 const EstateDashboardPage = lazy(() => import("./pages/estate-dashboard"));
 const RealtyTodayPage = lazy(() => import("./pages/estate-dashboard/TodayPage"));
+const CrmAnalyticsPage = lazy(() => import("./pages/estate-analytics/CrmAnalyticsPage"));
+const EstateBiPage = lazy(() => import("./pages/estate-analytics/BiPage"));
 const RealtyFunnelPage = lazy(() => import("./pages/realty-sales/FunnelPage"));
 const RealtyLeadsPage = lazy(() => import("./pages/realty-sales/LeadsPage"));
 const RealtyCallsPage = lazy(() => import("./pages/realty-sales/CallsPage"));
@@ -124,6 +126,17 @@ const ConstructionQualityPage = lazy(() => import("./pages/construction/QualityP
 const SupplyEstimatesPage = lazy(() => import("./pages/construction/EstimatesPage"));
 const SupplyProcurementPage = lazy(() => import("./pages/construction/ProcurementPage"));
 const SupplyWarehousePage = lazy(() => import("./pages/construction/WarehousePage"));
+const PersonnelStaffPage = lazy(() => import("./pages/personnel/StaffPage"));
+const PersonnelTimesheetPage = lazy(() => import("./pages/personnel/TimesheetPage"));
+const PersonnelPayrollPage = lazy(() => import("./pages/personnel/PayrollPage"));
+const PersonnelAcsPage = lazy(() => import("./pages/personnel/AcsPage"));
+const OpsHandoverPage = lazy(() => import("./pages/estate-ops/HandoverPage"));
+const OpsResidentsPage = lazy(() => import("./pages/estate-ops/ResidentsPage"));
+const OpsMobileAppPage = lazy(() => import("./pages/estate-ops/MobileAppPage"));
+const EstateRolesPage = lazy(() => import("./pages/estate-settings/RolesPage"));
+const EstateDictionariesPage = lazy(() => import("./pages/estate-settings/DictionariesPage"));
+const EstateIntegrationsPage = lazy(() => import("./pages/estate-settings/IntegrationsPage"));
+const EstateAuditPage = lazy(() => import("./pages/estate-settings/AuditPage"));
 const PaycalPage = lazy(() => import("./pages/realty-finance/PaycalPage"));
 const BudgetPage = lazy(() => import("./pages/realty-finance/BudgetPage"));
 const ReceivablesPage = lazy(() => import("./pages/realty-finance/ReceivablesPage"));
@@ -1332,6 +1345,25 @@ function App() {
                                 </RequirePermission>
                               }
                             />
+                            {/* Аналитика застройщика (AIVIO): отчёт отдела продаж — /api/v2/realty/analytics/, сводная — /api/v2/estate-dashboard/bi/. */}
+                            {(
+                              [
+                                ["realestate/analytics", CrmAnalyticsPage, PAGE_PERMISSIONS.realtySales],
+                                ["realestate/bi", EstateBiPage, PAGE_PERMISSIONS.estateDashboard],
+                              ] as const
+                            ).map(([path, Page, permission]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={permission}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
                             {/* Продажи застройщика (AIVIO) на /api/v2/realty/: воронка и лиды (не MamaDoc /deals и /patients), звонки, показы, брони, каталог, ипотека, партнёры, маркетинг. */}
                             {(
                               [
@@ -1435,6 +1467,36 @@ function App() {
                                 path={path}
                                 element={
                                   <RequirePermission permission={PAGE_PERMISSIONS.supply}>
+                                    <Suspense fallback={<LinearProgress />}>
+                                      <Page />
+                                    </Suspense>
+                                  </RequirePermission>
+                                }
+                              />
+                            ))}
+                            {/* Персонал застройщика (AIVIO): сотрудники и табель — /api/v2/personnel/, зарплата — /api/v2/salary/runs/. */}
+                            {(
+                              [
+                                ["personnel/staff", PersonnelStaffPage, PAGE_PERMISSIONS.personnel],
+                                ["personnel/timesheet", PersonnelTimesheetPage, PAGE_PERMISSIONS.personnel],
+                                ["personnel/payroll", PersonnelPayrollPage, PAGE_PERMISSIONS.estatePayroll],
+                                ["personnel/acs", PersonnelAcsPage, PAGE_PERMISSIONS.attendance],
+                                // Эксплуатация застройщика (AIVIO): /api/v2/estate-ops/ и /api/v2/resident-app/.
+                                ["ops/handover", OpsHandoverPage, PAGE_PERMISSIONS.estateOps],
+                                ["ops/residents", OpsResidentsPage, PAGE_PERMISSIONS.estateOps],
+                                ["ops/mobileapp", OpsMobileAppPage, PAGE_PERMISSIONS.residentApp],
+                                // Настройки застройщика (AIVIO): /api/v2/integrations/ — не путать с /settings MamaDoc.
+                                ["company/roles", EstateRolesPage, PAGE_PERMISSIONS.estateSettings],
+                                ["company/dictionaries", EstateDictionariesPage, PAGE_PERMISSIONS.estateSettings],
+                                ["company/integrations", EstateIntegrationsPage, PAGE_PERMISSIONS.estateSettings],
+                                ["company/audit", EstateAuditPage, PAGE_PERMISSIONS.estateSettings],
+                              ] as const
+                            ).map(([path, Page, permission]) => (
+                              <Route
+                                key={path}
+                                path={path}
+                                element={
+                                  <RequirePermission permission={permission}>
                                     <Suspense fallback={<LinearProgress />}>
                                       <Page />
                                     </Suspense>

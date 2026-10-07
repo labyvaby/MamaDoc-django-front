@@ -638,13 +638,15 @@ export interface DjangoAppointment {
   paymentStatus?: import("./payments").PaymentStatus;
   paidTotal?: string;
   /**
-   * Сумма возвратов по приёму. ⚠ В списке /appointments/ поля пока НЕТ (тикет
-   * `docs/backend_ticket_appointments_list_refunds.md`), а `paidTotal` там —
-   * сумма ДО возврата. Журнал реестров подставляет его сам из ленты кассы
-   * (`useRegistryRefunds`); когда бэк начнёт отдавать поле, оно пройдёт через
-   * normalizeAppointment как есть и станет главным источником.
+   * Сумма возвратов по приёму, `"0.00"` без возвратов. `paidTotal` — сумма ДО
+   * возврата. Бэк отдаёт поле в списке и детали (тикет
+   * `docs/backend_ticket_appointments_list_refunds.md`): на test с 06.10.2026,
+   * на проде ещё нет — там журнал реестров подставляет его сам из ленты кассы
+   * (`useRegistryRefunds`), поэтому поле опционально.
    */
   refundedTotal?: string;
+  /** `paidTotal − refundedTotal`, не ниже 0 — как в `/payments/`. Есть там же, где `refundedTotal`. */
+  paidNet?: string;
   discountAmount?: string;
   payableAmount?: string;
   /** Неоплаченный остаток. Долг ли это уже — говорит `paymentPhase`. */

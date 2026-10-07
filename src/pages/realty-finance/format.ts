@@ -13,8 +13,15 @@ export function compactSum(value: number, t: T): string {
   return formatKGS(value);
 }
 
-/** «+5 529 000 сом» / «−5 529 000 сом» по типу операции. */
-export const signedSum = (type: string, amount: number) => `${type === "in" ? "+" : "−"}${formatKGS(Math.abs(amount))}`;
+/**
+ * «+5 529 000 сом» / «−5 529 000 сом» по типу операции. Операция по валютному
+ * счёту — в валюте счёта («+100 USD»): своей валюты у операции бэк не отдаёт.
+ */
+export const signedSum = (type: string, amount: number, currency = "KGS") => {
+  const sign = type === "in" ? "+" : "−";
+  if (currency && currency !== "KGS") return `${sign}${Math.abs(amount).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ${currency}`;
+  return `${sign}${formatKGS(Math.abs(amount))}`;
+};
 
 /** Сумма со знаком минуса для отрицательных (типографский «−»). */
 export const sum = (value: number) => (value < 0 ? `−${formatKGS(-value)}` : formatKGS(value));

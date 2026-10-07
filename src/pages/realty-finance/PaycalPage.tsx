@@ -260,7 +260,7 @@ function CellItem({ item, onClick }: { item: CalendarItem; onClick: () => void }
 
 /** Короткая сумма для ячейки: 3,9 млн → «3,9м», 232 500 → «233к». */
 const compactAmount = (value: number) =>
-  value >= 1_000_000 ? `${(value / 1_000_000).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}м` : value >= 1000 ? `${Math.round(value / 1000)}к` : String(Math.round(value));
+  value >= 1_000_000 ? `${(value / 1_000_000).toLocaleString("ru-RU", { maximumFractionDigits: 1 })}м` : value >= 1000 ? `${(value / 1000).toLocaleString("ru-RU", { maximumFractionDigits: value < 10_000 ? 1 : 0 })}к` : String(Math.round(value));
 
 function MonthView({
   month,

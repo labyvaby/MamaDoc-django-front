@@ -98,7 +98,8 @@ function Registry({ view }: { view: EdoScope }) {
   const [notExported, setNotExported] = React.useState(false);
   const [type, setType] = React.useState("all");
   const [projectId, setProjectId] = React.useState<number | null>(null);
-  const [search, setSearch] = React.useState("");
+  // ?q= — переход по номеру документа (акт АПП из «Приёмки и ключей»): id там не известен.
+  const [search, setSearch] = React.useState(() => searchParams.get("q") ?? "");
   const debouncedSearch = useDebouncedValue(search);
   const [createOpen, setCreateOpen] = React.useState(false);
 

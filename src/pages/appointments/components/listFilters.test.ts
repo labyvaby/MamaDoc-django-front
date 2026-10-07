@@ -292,6 +292,26 @@ describe("firstFreeSlotInSegment", () => {
 });
 
 describe("employeeMoneyTotals", () => {
+  // Пример из ответа бэка 06.10.2026: оплачено 2000, вернули 500 → paidNet 1500.
+  // paymentStatus при частичном возврате бэк не уточнил — проверяем на «paid».
+  it("вычитает частичный возврат из оплаченного, деля его по строкам", () => {
+    const list = [
+      appt({
+        services: [
+          line({ employee: { id: 20, fullName: "Врач" }, lineTotal: "1600.00" }),
+          line({ id: 2, employee: { id: 31, fullName: "Медсестра" }, lineTotal: "400.00" }),
+        ],
+        payableAmount: "2000.00",
+        paidTotal: "2000.00",
+        refundedTotal: "500.00",
+        paidNet: "1500.00",
+        paymentStatus: "paid",
+      }),
+    ];
+    expect(employeeMoneyTotals(list, 20)).toEqual({ accrued: 1600, paid: 1200 });
+    expect(employeeMoneyTotals(list, 31)).toEqual({ accrued: 400, paid: 300 });
+  });
+
   it("считает по lineTotal бэка (поля price в живом ответе нет)", () => {
     const list = [
       appt({

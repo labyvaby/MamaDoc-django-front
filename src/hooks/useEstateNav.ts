@@ -24,3 +24,21 @@ export function useEstateNav(enabled = true): ((screen: string) => boolean) | nu
   if (!access) return null;
   return (screen) => access.canSee[screen] ?? true;
 }
+
+/**
+ * Уровень экрана из матрицы ролей (`none / view / edit / approve`); `null` —
+ * матрица ещё не пришла или роль без ограничений (`nav = null`). Нужен там,
+ * где одного права MamaDoc мало: `salary.manage` есть и у продажника, а
+ * кнопки «Зарплаты» положены только при уровне `payroll` ≥ edit (гайд hr-ops §7).
+ */
+export function useEstateLevel(screen: string, enabled = true): string | null {
+  const scope = useRealtyScope();
+  const access = useQuery({
+    queryKey: estateAccessKeys.me(scope),
+    queryFn: ({ signal }) => getMyEstateAccess(scope, signal),
+    enabled: enabled && scope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data;
+  return access?.levels[screen] ?? null;
+}

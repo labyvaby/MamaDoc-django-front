@@ -136,6 +136,16 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
     requiredPermissions: [PERMISSIONS.ESTATE_DASHBOARD_VIEW],
   },
 
+  // Аналитика застройщика: отчёт отдела продаж (realty), сводная (estate_dashboard)
+  {
+    path: '/realestate/analytics',
+    requiredPermissions: [PERMISSIONS.REALESTATE_VIEW],
+  },
+  {
+    path: '/realestate/bi',
+    requiredPermissions: [PERMISSIONS.ESTATE_DASHBOARD_VIEW],
+  },
+
   // Продажи застройщика (realty): воронка, лиды, звонки, показы, брони, каталог, ипотека, партнёры, маркетинг
   {
     path: '/realestate/funnel',
@@ -210,6 +220,56 @@ export const ROUTE_PERMISSIONS: RoutePermissionConfig[] = [
   {
     path: '/construction/quality',
     requiredPermissions: [PERMISSIONS.CONSTRUCTION_VIEW],
+  },
+
+  // Персонал застройщика: сотрудники и табель (personnel), зарплата (salary)
+  {
+    path: '/personnel/staff',
+    requiredPermissions: [PERMISSIONS.PERSONNEL_VIEW],
+  },
+  {
+    path: '/personnel/timesheet',
+    requiredPermissions: [PERMISSIONS.PERSONNEL_VIEW],
+  },
+  {
+    path: '/personnel/payroll',
+    requiredPermissions: [PERMISSIONS.SALARY_VIEW],
+  },
+  {
+    path: '/personnel/acs',
+    requiredPermissions: ['attendance.view'],
+  },
+
+  // Эксплуатация застройщика: приёмка и сервис жильцов (estate_ops), приложение жильца (resident_app)
+  {
+    path: '/ops/handover',
+    requiredPermissions: [PERMISSIONS.ESTATE_OPS_VIEW],
+  },
+  {
+    path: '/ops/residents',
+    requiredPermissions: [PERMISSIONS.ESTATE_OPS_VIEW],
+  },
+  {
+    path: '/ops/mobileapp',
+    requiredPermissions: [PERMISSIONS.RESIDENT_APP_VIEW],
+  },
+
+  // Настройки застройщика: роли и права, справочники, интеграции и 1С, аудит (integrations)
+  {
+    path: '/company/roles',
+    requiredPermissions: [PERMISSIONS.INTEGRATIONS_VIEW],
+  },
+  {
+    path: '/company/dictionaries',
+    requiredPermissions: [PERMISSIONS.INTEGRATIONS_VIEW],
+  },
+  {
+    path: '/company/integrations',
+    requiredPermissions: [PERMISSIONS.INTEGRATIONS_VIEW],
+  },
+  {
+    path: '/company/audit',
+    requiredPermissions: [PERMISSIONS.INTEGRATIONS_VIEW],
   },
 
   // Сметы, снабжение, склад застройщика (supply)

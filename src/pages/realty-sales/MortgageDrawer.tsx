@@ -88,9 +88,12 @@ export function MortgageDrawer({ applicationId, onClose }: { applicationId: numb
   };
   const failed = (error: unknown) => enqueueSnackbar(error instanceof Error && error.message ? error.message : t("common.failed"), { variant: "error" });
 
+  // Выбор банка необратим (кредит «выдан», заявка CRM уходит на «Договор / оплата») — через подтверждение.
+  const [chooseFor, setChooseFor] = React.useState<{ bankId: number; bankName: string } | null>(null);
   const choose = useMutation({
     mutationFn: (bankId: number) => chooseBank(applicationId as number, bankId, scope),
     onSuccess: (fresh) => {
+      setChooseFor(null);
       done(fresh, t("mortgage.card.chosenToast"));
       // Выбор банка двигает заявку CRM на «Договор / оплата».
       void queryClient.invalidateQueries({ queryKey: realtyLeadKeys.all });
@@ -198,7 +201,7 @@ export function MortgageDrawer({ applicationId, onClose }: { applicationId: numb
                             {t("mortgage.card.decision")}
                           </Button>
                           {bank.status === "approved" && (
-                            <Button size="small" variant="contained" disabled={choose.isPending} onClick={() => choose.mutate(bank.bankId)}>
+                            <Button size="small" variant="contained" disabled={choose.isPending} onClick={() => setChooseFor({ bankId: bank.bankId, bankName: bank.name })}>
                               {t("mortgage.card.choose")}
                             </Button>
                           )}
@@ -264,6 +267,20 @@ export function MortgageDrawer({ applicationId, onClose }: { applicationId: numb
         )}
       </Drawer>
 
+      <Dialog open={chooseFor != null} onClose={choose.isPending ? undefined : () => setChooseFor(null)} fullWidth PaperProps={{ sx: { maxWidth: 440 } }}>
+        <DialogTitle sx={{ fontWeight: 700 }}>{t("mortgage.card.chooseTitle", { bank: chooseFor?.bankName ?? "" })}</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{t("mortgage.card.chooseText")}</Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setChooseFor(null)} disabled={choose.isPending}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="contained" disabled={choose.isPending} onClick={() => chooseFor && choose.mutate(chooseFor.bankId)}>
+            {t("mortgage.card.choose")}
+          </Button>
+        </DialogActions>
+      </Dialog>
       {canManage && data && <SendDialog open={sendOpen} application={data} onClose={() => setSendOpen(false)} onSent={(fresh) => {
         setSendOpen(false);
         done(fresh, t("mortgage.card.sent"));

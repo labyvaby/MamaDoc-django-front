@@ -4,11 +4,13 @@ import { useTheme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router";
 import { useSnackbar } from "notistack";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 
-import { downloadLeadsCsv, getLeads, getLeadsConversion, leadsStats, realtyLeadKeys, type Lead, type LeadsFilter } from "../../api/realtyLeads";
+import { LEAD_STAGES, downloadLeadsCsv, getLeads, getLeadsConversion, leadsStats, realtyLeadKeys, type Lead, type LeadStage, type LeadsFilter } from "../../api/realtyLeads";
 import { pillSx } from "../../components/ui";
 import { useCan } from "../../hooks/useCan";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
@@ -31,6 +33,8 @@ const FILTERS: readonly LeadsFilter[] = ["active", "notask", "overdue"];
  * (гайд `frontend-sales.md` §3). Чипы «Без дела» / «Просроченные» считаются из
  * списка на клиенте; экспорт — CSV бэка с теми же фильтрами. Клиент — это сам
  * лид: отдельного справочника покупателей у застройщика нет.
+ * Переходы из «Аналитики CRM» сужают список адресом: `?stage=`, `?managerId=`,
+ * `?filter=notask` (снимаются крестиком на чипе).
  */
 export default function RealtyLeadsPage() {
   const { t } = useT("realtySales");
@@ -49,13 +53,26 @@ function LeadsScreen() {
   const scope = useRealtyScope();
   const canManage = useCan("realty.manage");
   const [leadId, openLead] = useLeadParam();
-  const [filter, setFilter] = React.useState<LeadsFilter>("active");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const stageParam = searchParams.get("stage");
+  const stage = LEAD_STAGES.includes(stageParam as LeadStage) ? (stageParam as LeadStage) : undefined;
+  const managerId = Number(searchParams.get("managerId")) || null;
+  const [filter, setFilter] = React.useState<LeadsFilter>(() => (FILTERS.includes(searchParams.get("filter") as LeadsFilter) ? (searchParams.get("filter") as LeadsFilter) : "active"));
+  const clearUrlFilter = (name: "stage" | "managerId") =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete(name);
+        return next;
+      },
+      { replace: true },
+    );
   const [search, setSearch] = React.useState("");
   const debouncedSearch = useDebouncedValue(search);
   const [createOpen, setCreateOpen] = React.useState(false);
 
   // Один запрос без фильтра чипа: счётчики всех трёх чипов — из него (гайд §3).
-  const params = React.useMemo(() => ({ search: debouncedSearch }), [debouncedSearch]);
+  const params = React.useMemo(() => ({ search: debouncedSearch, stage, managerId }), [debouncedSearch, stage, managerId]);
   const list = useQuery({
     queryKey: realtyLeadKeys.list(scope, params),
     queryFn: ({ signal }) => getLeads(params, scope, signal),
@@ -71,7 +88,7 @@ function LeadsScreen() {
     retry: false,
   });
   const exportCsv = useMutation({
-    mutationFn: () => downloadLeadsCsv({ search: debouncedSearch, filter }, scope),
+    mutationFn: () => downloadLeadsCsv({ search: debouncedSearch, filter, stage, managerId }, scope),
     onError: () => enqueueSnackbar(t("toolbar.exportFailed"), { variant: "error" }),
   });
 
@@ -153,6 +170,10 @@ function LeadsScreen() {
             {countOf(key) != null ? ` · ${countOf(key)}` : ""}
           </ButtonBase>
         ))}
+        {stage && <UrlFilterChip label={t("leads.byStage", { name: t(`stages.${stage}`) })} onClear={() => clearUrlFilter("stage")} />}
+        {managerId != null && (
+          <UrlFilterChip label={t("leads.byManager", { name: all?.find((lead) => lead.managerId === managerId)?.manager ?? `#${managerId}` })} onClear={() => clearUrlFilter("managerId")} />
+        )}
         <Box sx={{ ml: { md: "auto" }, display: "flex", alignItems: "center", gap: 1, flexWrap: { xs: "wrap", md: "nowrap" }, flex: { xs: "1 1 100%", md: "0 1 auto" } }}>
           <SearchBox value={search} onChange={setSearch} placeholder={t("toolbar.search")} />
           <Button variant="outlined" size="small" startIcon={<FileDownloadOutlined />} disabled={exportCsv.isPending} onClick={() => exportCsv.mutate()} sx={{ whiteSpace: "nowrap", flexShrink: 0 }}>
@@ -171,7 +192,7 @@ function LeadsScreen() {
           rows={rows}
           columns={columns}
           loading={list.isFetching}
-          localeText={{ ...ruRU.components.MuiDataGrid.defaultProps.localeText, noRowsLabel: filter !== "active" || debouncedSearch ? t("table.emptyFiltered") : t("table.empty") }}
+          localeText={{ ...ruRU.components.MuiDataGrid.defaultProps.localeText, noRowsLabel: filter !== "active" || debouncedSearch || stage || managerId != null ? t("table.emptyFiltered") : t("table.empty") }}
           getRowHeight={() => "auto"}
           onRowClick={({ row }) => openLead(row.id)}
           disableRowSelectionOnClick
@@ -196,5 +217,16 @@ function LeadsScreen() {
         />
       )}
     </>
+  );
+}
+
+/** Фильтр, пришедший адресом (из аналитики): активный чип с крестиком. */
+function UrlFilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  const { t } = useT("realtySales");
+  return (
+    <ButtonBase aria-label={t("leads.clearFilter", { label })} onClick={onClear} sx={(th) => ({ ...pillSx(th, true), whiteSpace: "nowrap", gap: 0.5 })}>
+      {label}
+      <CloseOutlined sx={{ fontSize: 14 }} />
+    </ButtonBase>
   );
 }

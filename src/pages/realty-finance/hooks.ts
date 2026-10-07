@@ -27,6 +27,12 @@ export function useTreasuryAccounts(enabled = true) {
   });
 }
 
+/** Валюта счёта по id — для сумм операций по валютным счетам; неизвестный счёт — KGS. */
+export function useAccountCurrency(enabled = true) {
+  const accounts = useTreasuryAccounts(enabled).data;
+  return React.useCallback((accountId: number | null | undefined) => accounts?.find((a) => a.id === accountId)?.currency || "KGS", [accounts]);
+}
+
 /** ЖК организации для селекта «Объект». */
 export function useProjectOptions(enabled = true) {
   const scope = useRealtyScope();
