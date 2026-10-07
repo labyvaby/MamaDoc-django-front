@@ -48,6 +48,7 @@ import { cellKey, planBulkChanges, weekdayIndex, type BulkSettings, type PriceMo
 import { DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection, FilterChip, plural, Surface } from "./hotelUi";
 import { downloadXlsx } from "./hotelXlsx";
 import type { QueuedEdit } from "./priceQueue";
+import { currencyLabel } from "./currencyLabel";
 
 const MONTHS = 12;
 /** Сервер ответил 404 на …/daily-rates/batch/ — до перезагрузки шлём диапазоны по одному. */
@@ -101,7 +102,10 @@ export const PriceYearView: React.FC<{
   onOpenNight: (roomType: HotelPriceCalendarRoomType, night: HotelPriceNight) => void;
   /** Положить правку в «пакет» вместо немедленной отправки (см. priceQueue.ts). */
   onQueue?: (edit: QueuedEdit) => void;
-}> = ({ propertyId, ratePlanId, canManage, onOpenNight, onQueue }) => {
+  /** Валюта объекта (подписи цен); не задана — сом. */
+  currency?: string;
+}> = ({ propertyId, ratePlanId, canManage, onOpenNight, onQueue, currency }) => {
+  const cur = currencyLabel(currency);
   const theme = useTheme();
   const dark = theme.palette.mode === "dark";
   const [start, setStart] = React.useState<Dayjs>(() => dayjs().startOf("month"));
@@ -218,7 +222,7 @@ export const PriceYearView: React.FC<{
       {
         name: "Цены",
         title: `Календарь цен — ${data.ratePlanName || "основной тариф"}`,
-        meta: [`${start.format("MMMM YYYY")} – ${start.add(MONTHS - 1, "month").format("MMMM YYYY")}`, "Цена ночи по категории, сом. «стоп» — продажа закрыта."],
+        meta: [`${start.format("MMMM YYYY")} – ${start.add(MONTHS - 1, "month").format("MMMM YYYY")}`, `Цена ночи по категории, ${cur}. «стоп» — продажа закрыта.`],
         tables: [
           {
             columns: [{ header: "Месяц", width: 14 }, { header: "Категория", width: 22 }, ...Array.from({ length: 31 }, (_, i) => ({ header: String(i + 1), width: 7 }))],
@@ -511,7 +515,7 @@ export const PriceYearView: React.FC<{
                               ? alpha(theme.palette.info.main, mode === "occupancy" ? 0.1 + (occ / 100) * 0.55 : (dark ? 0.04 : 0.02) + (occ / 100) * (dark ? 0.16 : 0.12))
                               : undefined;
                           const title = n
-                            ? `${rt.roomTypeName}, ${m.date(day).format("D MMMM, dd")}: ${fmt(price ?? 0)} сом${n.isManualOverride ? " (своя цена)" : ""}${n.stopSell ? " · стоп-продажа" : ""} · продано ${n.occupied} из ${n.capacity}${n.minNights ? ` · мин. ${n.minNights} ноч.` : ""}`
+                            ? `${rt.roomTypeName}, ${m.date(day).format("D MMMM, dd")}: ${fmt(price ?? 0)} ${cur}${n.isManualOverride ? " (своя цена)" : ""}${n.stopSell ? " · стоп-продажа" : ""} · продано ${n.occupied} из ${n.capacity}${n.minNights ? ` · мин. ${n.minNights} ноч.` : ""}`
                             : undefined;
                           return (
                             <div key={di} className={cls} data-cell={`${mi}:${ri}:${day}`} title={title} style={{ ...topBorder, ...(heat ? { backgroundColor: heat } : null) }}>
@@ -543,6 +547,7 @@ export const PriceYearView: React.FC<{
           onClose={() => setBulkOpen(false)}
           selection={selection}
           data={data}
+          currency={currency}
           onQueue={onQueue}
           onDone={() => {
             setBulkOpen(false);
@@ -574,7 +579,9 @@ const PriceBulkDrawer: React.FC<{
   data: YearData;
   onDone: () => void;
   onQueue?: (edit: QueuedEdit) => void;
-}> = ({ open, onClose, selection, data, onDone, onQueue }) => {
+  currency?: string;
+}> = ({ open, onClose, selection, data, onDone, onQueue, currency }) => {
+  const cur = currencyLabel(currency);
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
@@ -793,7 +800,7 @@ const PriceBulkDrawer: React.FC<{
           <ToggleButtonGroup size="small" exclusive value={kind} sx={{ width: "100%", "& .MuiToggleButton-root": { whiteSpace: "nowrap", px: 0.75 } }}>
             {seg("set", kind, setKind, "Своя")}
             {seg("percent", kind, setKind, "± %")}
-            {seg("amount", kind, setKind, "± сом")}
+            {seg("amount", kind, setKind, `± ${cur}`)}
             {seg("auto", kind, setKind, "Авто")}
             {seg("keep", kind, setKind, "Как есть")}
           </ToggleButtonGroup>
@@ -807,7 +814,7 @@ const PriceBulkDrawer: React.FC<{
                     value={sameForAll}
                     onChange={(e) => setSameForAll(e.target.value.replace(/[^\d]/g, "").slice(0, 7))}
                     sx={{ flex: 1 }}
-                    slotProps={{ input: { endAdornment: <InputAdornment position="end">сом</InputAdornment> }, htmlInput: { inputMode: "numeric" } }}
+                    slotProps={{ input: { endAdornment: <InputAdornment position="end">{cur}</InputAdornment> }, htmlInput: { inputMode: "numeric" } }}
                   />
                   <Button
                     variant="outlined"
@@ -831,7 +838,7 @@ const PriceBulkDrawer: React.FC<{
                       placeholder={String(Number(rt.basePrice))}
                       onChange={(e) => setPrices((p) => ({ ...p, [rt.roomTypeId]: e.target.value.replace(/[^\d]/g, "").slice(0, 7) }))}
                       sx={{ width: 150 }}
-                      slotProps={{ input: { endAdornment: <InputAdornment position="end">сом</InputAdornment> }, htmlInput: { inputMode: "numeric" } }}
+                      slotProps={{ input: { endAdornment: <InputAdornment position="end">{cur}</InputAdornment> }, htmlInput: { inputMode: "numeric" } }}
                     />
                   </Stack>
                 ))}
@@ -852,7 +859,7 @@ const PriceBulkDrawer: React.FC<{
                 value={delta}
                 onChange={(e) => setDelta(e.target.value.replace(/[^\d]/g, "").slice(0, kind === "percent" ? 3 : 6))}
                 sx={{ width: 120 }}
-                slotProps={{ input: { endAdornment: <InputAdornment position="end">{kind === "percent" ? "%" : "сом"}</InputAdornment> }, htmlInput: { inputMode: "numeric" } }}
+                slotProps={{ input: { endAdornment: <InputAdornment position="end">{kind === "percent" ? "%" : cur}</InputAdornment> }, htmlInput: { inputMode: "numeric" } }}
               />
               <FormControlLabel control={<Checkbox size="small" checked={round} onChange={(e) => setRound(e.target.checked)} />} label={<Typography variant="body2">до 10 сом</Typography>} />
             </Stack>
@@ -959,7 +966,7 @@ const PriceBulkDrawer: React.FC<{
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {plan.avgBefore != null && plan.avgAfter != null
-                ? `средняя цена ${fmt(plan.avgBefore)} → ${fmt(plan.avgAfter)} сом`
+                ? `средняя цена ${fmt(plan.avgBefore)} → ${fmt(plan.avgAfter)} ${cur}`
                 : plan.nights
                   ? "меняются ограничения"
                   : "выберите, что изменить"}

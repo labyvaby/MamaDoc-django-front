@@ -65,6 +65,7 @@ import {
 } from "../api/hotel";
 import { getErrorMessage } from "../api/client";
 import { sendQueue, type QueuedEdit } from "./priceQueue";
+import { currencyLabel } from "./currencyLabel";
 import { FormField } from "./formField";
 import { fieldError, type FieldRules } from "./formRules";
 import { DRAWER_WIDTH, DrawerFooter, DrawerHeader, DrawerSection, EmptyState, HotelPage, HotelPageHeader, Surface } from "./hotelUi";
@@ -241,7 +242,7 @@ export const HotelPriceCalendarPage: React.FC = () => {
       {!property && !propertyLoading ? (
         <HotelPropertyMissing />
       ) : tab === "history" && property ? (
-        <PricingHistoryPanel propertyId={property.id} roomTypeNames={new Map((calendar?.roomTypes ?? []).map((r) => [r.roomTypeId, r.roomTypeName]))} />
+        <PricingHistoryPanel currency={property.currency} propertyId={property.id} roomTypeNames={new Map((calendar?.roomTypes ?? []).map((r) => [r.roomTypeId, r.roomTypeName]))} />
       ) : view === "year" && property ? (
         <>
           {queue.length > 0 && (
@@ -265,6 +266,7 @@ export const HotelPriceCalendarPage: React.FC = () => {
             </Alert>
           )}
           <PriceYearView
+            currency={property.currency}
             propertyId={property.id}
             ratePlanId={ratePlanId}
             canManage={canManage}
@@ -285,10 +287,11 @@ export const HotelPriceCalendarPage: React.FC = () => {
           <EmptyState icon={<SellOutlined />} title="Категорий нет" description="Цены появятся, когда в «Категориях и тарифах» будет хоть одна категория." />
         </Surface>
       ) : (
-        <PriceGrid calendar={calendar} loading={calendarQuery.isFetching} onOpen={(roomType, night) => setSelected({ roomType, night })} />
+        <PriceGrid currency={property?.currency} calendar={calendar} loading={calendarQuery.isFetching} onOpen={(roomType, night) => setSelected({ roomType, night })} />
       )}
 
       <NightDrawer
+        currency={property?.currency}
         target={selected}
         ratePlanId={calendar?.ratePlanId ?? yearPlanId}
         canManage={canManage}
@@ -303,8 +306,10 @@ export const HotelPriceCalendarPage: React.FC = () => {
 const PriceGrid: React.FC<{
   calendar: HotelPriceCalendar;
   loading: boolean;
+  currency?: string;
   onOpen: (roomType: HotelPriceCalendarRoomType, night: HotelPriceNight) => void;
-}> = ({ calendar, loading, onOpen }) => {
+}> = ({ calendar, loading, currency, onOpen }) => {
+  const cur = currencyLabel(currency);
   const theme = useTheme();
   const dark = theme.palette.mode === "dark";
   const line = subtleBorder(theme);
@@ -361,7 +366,7 @@ const PriceGrid: React.FC<{
                   {rt.roomTypeName}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" component="div" noWrap>
-                  база {money(rt.basePrice)} сом
+                  база {money(rt.basePrice)} {cur}
                   {rt.minPrice || rt.maxPrice ? ` · ${rt.minPrice ? `от ${money(rt.minPrice)}` : ""}${rt.minPrice && rt.maxPrice ? " " : ""}${rt.maxPrice ? `до ${money(rt.maxPrice)}` : ""}` : ""}
                 </Typography>
               </Box>
@@ -372,7 +377,7 @@ const PriceGrid: React.FC<{
                 const down = !n.isManualOverride && price < base;
                 const occ = Math.min(100, Number(n.occupancy));
                 const description = [
-                  `${rt.roomTypeName}, ${formatHotelDate(n.date)}: ${money(price)} сом`,
+                  `${rt.roomTypeName}, ${formatHotelDate(n.date)}: ${money(price)} ${cur}`,
                   n.isManualOverride ? "своя цена" : up ? "выше базы" : down ? "ниже базы" : "",
                   n.stopSell ? "стоп-продажа" : `свободно ${n.available} из ${n.capacity}`,
                   n.minNights ? `минимум ${n.minNights} ноч.` : "",
@@ -454,10 +459,12 @@ const Legend: React.FC<{ icon: React.ReactNode; text: string }> = ({ icon, text 
 
 const NightDrawer: React.FC<{
   target: { roomType: HotelPriceCalendarRoomType; night: HotelPriceNight } | null;
+  currency?: string;
   ratePlanId: number | null;
   canManage: boolean;
   onClose: () => void;
-}> = ({ target, ratePlanId, canManage, onClose }) => {
+}> = ({ target, currency, ratePlanId, canManage, onClose }) => {
+  const cur = currencyLabel(currency);
   const theme = useTheme();
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
@@ -582,12 +589,12 @@ const NightDrawer: React.FC<{
 
           <DrawerSection label="Из чего сложилась цена" first>
             <Box sx={{ borderRadius: "12px", bgcolor: subtleBg(theme), px: 2, py: 1.25 }}>
-              <StepRow label="База категории" value={`${money(base)} сом`} />
+              <StepRow label="База категории" value={`${money(base)} ${cur}`} />
               {steps.map((s, i) => (
                 <StepRow
                   key={i}
                   label={s.kind === "rule" ? s.name || STEP_LABELS.rule : STEP_LABELS[s.kind] ?? s.name}
-                  hint={s.kind === "rule" && s.adjustmentValue ? `${Number(s.adjustmentValue) > 0 ? "+" : ""}${Number(s.adjustmentValue)}${s.adjustmentType === "percent" ? "%" : " сом"}` : undefined}
+                  hint={s.kind === "rule" && s.adjustmentValue ? `${Number(s.adjustmentValue) > 0 ? "+" : ""}${Number(s.adjustmentValue)}${s.adjustmentType === "percent" ? "%" : ` ${cur}`}` : undefined}
                   value={`${money(s.amountBefore)} → ${money(s.amountAfter)}`}
                 />
               ))}
@@ -597,12 +604,12 @@ const NightDrawer: React.FC<{
                 </Typography>
               )}
               <Box sx={{ borderTop: `1px solid ${subtleBorder(theme)}`, mt: 0.75, pt: 0.75 }}>
-                <StepRow label="Цена ночи" value={`${money(night.price)} сом`} strong />
+                <StepRow label="Цена ночи" value={`${money(night.price)} ${cur}`} strong />
               </Box>
             </Box>
             {night.isManualOverride && (
               <Alert severity="info" variant="outlined" icon={<EditOutlined fontSize="small" />}>
-                Своя цена {night.manualPrice ? `${money(night.manualPrice)} сом` : ""}
+                Своя цена {night.manualPrice ? `${money(night.manualPrice)} ${cur}` : ""}
                 {night.overrideByName ? ` · ${night.overrideByName}` : ""}
                 {night.overrideAt ? `, ${formatHotelDateTime(night.overrideAt)}` : ""}
                 {night.overrideReason ? ` · «${night.overrideReason}»` : ""}
@@ -639,7 +646,7 @@ const NightDrawer: React.FC<{
               <FormField
                 icon={<SellOutlined />}
                 label="Своя цена за ночь"
-                unit="сом"
+                unit={cur}
                 value={price}
                 onValueChange={setPrice}
                 rules={PRICE_RULES}
@@ -766,13 +773,13 @@ const StepRow: React.FC<{ label: string; value: string; hint?: string; strong?: 
 
 const PAGE = 30;
 
-function describeChange(c: HotelPricingChange, ruleNames: Map<number, string>, roomTypeNames: Map<number, string>): { title: string; details: string[] } {
+function describeChange(c: HotelPricingChange, ruleNames: Map<number, string>, roomTypeNames: Map<number, string>, cur: string): { title: string; details: string[] } {
   const ch = c.changes ?? {};
   if (c.kind === "daily_rate") {
     const who = c.roomTypeId != null ? (roomTypeNames.get(c.roomTypeId) ?? `Категория №${c.roomTypeId}`) : "Все категории";
     const dates = c.dateFrom && c.dateTo ? formatHotelNightsRange(c.dateFrom, c.dateTo) : "";
     const details: string[] = [];
-    if (ch.price != null) details.push(`своя цена ${money(String(ch.price))} сом`);
+    if (ch.price != null) details.push(`своя цена ${money(String(ch.price))} ${cur}`);
     if (ch.clearPrice) details.push("цена снова по правилам");
     if (ch.stopSell === true) details.push("стоп-продажа");
     if (ch.stopSell === false) details.push("продажа открыта");
@@ -809,7 +816,7 @@ function describeChange(c: HotelPricingChange, ruleNames: Map<number, string>, r
     const title = name ? `«${name}»` : c.ruleId != null ? `Правило №${c.ruleId}` : "Правило";
     const details: string[] = [];
     if (c.kind === "rule_created") {
-      if (ch.adjustmentValue != null) details.push(`${Number(ch.adjustmentValue) > 0 ? "+" : ""}${Number(ch.adjustmentValue)}${ch.adjustmentType === "percent" ? "%" : " сом"}`);
+      if (ch.adjustmentValue != null) details.push(`${Number(ch.adjustmentValue) > 0 ? "+" : ""}${Number(ch.adjustmentValue)}${ch.adjustmentType === "percent" ? "%" : ` ${cur}`}`);
     } else if (c.kind === "rule_updated") {
       for (const [key, value] of Object.entries(ch)) {
         if (key === "version" || value == null || typeof value !== "object" || !("new" in (value as object))) continue;
@@ -827,7 +834,8 @@ function describeChange(c: HotelPricingChange, ruleNames: Map<number, string>, r
   return { title: KIND_LABELS[c.kind] ?? c.kind, details: [] };
 }
 
-const PricingHistoryPanel: React.FC<{ propertyId: number; roomTypeNames: Map<number, string> }> = ({ propertyId, roomTypeNames }) => {
+const PricingHistoryPanel: React.FC<{ propertyId: number; currency?: string; roomTypeNames: Map<number, string> }> = ({ propertyId, currency, roomTypeNames }) => {
+  const cur = currencyLabel(currency);
   const theme = useTheme();
   const historyQuery = useInfiniteQuery({
     queryKey: ["hotel", "pricingHistory", propertyId],
@@ -870,7 +878,7 @@ const PricingHistoryPanel: React.FC<{ propertyId: number; roomTypeNames: Map<num
   return (
     <Surface padded={false} sx={{ overflow: "hidden" }}>
       {rows.map((c, i) => {
-        const { title, details } = describeChange(c, ruleNames, roomTypeNames);
+        const { title, details } = describeChange(c, ruleNames, roomTypeNames, cur);
         return (
           <Stack
             key={c.id}
