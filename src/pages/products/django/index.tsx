@@ -41,7 +41,7 @@ import SellOutlined from "@mui/icons-material/SellOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import dayjs from "dayjs";
 
-import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState, InfoTile, SelectionMark } from "../../../components/ui";
+import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState, InfoTile, SelectionMark, selectionHintHoverSx } from "../../../components/ui";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
@@ -412,10 +412,13 @@ const DjangoProductsPage: React.FC = () => {
   };
 
   // Долгое нажатие включает выбор и отмечает строку (повторное — не снимает).
-  const longPress = useLongPress((id) => {
-    hapticTap();
+  const startSelection = (id: number) => {
     setCheckedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     anchorIdRef.current = id;
+  };
+  const longPress = useLongPress((id) => {
+    hapticTap();
+    startSelection(id);
   }, !bulkBusy);
 
   const clearChecked = () => {
@@ -940,6 +943,7 @@ const DjangoProductsPage: React.FC = () => {
                               isChecked ? alpha(theme.palette.primary.main, 0.08) : "background.paper",
                             transition:
                               "border-color .15s ease, background-color .15s ease",
+                            ...selectionHintHoverSx,
                             "&:hover": {
                               borderColor: (theme) => alpha(theme.palette.primary.main, 0.28),
                               bgcolor: (theme) => subtleBg(theme, true),
@@ -963,7 +967,11 @@ const DjangoProductsPage: React.FC = () => {
                             >
                               {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
                             </Avatar>
-                            {hasChecked && <SelectionMark checked={isChecked} />}
+                            {hasChecked ? (
+                              <SelectionMark checked={isChecked} />
+                            ) : (
+                              !bulkBusy && <SelectionMark checked={false} onStart={() => startSelection(p.id)} />
+                            )}
                           </Box>
                           <Box sx={{ flex: 1, minWidth: 0, opacity: stockState.out ? 0.55 : 1 }}>
                             <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
