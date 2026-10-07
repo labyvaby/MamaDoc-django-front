@@ -24,7 +24,7 @@ import FilterListIcon from "@mui/icons-material/FilterListOutlined";
 import CheckIcon from "@mui/icons-material/Check";
 import { subtleBg } from "../../../theme";
 import { DjangoStockItem } from "../../../api/warehouse";
-import { ListLoadingSkeleton, ListEmptyState, SelectionMark } from "../../ui";
+import { ListLoadingSkeleton, ListEmptyState, SelectionMark, selectionHintHoverSx } from "../../ui";
 import { useLongPress } from "../../../hooks/useLongPress";
 import { toggleSelection } from "../../../utility/bulkSelection";
 import { hapticTap } from "../../../utility/haptics";
@@ -132,11 +132,14 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
     anchorIdRef.current = null;
     onCheckedChange(next);
   };
-  const longPress = useLongPress((productId) => {
+  const startSelection = (productId: number) => {
     if (!checkedIds || !onCheckedChange || checkedIds.has(productId)) return;
-    hapticTap();
     anchorIdRef.current = productId;
     onCheckedChange(new Set(checkedIds).add(productId));
+  };
+  const longPress = useLongPress((productId) => {
+    hapticTap();
+    startSelection(productId);
   }, selectable && !selectionDisabled);
 
   const statusOptions: { value: StockStatusFilter; label: string; count: number }[] = [
@@ -409,6 +412,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                         ? alpha(theme.palette.primary.main, 0.08)
                         : "background.paper",
                     transition: "border-color .15s ease, background-color .15s ease",
+                    ...selectionHintHoverSx,
                     "&:hover": {
                       borderColor: (theme) => alpha(theme.palette.primary.main, 0.28),
                       bgcolor: (theme) => subtleBg(theme, true),
@@ -430,7 +434,13 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                     >
                       {item.productName?.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
                     </Avatar>
-                    {selecting && <SelectionMark checked={isChecked} borderRadius={1} />}
+                    {selecting ? (
+                      <SelectionMark checked={isChecked} borderRadius={1} />
+                    ) : (
+                      selectable && !selectionDisabled && (
+                        <SelectionMark checked={false} borderRadius={1} onStart={() => startSelection(item.productId)} />
+                      )
+                    )}
                   </Box>
 
                   <Box sx={{ flex: 1, minWidth: 0, overflow: "hidden", opacity: inStock ? 1 : 0.55 }}>
