@@ -408,6 +408,16 @@ export const HotelOwnerReport: React.FC<{
             )}
           </Box>
 
+          {reservationsQuery.data?.truncated && (
+            // Карточки сверху и «Поступило» считает сервер целиком, а график, каналы,
+            // категории и должники — по загруженным броням: без предупреждения они молча
+            // не сходились бы с выручкой в карточке.
+            <Alert severity="warning" variant="outlined">
+              Броней за период слишком много — график, каналы, категории и должники посчитаны по первым 2000. Карточки сверху и «Поступило» — по всем.
+              Сузьте период, чтобы цифры сошлись.
+            </Alert>
+          )}
+
           <Box>
             <SectionLabel>Деньги</SectionLabel>
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 1.5 }}>
