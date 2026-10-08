@@ -1,5 +1,5 @@
 import React from "react";
-import { Avatar, Box, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
+import { Avatar, Box, Button, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
@@ -163,21 +163,19 @@ const AppointmentPatientCard: React.FC<AppointmentPatientCardProps> = ({
           {/* Правка карты прямо из приёма: телефон и дату рождения чаще всего
               уточняют именно в момент визита. */}
           {onEditPatient && (
-            <Tooltip title={t("details.editPatient")}>
-              <span>
-                <IconButton
-                  size="small"
-                  disabled={editPatientDisabled}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEditPatient();
-                  }}
-                  sx={{ flexShrink: 0 }}
-                >
-                  <EditOutlined sx={{ fontSize: 18 }} />
-                </IconButton>
-              </span>
-            </Tooltip>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={editPatientDisabled}
+              startIcon={<EditOutlined sx={{ fontSize: 18 }} />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditPatient();
+              }}
+              sx={{ flexShrink: 0, whiteSpace: "nowrap", borderRadius: "10px" }}
+            >
+              {t("details.editPatientButton")}
+            </Button>
           )}
         </Paper>
       ) : (

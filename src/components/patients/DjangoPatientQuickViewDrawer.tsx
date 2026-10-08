@@ -238,13 +238,6 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({
               </IconButton>
             </Tooltip>
           )}
-          {canUpdate && patient && (
-            <Tooltip title={t("quickView.edit")}>
-              <IconButton onClick={() => setEditOpen(true)} size="small">
-                <EditOutlined fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
           <IconButton onClick={onClose} size="small">
             <CloseIcon />
           </IconButton>
@@ -276,7 +269,7 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({
               >
                 {initials(head.fullName)}
               </Avatar>
-              <Box sx={{ minWidth: 0 }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography variant="h6" fontWeight={600} noWrap>
                   {head.fullName}
                 </Typography>
@@ -288,6 +281,17 @@ const DjangoPatientQuickViewDrawer: React.FC<Props> = ({
                   sx={{ mt: 0.5 }}
                 />
               </Box>
+              {canUpdate && patient && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<EditOutlined sx={{ fontSize: 18 }} />}
+                  onClick={() => setEditOpen(true)}
+                  sx={{ flexShrink: 0, whiteSpace: "nowrap", borderRadius: "10px" }}
+                >
+                  {t("quickView.editButton")}
+                </Button>
+              )}
             </Stack>
 
             <Divider />
