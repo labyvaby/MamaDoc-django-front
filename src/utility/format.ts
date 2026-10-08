@@ -16,6 +16,12 @@ export const formatKGS = (value: number | string | null | undefined): string => 
  * Без Intl намеренно: для ru-RU знак минуса зависит от сборки ICU (ASCII `-`
  * против типографского `−`), и вывод расходился между браузером и Node в тестах.
  */
+/** Сумма без валюты, с разрядами: «1 251». Для строк чека, где «сом» стоит только у итога. */
+export const formatAmountPlain = (value: number | string | null | undefined): string => {
+  const num = Number(value ?? 0);
+  return (Number.isFinite(num) ? num : 0).toLocaleString("ru-RU");
+};
+
 export const formatQuantity = (value: number | string | null | undefined): string => {
   if (value === null || value === undefined || value === "") return "—";
   const num = Number(value);

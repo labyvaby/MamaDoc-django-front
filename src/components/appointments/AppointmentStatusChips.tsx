@@ -76,12 +76,11 @@ export interface AppointmentStatusChipsProps {
   /** Раскладка: строка списка — row, узкая колонка — column. */
   direction?: "row" | "column";
   /**
-   * Скрыть чип «Оплачено/Частично оплачено» — вызывающий сам покажет тот же
-   * статус крупно (например, заголовок PaymentInfoBlock в карточке приёма),
-   * дублировать его тут для этого зрителя не нужно. Долг и скидка остаются:
-   * они несут доп. цифры, а не просто повторяют факт оплаты.
+   * Скрыть денежные чипы — оплата, долг, скидка, страховка. Вызывающий сам
+   * показывает деньги приёма крупно (итог чека «Состав и оплата» в карточке
+   * приёма): там и остаток «из» суммы, и строка скидки, и способы оплаты.
    */
-  hidePayChip?: boolean;
+  hideMoneyChips?: boolean;
   /**
    * Отменить случайную отметку «Пациент здесь». Крестик появляется только у
    * статуса arrived и только там, где вызывающий явно разрешил это действие.
@@ -99,7 +98,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
   chipHeight,
   showPaymentMethodIcons = true,
   direction = "row",
-  hidePayChip = false,
+  hideMoneyChips = false,
   onUndoArrived,
   onUndoConfirm,
 }) => {
@@ -190,7 +189,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
           statusChip
         ))}
 
-      {showPayChip && !hidePayChip && (
+      {showPayChip && !hideMoneyChips && (
         <Chip
           label={
             <Stack direction="row" alignItems="center" gap={0.5}>
@@ -221,7 +220,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       {/* Остаток при частичной оплате — главный операционный вопрос кассы.
           Заменяет собой чип «Частично оплачено»: «Долг 1100 из 1600» несёт
           оба факта сразу. */}
-      {debtAmount != null && (
+      {debtAmount != null && !hideMoneyChips && (
         <Chip
           label={
             totalAmount != null
@@ -239,7 +238,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       {/* Процент берём из сумм приёма. Если сумм нет (укороченные формы приёма
           в дроверах), показываем нейтральное «Со скидкой» — врать про процент
           нельзя, на этом и ловилась прежняя жёсткая подпись «Скидка 100%». */}
-      {showDiscountChip && (
+      {showDiscountChip && !hideMoneyChips && (
         <Chip
           label={
             discountPercent != null
@@ -254,7 +253,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
       {/* «Страховка» — визит (со)оплачен страховой компанией. Живёт здесь, а
           не в списке приёмов: раньше чип рисовался только там, и в карточке
           приёма с историей пациента признак страховки пропадал. */}
-      {methods.includes("insurance") && (
+      {methods.includes("insurance") && !hideMoneyChips && (
         <Tooltip title={t("list.insurancePayment")}>
           <span>
             <Chip

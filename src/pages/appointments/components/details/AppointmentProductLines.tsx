@@ -1,14 +1,13 @@
 import React from "react";
-import { Avatar, Box, Chip, Paper, Stack, Tooltip, Typography } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { Chip, Stack, Tooltip } from "@mui/material";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import VaccinesOutlined from "@mui/icons-material/VaccinesOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 
 import type { AppointmentProductLine } from "../../../../api/appointments";
-import { subtleBg } from "../../../../theme";
 import { useT } from "../../../../i18n/VerticalProvider";
+import { BILL_INDENT, BillGroupHeader, BillRow } from "./AppointmentBill";
 
 /** Вакцина, к которой привязан товар склада (метка «вакцина» в карточке товара). */
 export interface ProductVaccineRef {
@@ -33,7 +32,10 @@ export interface AppointmentProductLinesProps {
   onRecordVaccine?: (vaccineId: number, line: AppointmentProductLine) => void;
 }
 
-/** Товары, проданные в рамках визита (списываются со склада). */
+/**
+ * Товары, проданные в рамках визита (списываются со склада), — группа строк
+ * внутри чека `AppointmentBill`.
+ */
 const AppointmentProductLines: React.FC<AppointmentProductLinesProps> = ({
   lines,
   formatAmount,
@@ -45,7 +47,6 @@ const AppointmentProductLines: React.FC<AppointmentProductLinesProps> = ({
   onRecordVaccine,
 }) => {
   const { t } = useT("appointments");
-  const theme = useTheme();
 
   const visible = React.useMemo(
     () => lines.filter((pl) => pl.status !== "canceled"),
@@ -76,120 +77,81 @@ const AppointmentProductLines: React.FC<AppointmentProductLinesProps> = ({
   if (visible.length === 0) return null;
 
   return (
-    <Box>
-      <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-        {t("details.products")}
-      </Typography>
-      <Stack spacing={1}>
-        {visible.map((pl, i) => {
-          const canOpen = Boolean(clickable && pl.product?.id != null && onProductClick);
-          const vaccineInfo = coverage[i];
-          return (
-            <Paper
-              key={pl.id}
-              variant="outlined"
+    <Stack spacing={1.25}>
+      <BillGroupHeader
+        avatar={<Inventory2Outlined sx={{ fontSize: 14 }} />}
+        label={t("details.products")}
+      />
+      {visible.map((pl, i) => {
+        const canOpen = Boolean(clickable && pl.product?.id != null && onProductClick);
+        const vaccineInfo = coverage[i];
+        return (
+          <Stack key={pl.id} spacing={1}>
+            {/* Клик открывает карточку товара — как у услуг; без права на
+                справочник строка остаётся некликабельной. */}
+            <BillRow
+              thumb={
+                vaccineInfo ? (
+                  <VaccinesOutlined sx={{ fontSize: 18 }} />
+                ) : (
+                  <Inventory2Outlined sx={{ fontSize: 18 }} />
+                )
+              }
+              title={pl.product?.name ?? "—"}
+              subtitle={`× ${pl.quantity}${pl.product?.unit ? ` ${pl.product.unit}` : ""}${
+                vaccineInfo ? ` · ${t("details.vaccineLine")}` : ""
+              }`}
+              amount={formatAmount(pl.lineTotal)}
               onClick={canOpen ? () => onProductClick!(pl.product.id, pl.product.name) : undefined}
-              sx={{
-                p: 1.5,
-                pl: 2,
-                bgcolor: "background.paper",
-                borderRadius: 1.5,
-                // Клик открывает карточку товара — как у услуг; без права на
-                // справочник строка остаётся некликабельной.
-                cursor: canOpen ? "pointer" : "default",
-                transition: "background-color 0.2s",
-                ...(canOpen && { "&:hover": { bgcolor: subtleBg(theme) } }),
-              }}
-            >
-              <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                <Avatar
-                  variant="rounded"
-                  sx={{
-                    width: 40,
-                    height: 40,
-                    bgcolor: "action.selected",
-                    color: "text.secondary",
-                    flexShrink: 0,
-                  }}
-                >
-                  {vaccineInfo ? (
-                    <VaccinesOutlined fontSize="small" />
-                  ) : (
-                    <Inventory2Outlined fontSize="small" />
-                  )}
-                </Avatar>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="body2" fontWeight={600} noWrap>
-                    {pl.product?.name ?? "—"}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    × {pl.quantity}
-                    {pl.product?.unit ? ` ${pl.product.unit}` : ""}
-                    {vaccineInfo ? ` · ${t("details.vaccineLine")}` : ""}
-                  </Typography>
-                </Box>
-                <Typography variant="body2" fontWeight={700} sx={{ flexShrink: 0 }}>
-                  {formatAmount(pl.lineTotal)}
-                </Typography>
-              </Box>
+            />
 
-              {/* Товар помечен как вакцина: видно, внесена ли запись в карту.
-                  С 21.08.2026 оформить можно прямо отсюда — запись привязывается
-                  к этой строке счёта (productLineId), повторного биллинга и
-                  списания партии не будет. */}
-              {vaccineInfo && (
-                <Stack
-                  direction="row"
-                  alignItems="center"
-                  gap={1}
-                  sx={{ mt: 1, ml: 7, flexWrap: "wrap" }}
-                >
-                  {vaccineInfo.recorded ? (
-                    <Tooltip title={t("details.vaccineRecordedHint")}>
+            {/* Товар помечен как вакцина: видно, внесена ли запись в карту.
+                С 21.08.2026 оформить можно прямо отсюда — запись привязывается
+                к этой строке счёта (productLineId), повторного биллинга и
+                списания партии не будет. */}
+            {vaccineInfo && (
+              <Stack direction="row" alignItems="center" gap={1} sx={{ pl: BILL_INDENT, flexWrap: "wrap" }}>
+                {vaccineInfo.recorded ? (
+                  <Tooltip title={t("details.vaccineRecordedHint")}>
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      color="success"
+                      icon={<CheckCircleOutlined sx={{ fontSize: 16 }} />}
+                      label={t("details.vaccineRecorded")}
+                      sx={{ borderRadius: "8px" }}
+                    />
+                  </Tooltip>
+                ) : (
+                  <>
+                    <Tooltip title={t("details.vaccineNotRecordedHint")}>
                       <Chip
                         size="small"
                         variant="outlined"
-                        color="success"
-                        icon={<CheckCircleOutlined sx={{ fontSize: 16 }} />}
-                        label={t("details.vaccineRecorded")}
-                        sx={{ borderRadius: "7px" }}
+                        color="warning"
+                        icon={<WarningAmberOutlined sx={{ fontSize: 16 }} />}
+                        label={t("details.vaccineNotRecorded")}
+                        sx={{ borderRadius: "8px" }}
                       />
                     </Tooltip>
-                  ) : (
-                    <>
-                      <Tooltip title={t("details.vaccineNotRecordedHint")}>
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          color="warning"
-                          icon={<WarningAmberOutlined sx={{ fontSize: 16 }} />}
-                          label={t("details.vaccineNotRecorded")}
-                          sx={{ borderRadius: "7px" }}
-                        />
-                      </Tooltip>
-                      {vaccineInfo.vaccine && onRecordVaccine && (
-                        <Chip
-                          size="small"
-                          color="primary"
-                          icon={<VaccinesOutlined sx={{ fontSize: 16 }} />}
-                          label="Оформить"
-                          onClick={(e) => {
-                            // Строка кликабельна сама по себе (карточка товара).
-                            e.stopPropagation();
-                            onRecordVaccine(vaccineInfo.vaccine!.vaccineId, pl);
-                          }}
-                          sx={{ borderRadius: "7px" }}
-                        />
-                      )}
-                    </>
-                  )}
-                </Stack>
-              )}
-            </Paper>
-          );
-        })}
-      </Stack>
-    </Box>
+                    {vaccineInfo.vaccine && onRecordVaccine && (
+                      <Chip
+                        size="small"
+                        color="primary"
+                        icon={<VaccinesOutlined sx={{ fontSize: 16 }} />}
+                        label="Оформить"
+                        onClick={() => onRecordVaccine(vaccineInfo.vaccine!.vaccineId, pl)}
+                        sx={{ borderRadius: "8px" }}
+                      />
+                    )}
+                  </>
+                )}
+              </Stack>
+            )}
+          </Stack>
+        );
+      })}
+    </Stack>
   );
 };
 

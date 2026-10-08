@@ -17,12 +17,10 @@ import {
   ListItemText,
   Menu,
   MenuItem,
-  Paper,
   Stack,
   Tooltip,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PriceChangeOutlined from "@mui/icons-material/PriceChangeOutlined";
 import MoreVertOutlined from "@mui/icons-material/MoreVertOutlined";
@@ -59,13 +57,9 @@ import {
   DJANGO_DETAIL_STALE_TIME_MS,
   DJANGO_LIST_STALE_TIME_MS,
 } from "../../../api/queryKeys";
-import ServiceEmployeeGroups, {
-  type ServiceEmployeeGroup,
-} from "../../../components/appointments/ServiceEmployeeGroups";
 import InvoiceFormatDialog from "../../../components/appointments/InvoiceFormatDialog";
 import type { InvoicePageSize } from "../../../components/appointments/appointmentInvoice";
 import { useAppointmentReceipt } from "../../../components/appointments/useAppointmentReceipt";
-import { PaymentInfoBlock } from "../../../components/ui";
 import { useT } from "../../../i18n/VerticalProvider";
 import { tt } from "../../../i18n/t";
 import { usePermissions } from "../../../hooks/usePermissions";
@@ -84,7 +78,11 @@ import AppointmentWhenBlock from "./details/AppointmentWhenBlock";
 import AppointmentProductLines, {
   type ProductVaccineRef,
 } from "./details/AppointmentProductLines";
-import AppointmentConsumptions from "./details/AppointmentConsumptions";
+import { formatAmountPlain as plainAmount } from "../../../utility/format";
+import AppointmentBill, {
+  type BillPayment,
+  type ServiceEmployeeGroup,
+} from "./details/AppointmentBill";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
 import AppointmentPriceHistory from "./details/AppointmentPriceHistory";
 import { appointmentNetPaid } from "./paymentCancelGuard";
@@ -181,7 +179,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   onClose,
 }) => {
   const { t } = useT("appointments");
-  const theme = useTheme();
   const orgId = useApiOrgId();
   const { isDoctor, isNurse, activeEmployee } = usePermissions();
   // Каждое действие заключения проверяет ровно то право, которое требует API.
@@ -414,9 +411,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     .hasBankConfirmation;
 
   const hasFinanceInfo = !!(totalAmount && totalAmount !== "0.00" && totalAmount !== "0");
-  const hasDiscount = !!(discountAmount && discountAmount !== "0.00" && discountAmount !== "0");
   const hasPaid = !!(paidTotal && paidTotal !== "0.00" && paidTotal !== "0");
-  const hasRefund = !!(refundedTotal && refundedTotal !== "0.00" && refundedTotal !== "0");
 
   // Оплату приняли — визит де-факто состоялся: «Подтвердить» и «Пациент здесь»
   // больше не нужны, а запрос отзыва, наоборот, доступен только с этого
@@ -453,6 +448,13 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const balancePaid = pay?.payments?.reduce((s, p) => p.method === "balance" ? s + Number(p.amount) : s, 0) ?? 0;
   const bonusesPaid = pay?.payments?.reduce((s, p) => p.method === "bonus" ? s + Number(p.amount) : s, 0) ?? 0;
   const insurancePaid = pay?.payments?.reduce((s, p) => p.method === "insurance" ? s + Number(p.amount) : s, 0) ?? 0;
+  // Название способа безнала — только когда он один на все безнал-оплаты.
+  const cardMethodNames = new Set(
+    (pay?.payments ?? [])
+      .filter((p) => p.method === "card" && p.cashlessMethodName)
+      .map((p) => p.cashlessMethodName as string),
+  );
+  const cardMethodName = cardMethodNames.size === 1 ? [...cardMethodNames][0] : null;
   // Метаданные страховки из первой insurance-строки журнала.
   const insurancePayment = pay?.payments?.find((p) => p.method === "insurance");
 
@@ -460,10 +462,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const isDoctorRole = isDoctor();
   const isNurseRole = isNurse();
   const isNonDoctor = !isDoctorRole && !isNurseRole;
-
-  // Ниже покажется PaymentInfoBlock со своим статусом крупно (см. paymentBlock) —
-  // чип «Оплачено» в шапке для этого зрителя будет дублем, прячем его там.
-  const financeBlockVisible = (canViewFinance || canManageFinance) && hasFinanceInfo;
 
   const activeEmployeeId = activeEmployee?.id ?? null;
   const isPerformer = React.useMemo(
@@ -560,7 +558,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
 
   // Services grouped by employee — исполнитель и его услуги одной группой
   const servicesByEmployee = React.useMemo<ServiceEmployeeGroup[]>(() => {
-    const map = new Map<string, ServiceEmployeeGroup & { rawTotal: number }>();
+    const map = new Map<string, ServiceEmployeeGroup>();
     for (const sl of appt.services) {
       const key = sl.employee ? String(sl.employee.id) : "__no_doc__";
       if (!map.has(key)) {
@@ -569,8 +567,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           employeeName: sl.employee?.fullName ?? t("details.noSpecialist"),
           employeePhotoUrl: sl.employee?.photoUrl ?? null,
           lines: [],
-          total: null,
-          rawTotal: 0,
         });
       }
       const group = map.get(key)!;
@@ -582,7 +578,8 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
         imageUrl: sl.service?.imageUrl ?? null,
         quantity: sl.quantity,
         durationMinutes: sl.durationMinutes,
-        amount: som(lineAmount),
+        amount: plainAmount(lineAmount),
+        consumptions: sl.consumptions,
         conclusionState: sl.conclusionState,
         // conclusionsTotal бэк обещал, но отдаёт только conclusionIds (27.09.2026).
         conclusionsTotal: sl.conclusionsTotal ?? sl.conclusionIds?.length,
@@ -606,14 +603,9 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
             </Tooltip>
           ) : undefined,
       });
-      group.rawTotal += Number(lineAmount) || 0;
     }
-    // Итог по исполнителю показываем только когда услуг больше одной —
-    // при единственной услуге он дублировал бы её цену.
-    return Array.from(map.values()).map(({ rawTotal, ...group }) => ({
-      ...group,
-      total: group.lines.length > 1 ? som(rawTotal) : null,
-    }));
+    // Итога по исполнителю нет: в чеке сумма одна — внизу.
+    return Array.from(map.values());
   }, [
     activeEmployeeId,
     appt.priceOverrideLocked,
@@ -632,80 +624,78 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     [onPriceOverrideSaved],
   );
 
-  const paymentBlock = (withBalanceBonuses: boolean) => {
-    const payment = {
-      baseTotal: Number(totalAmount || 0),
-      cash: cashPaid,
-      card: cardPaid,
-      balance: withBalanceBonuses ? balancePaid : 0,
-      bonuses: withBalanceBonuses ? bonusesPaid : 0,
-      insurance: insurancePaid,
-      insurerName: insurancePayment?.insurerName ?? null,
-      policyNumber: insurancePayment?.policyNumber || null,
-      discountAmount: Number(discountAmount || 0),
-      discountPercent: hasDiscount && totalAmount
-        ? Math.round((Number(discountAmount) / Number(totalAmount)) * 100)
-        : 0,
-      finalTotal: Math.max(0, Number(totalAmount || 0) - Number(discountAmount || 0)),
-      debt: Number(debt || 0),
-      status: payStatus ?? appt.status,
-    };
+  // ── Низ чека «Состав и оплата» ────────────────────────────────────────────
+  // Врач и медсестра видят только наличные/безнал/страховку: баланс и бонусы
+  // пациента — касса (так было и в прежнем блоке оплаты).
+  const showBalanceBonuses = isNonDoctor;
+  const canSeeMoney = canViewFinance || canManageFinance;
+  const billPayment: BillPayment | null =
+    canSeeMoney && hasFinanceInfo && !(isCancelled && netPaid <= 0)
+      ? {
+          baseTotal: Number(totalAmount || 0),
+          discountAmount: Number(discountAmount || 0),
+          finalTotal: Math.max(0, Number(totalAmount || 0) - Number(discountAmount || 0)),
+          debt: Number(debt || 0),
+          paidTotal: Number(paidTotal || 0),
+          netPaid,
+          refunded: Number(refundedTotal || 0),
+          cash: cashPaid,
+          card: cardPaid,
+          cardMethodName: cardMethodName,
+          balance: showBalanceBonuses ? balancePaid : 0,
+          bonuses: showBalanceBonuses ? bonusesPaid : 0,
+          insurance: insurancePaid,
+          insurerName: insurancePayment?.insurerName ?? null,
+          isCancelled,
+        }
+      : null;
 
-    const actionBtn =
-      canManageFinance && isCancelled && netPaid > 0 ? (
-        // Отменённый приём с деньгами (отменили до запрета) — принять оплату
-        // нельзя, но возврат оформить нужно: дровер оплаты у отменённого
-        // приёма показывает только возвраты.
-        <Button
-          variant="outlined"
-          color="error"
-          size="small"
-          startIcon={<PaymentsOutlined />}
-          onClick={() => onPay(appt)}
-          sx={{ boxShadow: "none", textTransform: "none", whiteSpace: "nowrap" }}
-        >
-          {t("details.openRefund")}
-        </Button>
-      ) : canManageFinance && !isCancelled ? (
-        <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
+  const payButtonSx = { boxShadow: "none", textTransform: "none", whiteSpace: "nowrap" } as const;
+  const billActions =
+    canManageFinance && isCancelled && netPaid > 0 ? (
+      // Отменённый приём с деньгами (отменили до запрета) — принять оплату
+      // нельзя, но возврат оформить нужно: дровер оплаты у отменённого
+      // приёма показывает только возвраты.
+      <Button
+        variant="outlined"
+        color="error"
+        startIcon={<PaymentsOutlined />}
+        onClick={() => onPay(appt)}
+        sx={payButtonSx}
+      >
+        {t("details.openRefund")}
+      </Button>
+    ) : canManageFinance && !isCancelled ? (
+      <Stack direction="row" spacing={1}>
+        {isPaymentAccepted && (
           <Button
-            variant={hasPaid ? "outlined" : "contained"}
-            color={hasPaid ? "primary" : "success"}
-            size="small"
+            variant="outlined"
+            startIcon={<ReceiptLongOutlined />}
+            onClick={() => setReceiptFormatOpen(true)}
+            disabled={receiptPending}
+            sx={payButtonSx}
+          >
+            {t("details.receipt")}
+          </Button>
+        )}
+        {Number(debt || 0) > 0 || !hasPaid ? (
+          <Button
+            variant="contained"
+            color="success"
+            disableElevation
             startIcon={<PaymentsOutlined />}
             onClick={() => onPay(appt)}
-            sx={{ boxShadow: "none", textTransform: "none", whiteSpace: "nowrap" }}
+            sx={payButtonSx}
           >
-            {hasPaid ? t("details.editPayment") : t("details.acceptPayment")}
+            {hasPaid ? t("bill.payRest") : t("details.acceptPayment")}
           </Button>
-          {isPaymentAccepted && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<ReceiptLongOutlined />}
-              onClick={() => setReceiptFormatOpen(true)}
-              disabled={receiptPending}
-              sx={{ boxShadow: "none", textTransform: "none", whiteSpace: "nowrap" }}
-            >
-              {t("details.receipt")}
-            </Button>
-          )}
-        </Stack>
-      ) : undefined;
-
-    return (
-      <PaymentInfoBlock
-        payment={payment}
-        variant="detailed"
-        showIcons
-        dense
-        // У оплаченного приёма чипа скидки нет (там «Оплачено») — шапка
-        // единственное место, где виден дисконт.
-        showDiscountPercent
-        actionButton={actionBtn}
-      />
-    );
-  };
+        ) : (
+          <Button variant="outlined" onClick={() => onPay(appt)} sx={payButtonSx}>
+            {t("details.editPayment")}
+          </Button>
+        )}
+      </Stack>
+    ) : undefined;
 
   /** Действия шапки одним списком в порядке важности. */
   const actions: HeaderAction[] = [];
@@ -1096,128 +1086,75 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   : undefined
               }
               paymentsLoading={payQuery.isLoading}
-              hidePaymentChip={financeBlockVisible}
+              hideMoneyChips={billPayment != null}
             />
 
-            {/* ── Payment block — non-doctor/nurse ── */}
-            {isNonDoctor && (canViewFinance || canManageFinance) && (
-              <>
-                {hasFinanceInfo ? (
-                  // Сумма и кнопка оплаты закреплены: на приёме с несколькими
-                  // услугами и жалобами блок уезжал вверх, и касса теряла из
-                  // виду и остаток, и кнопку.
-                  <Box
-                    sx={{
-                      position: "sticky",
-                      top: 0,
-                      zIndex: 2,
-                      bgcolor: "background.paper",
-                      pb: 0.5,
-                    }}
-                  >
-                    {paymentBlock(true)}
-                  </Box>
-                ) : (
-                  canManageFinance && !isCancelled && (
-                    <Button
-                      variant="contained"
-                      color="success"
-                      size="small"
-                      startIcon={<PaymentsOutlined />}
-                      onClick={() => onPay(appt)}
-                      sx={{ alignSelf: "flex-start" }}
-                    >
-                      {t("details.acceptPayment")}
-                    </Button>
-                  )
-                )}
-                {hasRefund && (
-                  <Typography variant="caption" color="error.main" fontWeight={600} display="block">
-                    {t("details.refundLabel", { amount: som(refundedTotal) })}
-                  </Typography>
-                )}
-                <Divider />
-              </>
-            )}
-
-            {/* ── Services grouped by doctor ── */}
-            <Box>
-              <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                {t("details.servicesAndSpecialists")}
-              </Typography>
-              {appt.services.length === 0 ? (
-                <Paper
-                  variant="outlined"
-                  sx={{
-                    p: 2,
-                    bgcolor: alpha(theme.palette.primary.main, 0.02),
-                    borderRadius: "10px",
-                  }}
-                >
-                  <Typography variant="body2" color="text.disabled">
-                    {t("details.noServices")}
-                  </Typography>
-                </Paper>
-              ) : (
-                <ServiceEmployeeGroups
-                  groups={servicesByEmployee}
-                  onEmployeeClick={(group) => {
-                    setSelectedDoctorId(group.employeeId);
-                    setSelectedDoctorName(group.employeeName);
-                    setSelectedDoctorPhotoUrl(group.employeePhotoUrl);
-                    setDoctorDrawerOpen(true);
-                  }}
-                  onServiceClick={(serviceId) => {
-                    // Запасные данные из строки приёма: карточку каталога бэк
-                    // отдаёт только по активному филиалу, и услуга приёма из
-                    // соседнего филиала отвечает 404 (дровер был пустым).
-                    const line = appt.services.find((sl) => sl.service?.id === serviceId);
-                    setSelectedServiceFallback(
-                      line?.service
-                        ? {
-                            name: line.service.name,
-                            imageUrl: line.service.imageUrl ?? null,
-                            price:
-                              Number(line.price) > 0 ? line.price : line.service.basePrice ?? null,
-                            durationMinutes: line.durationMinutes ?? null,
-                          }
-                        : null,
-                    );
-                    setSelectedServiceId(serviceId);
-                    setServiceDrawerOpen(true);
-                  }}
-                />
-              )}
-            </Box>
-
-            {/* Расходники услуг — что уйдёт со склада при завершении. Перед
-                товарами: это часть услуги, а не отдельная продажа. */}
-            <AppointmentConsumptions services={appt.services} />
-
-            {/* Товары, проданные в рамках визита. */}
-            <AppointmentProductLines
-              lines={productLines}
-              formatAmount={som}
-              clickable={canViewProducts}
-              onProductClick={(id, name) => {
-                setSelectedProductId(id);
-                setSelectedProductName(name);
-                setProductDrawerOpen(true);
+            {/* Состав и оплата одним чеком: специалисты и услуги, расходники
+                чипами, товары визита, внизу итог и касса. Без sticky — итог
+                стоит там, где заканчивается состав. */}
+            <AppointmentBill
+              groups={servicesByEmployee}
+              onEmployeeClick={(group) => {
+                setSelectedDoctorId(group.employeeId);
+                setSelectedDoctorName(group.employeeName);
+                setSelectedDoctorPhotoUrl(group.employeePhotoUrl);
+                setDoctorDrawerOpen(true);
               }}
-              vaccineByProductId={canRecordVaccination ? vaccineByProductId : undefined}
-              recordedByVaccineId={recordedByVaccineId}
-              recordedLineIds={recordedLineIds}
-              // Оформление прямо со строки: запись садится на проданную вакцину,
-              // счёт и склад второй раз не трогаются (бэк, 21.08.2026).
-              onRecordVaccine={
-                canRecordVaccination && onRecordVaccination && isAppointmentActive
-                  ? (vaccineId, line) =>
-                      onRecordVaccination(appt, {
-                        vaccineId,
-                        doseNumber: doseNumberForVaccine(vaccineId),
-                        draftRecordId: draftByLineId.get(line.id),
-                      })
-                  : undefined
+              onServiceClick={(serviceId) => {
+                // Запасные данные из строки приёма: карточку каталога бэк
+                // отдаёт только по активному филиалу, и услуга приёма из
+                // соседнего филиала отвечает 404 (дровер был пустым).
+                const line = appt.services.find((sl) => sl.service?.id === serviceId);
+                setSelectedServiceFallback(
+                  line?.service
+                    ? {
+                        name: line.service.name,
+                        imageUrl: line.service.imageUrl ?? null,
+                        price:
+                          Number(line.price) > 0 ? line.price : line.service.basePrice ?? null,
+                        durationMinutes: line.durationMinutes ?? null,
+                      }
+                    : null,
+                );
+                setSelectedServiceId(serviceId);
+                setServiceDrawerOpen(true);
+              }}
+              products={
+                productLines.some((pl) => pl.status !== "canceled") ? (
+                  <AppointmentProductLines
+                    lines={productLines}
+                    formatAmount={plainAmount}
+                    clickable={canViewProducts}
+                    onProductClick={(id, name) => {
+                      setSelectedProductId(id);
+                      setSelectedProductName(name);
+                      setProductDrawerOpen(true);
+                    }}
+                    vaccineByProductId={canRecordVaccination ? vaccineByProductId : undefined}
+                    recordedByVaccineId={recordedByVaccineId}
+                    recordedLineIds={recordedLineIds}
+                    // Оформление прямо со строки: запись садится на проданную вакцину,
+                    // счёт и склад второй раз не трогаются (бэк, 21.08.2026).
+                    onRecordVaccine={
+                      canRecordVaccination && onRecordVaccination && isAppointmentActive
+                        ? (vaccineId, line) =>
+                            onRecordVaccination(appt, {
+                              vaccineId,
+                              doseNumber: doseNumberForVaccine(vaccineId),
+                              draftRecordId: draftByLineId.get(line.id),
+                            })
+                        : undefined
+                    }
+                  />
+                ) : null
+              }
+              payment={billPayment}
+              actions={billActions}
+              // Бэк списывает расходники при оплате (paid/discounted) или
+              // завершении, но и после списания отдаёт shortage и «после
+              // списания» так, будто оно впереди (test, 08.10.2026).
+              consumptionsWrittenOff={
+                appt.status === "completed" || payStatus === "paid" || payStatus === "discounted"
               }
             />
 
@@ -1298,17 +1235,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   )}
                   {/* adminComment показан вверху, рядом с пациентом. */}
                 </Stack>
-              </>
-            )}
-
-            {/* ── Payment block for doctor/nurse (cash+card only) ── */}
-            {(isDoctorRole || isNurseRole) && (canViewFinance || canManageFinance) && hasFinanceInfo && (
-              <>
-                <Divider />
-                <Typography variant="caption" color="text.secondary" display="block">
-                  {t("details.paymentInfo")}
-                </Typography>
-                {paymentBlock(false)}
               </>
             )}
 

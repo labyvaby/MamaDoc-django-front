@@ -28,11 +28,11 @@ export interface AppointmentWhenBlockProps {
   statusSource: AppointmentStatusSource;
   paymentsLoading?: boolean;
   /**
-   * Ниже на странице виден полный платёжный блок (свой статус оплаты крупно) —
-   * не повторяем его же чипом «Оплачено» здесь. Для ролей без доступа к
-   * финансам блока нет, чип остаётся единственным источником этого факта.
+   * Ниже виден итог чека «Состав и оплата» — оплата, долг, скидка и способы
+   * там уже есть, денежные чипы здесь были бы дублем. Для ролей без доступа к
+   * финансам итога нет, и чипы остаются единственным источником этих фактов.
    */
-  hidePaymentChip?: boolean;
+  hideMoneyChips?: boolean;
   /** Отменить ошибочную отметку «Пациент здесь». */
   onUndoArrived?: () => void;
   /** Отменить ошибочное «Подтвердить» — вернуть приём в «Ожидаем». */
@@ -58,7 +58,7 @@ const AppointmentWhenBlock: React.FC<AppointmentWhenBlockProps> = ({
   hasBankConfirmation,
   statusSource,
   paymentsLoading,
-  hidePaymentChip,
+  hideMoneyChips,
   onUndoArrived,
   onUndoConfirm,
 }) => {
@@ -210,7 +210,7 @@ const AppointmentWhenBlock: React.FC<AppointmentWhenBlockProps> = ({
       >
         <AppointmentStatusChips
           appointment={statusSource}
-          hidePayChip={hidePaymentChip}
+          hideMoneyChips={hideMoneyChips}
           onUndoArrived={onUndoArrived}
           onUndoConfirm={onUndoConfirm}
         />
