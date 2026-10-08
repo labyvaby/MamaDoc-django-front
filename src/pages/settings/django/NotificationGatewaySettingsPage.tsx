@@ -53,6 +53,9 @@ type FormState = {
   whatsappLogin: string;
   whatsappPassword: string;
   whatsappPasswordClear: boolean;
+  whatsappWabaId: string;
+  whatsappManagementToken: string;
+  whatsappManagementTokenClear: boolean;
   chatwootSource: string;
   chatwootToken: string;
   chatwootTokenClear: boolean;
@@ -70,6 +73,9 @@ const toForm = (settings: NotificationSettings): FormState => ({
   whatsappLogin: settings.credentials.whatsappLogin,
   whatsappPassword: "",
   whatsappPasswordClear: false,
+  whatsappWabaId: settings.credentials.whatsappWabaId ?? "",
+  whatsappManagementToken: "",
+  whatsappManagementTokenClear: false,
   chatwootSource: settings.credentials.chatwootSource,
   chatwootToken: "",
   chatwootTokenClear: false,
@@ -128,6 +134,9 @@ const NotificationGatewaySettingsPage: React.FC = () => {
           whatsappLogin: form.whatsappLogin,
           whatsappPassword: form.whatsappPassword,
           whatsappPasswordClear: form.whatsappPasswordClear,
+          whatsappWabaId: form.whatsappWabaId,
+          whatsappManagementToken: form.whatsappManagementToken,
+          whatsappManagementTokenClear: form.whatsappManagementTokenClear,
           chatwootSource: form.chatwootSource,
           chatwootToken: form.chatwootToken,
           chatwootTokenClear: form.chatwootTokenClear,
@@ -137,6 +146,7 @@ const NotificationGatewaySettingsPage: React.FC = () => {
     onSuccess: (data) => {
       setForm(toForm(data));
       queryClient.setQueryData(djangoQueryKeys.notifications.settings(organizationId ?? null, null), data);
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.notifications.templates(data.organizationId) });
       setMessage({ type: "success", text: t("notificationGateway.saveSuccess") });
     },
     onError: (err) => {
@@ -198,6 +208,46 @@ const NotificationGatewaySettingsPage: React.FC = () => {
         ) : (
           <>
             <Alert severity="info">{t("notificationGateway.info")}</Alert>
+            <Card variant="outlined">
+              <CardHeader
+                avatar={<WhatsApp color="primary" />}
+                title={t("notificationGateway.meta.title")}
+                subheader={t("notificationGateway.meta.subtitle")}
+                action={<Chip size="small"
+                  color={configured?.whatsappWabaId && configured?.whatsappManagementConfigured ? "success" : "default"}
+                  label={t(configured?.whatsappWabaId && configured?.whatsappManagementConfigured ? "notificationGateway.status.configured" : "notificationGateway.status.notConfigured")}
+                />}
+              />
+              <Divider />
+              <CardContent>
+                <Stack spacing={2}>
+                  <TextField fullWidth label={t("notificationGateway.meta.wabaId")}
+                    value={form.whatsappWabaId}
+                    onChange={(event) => update({ whatsappWabaId: event.target.value })}
+                    helperText={t("notificationGateway.meta.wabaHint")}
+                    slotProps={{ htmlInput: { inputMode: "numeric", maxLength: 128 } }}
+                    disabled={saveMutation.isPending}
+                  />
+                  <TextField fullWidth type="password" autoComplete="new-password"
+                    label={t("notificationGateway.meta.token")}
+                    value={form.whatsappManagementToken}
+                    onChange={(event) => update({ whatsappManagementToken: event.target.value, whatsappManagementTokenClear: false })}
+                    helperText={configured?.whatsappManagementConfigured ? t("notificationGateway.secret.keepHint") : t("notificationGateway.meta.tokenHint")}
+                    slotProps={{ htmlInput: { maxLength: 1024 } }}
+                    disabled={saveMutation.isPending}
+                  />
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={2} justifyContent="space-between">
+                    <FormControlLabel control={<Switch checked={form.whatsappManagementTokenClear}
+                      onChange={(event) => update({ whatsappManagementTokenClear: event.target.checked, whatsappManagementToken: "" })}
+                      disabled={saveMutation.isPending}
+                    />} label={t("notificationGateway.meta.clear")} />
+                    <Button variant="outlined" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+                      {t("notificationGateway.saveButton")}
+                    </Button>
+                  </Stack>
+                </Stack>
+              </CardContent>
+            </Card>
             {isSuper && organizationId && <WhatsAppTemplatesSection key={organizationId} organizationId={organizationId} />}
 
             <Card variant="outlined">

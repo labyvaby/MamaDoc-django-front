@@ -153,7 +153,7 @@ export const WhatsAppTemplatesSection: React.FC<{ organizationId: number }> = ({
                 {row.status === "DRAFT" && <Button onClick={() => setEditor({ ...row, shared: false, code: "", organizationId })}>{label("edit")}</Button>}
                 <Button onClick={() => setEditor({ ...row, id: undefined, name: `${row.name.slice(0, 125)}_v2`, shared: false, code: "", organizationId })}>{label("copy")}</Button>
                 {["DRAFT", "SUBMITTING"].includes(row.status) ? <Button variant="outlined" disabled={!library.data?.canSubmit || action.isPending} onClick={() => action.mutate({ row, sync: false })}>
-                  {label(row.status === "SUBMITTING" ? "retrySubmit" : "submit")}
+                  {label(row.status === "SUBMITTING" ? row.managementProvider === "meta" ? "checkSubmission" : "retrySubmit" : "submit")}
                 </Button> : <Button startIcon={<RefreshOutlined />} disabled={!library.data?.canSubmit || action.isPending} onClick={() => action.mutate({ row, sync: true })}>{label("refreshStatus")}</Button>}
               </Stack>
             </Stack>)}

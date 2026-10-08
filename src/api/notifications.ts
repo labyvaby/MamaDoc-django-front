@@ -30,6 +30,8 @@ export interface MessagingCredentials {
   smsConfigured: boolean;
   whatsappLogin: string;
   whatsappConfigured: boolean;
+  whatsappWabaId?: string;
+  whatsappManagementConfigured?: boolean;
   chatwootSource: string;
   chatwootConfigured: boolean;
 }
@@ -63,6 +65,9 @@ export interface MessagingCredentialsInput {
   whatsappLogin?: string;
   whatsappPassword?: string;
   whatsappPasswordClear?: boolean;
+  whatsappWabaId?: string;
+  whatsappManagementToken?: string;
+  whatsappManagementTokenClear?: boolean;
   chatwootSource?: string;
   chatwootToken?: string;
   chatwootTokenClear?: boolean;
@@ -170,6 +175,9 @@ export interface WhatsAppTemplate {
   rejectionReason: string;
   syncedAt: string | null;
   ready: boolean;
+  managementProvider?: string;
+  metaWabaId?: string;
+  metaCategory?: string;
 }
 
 export interface WhatsAppTemplateLibrary {
