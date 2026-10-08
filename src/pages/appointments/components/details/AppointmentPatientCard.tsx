@@ -83,8 +83,12 @@ const AppointmentPatientCard: React.FC<AppointmentPatientCardProps> = ({
           sx={{
             p: 1.75,
             display: "flex",
+            flexWrap: "wrap",
             alignItems: "center",
             gap: 1.5,
+            // Ширину кнопке правки решает сама карточка: в узкой колонке
+            // приёма (рядом открыто заключение) она съедала имя до «Му…».
+            containerType: "inline-size",
             borderRadius: "12px",
             bgcolor: subtleBg(theme),
             cursor: onOpenPatient ? "pointer" : "default",
@@ -163,19 +167,27 @@ const AppointmentPatientCard: React.FC<AppointmentPatientCardProps> = ({
           {/* Правка карты прямо из приёма: телефон и дату рождения чаще всего
               уточняют именно в момент визита. */}
           {onEditPatient && (
-            <Button
-              size="small"
-              variant="outlined"
-              disabled={editPatientDisabled}
-              startIcon={<EditOutlined sx={{ fontSize: 18 }} />}
-              onClick={(e) => {
-                e.stopPropagation();
-                onEditPatient();
+            <Box
+              sx={{
+                flexShrink: 0,
+                // Узкая карточка — кнопка своей строкой под именем (52 аватар + 12 зазор).
+                "@container (max-width: 460px)": { flexBasis: "100%", pl: "64px" },
               }}
-              sx={{ flexShrink: 0, whiteSpace: "nowrap", borderRadius: "10px" }}
             >
-              {t("details.editPatientButton")}
-            </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={editPatientDisabled}
+                startIcon={<EditOutlined sx={{ fontSize: 18 }} />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditPatient();
+                }}
+                sx={{ whiteSpace: "nowrap", borderRadius: "10px" }}
+              >
+                {t("details.editPatientButton")}
+              </Button>
+            </Box>
           )}
         </Paper>
       ) : (
