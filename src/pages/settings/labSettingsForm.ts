@@ -4,7 +4,7 @@
  * логика тестируется отдельно.
  */
 
-import type { LabConfig, LabConfigInput } from "../../api/lab";
+import type { LabAccountConfigInput, LabConfig, LabConfigInput } from "../../api/lab";
 
 export interface LabBranchRow {
   branchId: number;
@@ -163,6 +163,53 @@ export function labFormToInput(form: LabSettingsForm): LabConfigInput {
       clearCredentials: row.clearCredentials,
       eveningEnabled: row.eveningEnabled,
       eveningLisRegistryId: positiveInt(row.eveningLisRegistryId),
+      eveningLisUsername: row.eveningLisUsername.trim(),
+      eveningLisPassword: row.eveningLisPassword,
+      clearEveningCredentials: row.clearEveningCredentials,
+    })),
+  };
+}
+
+/** Automatic setup needs only credentials; provider IDs stay on the server. */
+export function findLabAccountProblem(form: LabSettingsForm): string | null {
+  const shared = !!form.lisUsername.trim();
+  if (shared && (!form.hasPassword || form.lisPassword) && !form.lisPassword.trim()) {
+    return "Укажите пароль общей учётной записи.";
+  }
+  if (!shared && (form.hasPassword || form.lisPassword)) return "Укажите логин общей учётной записи.";
+  let hasAccount = shared || !!form.lisOrganizationId;
+  for (const row of form.branches) {
+    const day = !row.clearCredentials && !!(row.lisUsername.trim() || row.hasPassword || row.lisPassword);
+    if (day) {
+      if (!row.lisUsername.trim()) return `${row.branchName}: укажите логин филиала.`;
+      if ((!row.hasPassword || row.lisUsername.trim() !== row.savedUsername) && !row.lisPassword.trim()) {
+        return `${row.branchName}: укажите пароль филиала.`;
+      }
+      hasAccount = true;
+    }
+    if (row.eveningEnabled) {
+      if (!day || row.clearEveningCredentials || !row.eveningLisUsername.trim()) {
+        return `${row.branchName}: для двух смен нужны логин и пароль каждой смены.`;
+      }
+      if ((!row.eveningHasPassword || row.eveningLisUsername.trim() !== row.eveningSavedUsername) && !row.eveningLisPassword.trim()) {
+        return `${row.branchName}: укажите пароль вечерней смены.`;
+      }
+    }
+  }
+  return hasAccount ? null : "Укажите логин и пароль хотя бы одного филиала.";
+}
+
+export function labAccountsFormToInput(form: LabSettingsForm): LabAccountConfigInput {
+  return {
+    chargeInstruments: form.chargeInstruments,
+    lisUsername: form.lisUsername.trim(),
+    lisPassword: form.lisPassword,
+    branches: form.branches.map((row) => ({
+      branchId: row.branchId,
+      lisUsername: row.lisUsername.trim(),
+      lisPassword: row.lisPassword,
+      clearCredentials: row.clearCredentials,
+      eveningEnabled: row.eveningEnabled,
       eveningLisUsername: row.eveningLisUsername.trim(),
       eveningLisPassword: row.eveningLisPassword,
       clearEveningCredentials: row.clearEveningCredentials,

@@ -1,6 +1,9 @@
 import React from "react";
 import {
   Alert,
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
   CircularProgress,
@@ -18,6 +21,7 @@ import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import SyncOutlined from "@mui/icons-material/SyncOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
@@ -25,7 +29,7 @@ import { SettingsLayout } from "./SettingsLayout";
 import { InfoTile } from "../../components/ui";
 import {
   getLabConfig,
-  saveLabConfig,
+  connectLabAccounts,
   startLabCatalogSync,
   type LabConfig,
 } from "../../api/lab";
@@ -35,9 +39,9 @@ import dayjs from "dayjs";
 
 import { formatDateRu } from "../../utility/format";
 import {
-  findLabSettingsProblem,
+  findLabAccountProblem,
   labConfigToForm,
-  labFormToInput,
+  labAccountsFormToInput,
   type LabBranchRow,
   type LabSettingsForm,
 } from "./labSettingsForm";
@@ -93,14 +97,14 @@ const LabSettingsPage: React.FC = () => {
     );
   };
 
-  const problem = form ? findLabSettingsProblem(form) : null;
+  const problem = form ? findLabAccountProblem(form) : null;
 
   const handleSave = async () => {
     if (!form || problem) return;
     setBusy(true);
     setSaveError(null);
     try {
-      const next: LabConfig = await saveLabConfig(labFormToInput(form));
+      const next: LabConfig = await connectLabAccounts(labAccountsFormToInput(form));
       queryClient.setQueryData(djangoQueryKeys.lab.config, next);
       // Настройки раздела (`configured`, плата за пробирки) читает дровер
       // приёма — после сохранения ему нужно узнать, что раздел ожил.
@@ -149,9 +153,8 @@ const LabSettingsPage: React.FC = () => {
             Лаборатория (ЛИС ExpressLab)
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Идентификаторы выдаёт ExpressLab при подключении клиники: код организации,
-            врач по умолчанию и точка регистрации с лабораторией-исполнителем для каждого
-            филиала. Без точки регистрации филиал анализы не принимает.
+            Введите логин и пароль, выданные ExpressLab каждому филиалу.
+            Данные подключения определятся автоматически после проверки доступов.
           </Typography>
         </Box>
 
@@ -169,43 +172,21 @@ const LabSettingsPage: React.FC = () => {
 
         {config && !config.configured && (
           <Alert severity="warning">
-            Раздел ещё не подключён: приём анализов недоступен, пока не заполнены код
-            организации и хотя бы одна точка регистрации.
+            Для подключения укажите доступы хотя бы одного филиала и нажмите
+            «Проверить и сохранить».
           </Alert>
         )}
 
         {form && (
           <>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-              <TextField
-                label="Код организации в ЛИС"
-                size="small"
-                value={form.lisOrganizationId}
-                onChange={(e) => patch({ lisOrganizationId: e.target.value })}
-                disabled={busy}
-                inputMode="numeric"
-                helperText="organization_id из договора с ExpressLab"
-                sx={{ maxWidth: 320 }}
-              />
-              <TextField
-                label="Врач по умолчанию в ЛИС"
-                size="small"
-                value={form.lisDoctorId}
-                onChange={(e) => patch({ lisDoctorId: e.target.value })}
-                disabled={busy}
-                inputMode="numeric"
-                helperText="doctor_id, если направивший врач не выбран"
-                sx={{ maxWidth: 320 }}
-              />
-            </Stack>
-
-            <Box>
-              <Typography variant="subtitle2">Общая учётная запись ЛИС</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Используется филиалами без отдельных доступов. Если у каждого филиала
-                своя учётная запись, эти поля можно оставить пустыми.
-              </Typography>
-            </Box>
+            <Accordion disableGutters elevation={0} sx={{ maxWidth: 760 }}>
+              <AccordionSummary expandIcon={<ExpandMoreOutlined />}>
+                <Typography component="span" variant="subtitle2">Общая учётная запись — необязательно</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Только если лаборатория выдала один доступ для всех филиалов.
+                </Typography>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
                 label="Логин в ЛИС"
@@ -234,6 +215,8 @@ const LabSettingsPage: React.FC = () => {
                 sx={{ maxWidth: 320 }}
               />
             </Stack>
+              </AccordionDetails>
+            </Accordion>
 
             <Box>
               <FormControlLabel
@@ -259,8 +242,8 @@ const LabSettingsPage: React.FC = () => {
                 Подключение филиалов
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Для каждого филиала укажите точку регистрации, лабораторию и его
-                логин с паролем. Пустые идентификаторы — филиал анализы не принимает.
+                Для филиала достаточно логина и пароля. Если после 17:00 используется
+                другой доступ, включите две смены.
               </Typography>
             </Box>
 
@@ -269,6 +252,9 @@ const LabSettingsPage: React.FC = () => {
                 <Stack key={row.branchId} spacing={2}>
                   <Typography variant="subtitle2" fontWeight={600}>
                     {row.branchName}
+                  </Typography>
+                  <Typography variant="body2" color={row.lisRegistryId ? "success.main" : "text.secondary"}>
+                    {row.lisRegistryId ? "Настроен" : "Доступы ещё не заданы"}
                   </Typography>
                   <Box>
                     <FormControlLabel
@@ -285,38 +271,13 @@ const LabSettingsPage: React.FC = () => {
                   <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                     <TextField
                       fullWidth
-                      label={row.eveningEnabled ? "ID регистратора до 17:00" : "ID регистратора в ЛИС"}
-                      size="small"
-                      value={row.lisRegistryId}
-                      onChange={(e) => patchBranch(row.branchId, { lisRegistryId: e.target.value })}
-                      disabled={busy}
-                      inputMode="numeric"
-                      placeholder="не задана"
-                      helperText="ID учётной записи регистратора в ЛИС, а не код пункта приёма"
-                    />
-                    <TextField
-                      fullWidth
-                      label="Лаборатория в ЛИС"
-                      size="small"
-                      value={row.lisLaboratoryId}
-                      onChange={(e) =>
-                        patchBranch(row.branchId, { lisLaboratoryId: e.target.value })
-                      }
-                      disabled={busy}
-                      inputMode="numeric"
-                      placeholder="не задана"
-                    />
-                  </Stack>
-                  <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-                    <TextField
-                      fullWidth
                       label={row.eveningEnabled ? "Логин до 17:00" : "Логин филиала в ЛИС"}
                       size="small"
                       value={row.lisUsername}
                       onChange={(e) => patchBranch(row.branchId, { lisUsername: e.target.value, clearCredentials: false })}
                       disabled={busy}
                       autoComplete="off"
-                      helperText={row.lisUsername ? "Учётная запись этого филиала" : "Без отдельных доступов используется общая учётная запись"}
+                      helperText="Логин, выданный ExpressLab этому филиалу"
                     />
                     <TextField
                       fullWidth
@@ -331,7 +292,7 @@ const LabSettingsPage: React.FC = () => {
                       helperText={row.hasPassword ? "Пустое поле сохраняет пароль; при смене логина введите его заново" : "Пароль, выданный для этого филиала"}
                     />
                   </Stack>
-                  {!row.eveningEnabled && (row.lisUsername || row.hasPassword || row.lisPassword) && (
+                  {!row.eveningEnabled && form.lisUsername && (row.lisUsername || row.hasPassword || row.lisPassword) && (
                     <Box>
                       <Button
                         size="small"
@@ -348,10 +309,6 @@ const LabSettingsPage: React.FC = () => {
                   {row.eveningEnabled && (
                     <Stack spacing={2}>
                       <Typography variant="subtitle2">Смена с 17:00</Typography>
-                      <TextField fullWidth size="small" label="ID регистратора с 17:00"
-                        value={row.eveningLisRegistryId} inputMode="numeric" disabled={busy}
-                        onChange={(e) => patchBranch(row.branchId, { eveningLisRegistryId: e.target.value })}
-                        helperText="ID регистратора вечерней учётной записи; лаборатория общая для обеих смен" />
                       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                         <TextField fullWidth size="small" label="Логин с 17:00" disabled={busy}
                           value={row.eveningLisUsername} autoComplete="off"
@@ -392,7 +349,7 @@ const LabSettingsPage: React.FC = () => {
                 disabled={busy || problem !== null}
                 startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
               >
-                {busy ? "Сохраняем…" : "Сохранить"}
+                {busy ? "Проверяем доступы…" : "Проверить и сохранить"}
               </Button>
             </Box>
 
