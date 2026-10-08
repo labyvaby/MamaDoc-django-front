@@ -74,6 +74,7 @@ import { DjangoProductFormDrawer } from "../../../components/products/django/Dja
 import { DjangoProductImageSlider } from "../../../components/products/django/DjangoProductImageSlider";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
 import { describeFailures, runBulk, toggleSelection, type BulkResult } from "../../../utility/bulkSelection";
+import { GroupSelectButton } from "../../../components/storage/GroupSelectButton";
 import { BulkCategoryDialog, BulkPriceDialog, type CategoryChoice } from "./BulkProductDialogs";
 import { exportProductsXlsx } from "./exportProductsXlsx";
 import { useLongPress } from "../../../hooks/useLongPress";
@@ -451,6 +452,13 @@ const DjangoProductsPage: React.FC = () => {
     startSelection(id);
   }, !bulkBusy);
 
+  // Группа (категория/бренд/сезон) отмечается разом; Shift-диапазон после
+  // неё считается заново.
+  const setGroupChecked = (next: Set<number>) => {
+    setCheckedIds(next);
+    anchorIdRef.current = null;
+  };
+
   const clearChecked = () => {
     setCheckedIds(new Set());
     anchorIdRef.current = null;
@@ -577,6 +585,19 @@ const DjangoProductsPage: React.FC = () => {
     );
   };
 
+  // Один и тот же ключ в обеих шапках: при первом выборе шапка меняется,
+  // а окно групп остаётся открытым — можно отметить несколько групп подряд.
+  const groupSelect = (
+    <GroupSelectButton
+      key="group-select"
+      items={filteredProducts}
+      checkedIds={checkedIds}
+      onCheckedChange={setGroupChecked}
+      disabled={loading || bulkBusy}
+      layoutId="products-group-select"
+    />
+  );
+
   if (!permLoading && !canView) return <AccessDenied />;
 
   return (
@@ -665,6 +686,7 @@ const DjangoProductsPage: React.FC = () => {
                           : `Остаток на ${Math.round(checkedTotals.value).toLocaleString()} сом`}
                       </Typography>
                     </Box>
+                    {groupSelect}
                     <Button
                       size="small"
                       variant="contained"
@@ -688,6 +710,7 @@ const DjangoProductsPage: React.FC = () => {
                     <Typography variant="subtitle2" sx={{ fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>
                       Товары ({isFilterActive ? `${filteredProducts.length} из ${products.length}` : products.length})
                     </Typography>
+                    {groupSelect}
                     <Stack direction="row" alignItems="center" spacing={1}>
                       <TextField
                         select
