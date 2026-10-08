@@ -86,6 +86,7 @@ const NotificationGatewaySettingsPage: React.FC = () => {
   usePageTitle(t("notificationGateway.pageTitle"));
   const queryClient = useQueryClient();
   const canView = useCan("notifications.manage");
+  const canManageTemplates = useCan("notifications.templates.manage");
   const { isSuperAdmin, activeOrganization, memberships, loading: permLoading } = usePermissions();
   const isSuper = isSuperAdmin();
   const isMultiOrg = (memberships ?? []).length > 1;
@@ -248,7 +249,7 @@ const NotificationGatewaySettingsPage: React.FC = () => {
                 </Stack>
               </CardContent>
             </Card>
-            {isSuper && organizationId && <WhatsAppTemplatesSection key={organizationId} organizationId={organizationId} />}
+            {canManageTemplates && settingsQuery.data?.organizationId && <WhatsAppTemplatesSection key={settingsQuery.data.organizationId} organizationId={settingsQuery.data.organizationId} canCreateShared={isSuper} />}
 
             <Card variant="outlined">
               <CardHeader

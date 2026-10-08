@@ -15,7 +15,7 @@ const EVENTS = ["created_10m", "reminder_2h", "rescheduled_10m", "appointment_ch
 
 type Editor = WhatsAppTemplateInput & { id?: number; shared: boolean; code: string };
 
-export const WhatsAppTemplatesSection: React.FC<{ organizationId: number }> = ({ organizationId }) => {
+export const WhatsAppTemplatesSection: React.FC<{ organizationId: number; canCreateShared: boolean }> = ({ organizationId, canCreateShared }) => {
   const { t } = useT("settings");
   const label = (key: string) => t(`whatsappTemplates.${key}`);
   const client = useQueryClient();
@@ -87,9 +87,9 @@ export const WhatsAppTemplatesSection: React.FC<{ organizationId: number }> = ({
           <Typography variant="h6">{label("title")}</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ maxWidth: "70ch" }}>{label("description")}</Typography>
         </Box>
-        <Button startIcon={<AddOutlined />} onClick={() => start(undefined, tab === 0)} disabled={Boolean(editor)} sx={{ flexShrink: 0 }}>
+        {(tab === 1 || canCreateShared) && <Button startIcon={<AddOutlined />} onClick={() => start(undefined, tab === 0)} disabled={Boolean(editor)} sx={{ flexShrink: 0 }}>
           {label(tab === 0 ? "addShared" : "addDraft")}
-        </Button>
+        </Button>}
       </Stack>
       {feedback && <Alert severity={feedback.severity} onClose={() => setFeedback(null)} role="status">{feedback.text}</Alert>}
       {library.isError && <Alert severity="error" action={<Button onClick={() => void library.refetch()}>{label("retry")}</Button>}>
