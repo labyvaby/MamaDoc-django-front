@@ -293,6 +293,8 @@ export interface LabBranchRegistry {
   branchName: string;
   lisRegistryId: number | null;
   lisLaboratoryId: number | null;
+  lisUsername?: string;
+  hasPassword?: boolean;
 }
 
 export interface LabMirrorStats {
@@ -330,6 +332,9 @@ export interface LabBranchRegistryInput {
   branchId: number;
   lisRegistryId?: number | null;
   lisLaboratoryId?: number | null;
+  lisUsername?: string;
+  lisPassword?: string;
+  clearCredentials?: boolean;
 }
 
 export interface LabConfigInput {
