@@ -17,6 +17,7 @@ import {
 } from "../../../../utility/format";
 import { subtleBg, subtleBorder } from "../../../../theme/uiHelpers";
 import { useT } from "../../../../i18n/VerticalProvider";
+import type { PaymentPhase } from "../../../../api/payments";
 import {
   buildEmployeeAccentMap,
   employeeInitials,
@@ -77,6 +78,12 @@ export interface BillPayment {
   insurance: number;
   insurerName?: string | null;
   isCancelled: boolean;
+  /**
+   * Фаза счёта (`utility/paymentPhase`): до начала приёма остаток — «к
+   * оплате», после — долг (правило заказчика 05.10.2026). Нет фазы — итог
+   * говорит нейтрально «Осталось оплатить».
+   */
+  phase?: PaymentPhase | null;
 }
 
 /**
@@ -445,10 +452,12 @@ const SumRow: React.FC<{ label: React.ReactNode; value: string; color?: string }
  * суммы появляются, только когда итог от них отличается. У неоплаченного
  * приёма без скидки остаётся одна строка «К оплате».
  */
-const BillFooter: React.FC<{ payment: BillPayment | null; actions?: React.ReactNode }> = ({
-  payment: p,
-  actions,
-}) => {
+const BillFooter: React.FC<{
+  payment: BillPayment | null;
+  actions?: React.ReactNode;
+  /** Ниже стоит история оплат — способы и суммы оплат показывает она. */
+  withHistory: boolean;
+}> = ({ payment: p, actions, withHistory }) => {
   const { t } = useT("appointments");
 
   if (!p) {
@@ -485,27 +494,41 @@ const BillFooter: React.FC<{ payment: BillPayment | null; actions?: React.ReactN
     },
   ].filter((m) => m.amount > 0);
 
-  const showSubtotal = hasDiscount || isPartial;
+  // Внесённые суммы — строками «− 500», только если ниже нет истории оплат:
+  // лента показывает их с датой, кассиром и способом.
+  const showMethodRows = isPartial && !withHistory;
+  // «Итого» нужен, когда от него что-то отнимают строками ниже; с историей
+  // частичную оплату объясняет подпись «Оплачено 500 из 1 251».
+  const showSubtotal = hasDiscount || showMethodRows;
   const showRows = showSubtotal || p.refunded > 0;
 
   let label: string;
   let labelColor: string;
   let amount: number;
   let caption: string | null = null;
+  const paidOf = (key: string) =>
+    t(key, { paid: plainAmount(p.paidTotal), total: plainAmount(p.finalTotal) });
   if (isClosed) {
     label = t("bill.paid");
     labelColor = "success.onSurface";
     amount = p.netPaid > 0 ? p.netPaid : p.finalTotal;
     // Способы оплаты — подписью: отдельные строки повторили бы итог.
-    caption =
-      methods.length === 1
+    caption = withHistory
+      ? null
+      : methods.length === 1
         ? methods[0].label
         : methods.map((m) => `${m.label} ${plainAmount(m.amount)}`).join(" · ") || null;
+  } else if (p.phase === "debt") {
+    label = t("bill.debt");
+    labelColor = "error.onSurface";
+    amount = p.debt;
+    caption = isPartial && !showMethodRows ? paidOf("bill.paidOf") : null;
   } else if (isPartial) {
-    label = t("bill.remaining");
+    const prepaid = p.phase === "prepaid";
+    label = prepaid ? t("bill.toPayAtVisit") : t("bill.remaining");
     labelColor = "warning.onSurface";
     amount = p.debt;
-    caption = t("bill.remainingOf", { amount: plainAmount(p.finalTotal) });
+    caption = showMethodRows ? null : paidOf(prepaid ? "bill.prepaidOf" : "bill.paidOf");
   } else {
     label = t("bill.toPay");
     labelColor = "text.secondary";
@@ -526,7 +549,7 @@ const BillFooter: React.FC<{ payment: BillPayment | null; actions?: React.ReactN
               color="primary.onSurface"
             />
           )}
-          {isPartial &&
+          {showMethodRows &&
             methods.map((m) => (
               <SumRow key={m.key} label={m.label} value={`− ${plainAmount(m.amount)}`} />
             ))}
@@ -603,6 +626,8 @@ export interface AppointmentBillProps {
   actions?: React.ReactNode;
   /** Расходники уже списаны (приём оплачен или завершён) — нехватку не показываем. */
   consumptionsWrittenOff?: boolean;
+  /** История оплат (`AppointmentPaymentHistory embedded`) — последней строкой чека. */
+  history?: React.ReactNode;
 }
 
 /**
@@ -622,6 +647,7 @@ const AppointmentBill: React.FC<AppointmentBillProps> = ({
   payment,
   actions,
   consumptionsWrittenOff = false,
+  history,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -632,7 +658,7 @@ const AppointmentBill: React.FC<AppointmentBillProps> = ({
     [groups, mode],
   );
 
-  const hasFooter = Boolean(payment || actions);
+  const hasFooter = Boolean(payment || actions || history);
   const sections: React.ReactNode[] = groups.map((group) => {
     const accent =
       group.employeeId !== null ? colorByEmployee.get(group.employeeId) : undefined;
@@ -717,7 +743,8 @@ const AppointmentBill: React.FC<AppointmentBillProps> = ({
         {hasFooter && (
           <>
             <Box sx={{ mx: 2.5, borderTop: "1px dashed", borderColor: "divider" }} />
-            <BillFooter payment={payment} actions={actions} />
+            <BillFooter payment={payment} actions={actions} withHistory={Boolean(history)} />
+            {history}
           </>
         )}
       </Paper>

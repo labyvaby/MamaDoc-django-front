@@ -66,6 +66,7 @@ import {
   type SettlementView,
 } from "./paymentHistoryModel";
 import { usePaymentSummarySync } from "./usePaymentSummarySync";
+import { subtleBg, subtleBorder } from "../../../../theme/uiHelpers";
 
 const MotionBox = motion.create(Box);
 
@@ -677,6 +678,11 @@ export interface AppointmentPaymentHistoryProps {
   /** finance.manage — принять оплату прямо из пустой истории. */
   canAcceptPayment: boolean;
   onPay: () => void;
+  /**
+   * Внутри чека «Состав и оплата»: без своей рамки, полосы расчёта, чипа фазы
+   * и кнопки оплаты — итог и касса стоят в чеке прямо над историей.
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -693,6 +699,7 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
   onRetry,
   canAcceptPayment,
   onPay,
+  embedded = false,
 }) => {
   const { t } = useT("appointments");
   const theme = useTheme();
@@ -722,6 +729,9 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
     [summary, appointment],
   );
   const eventsCount = countMoneyEvents(days);
+  // В чеке пустой истории раскрывать нечего: «Пока без оплат» уже в шапке,
+  // а принять оплату можно кнопкой итога прямо над ней.
+  const emptyEmbedded = embedded && !loading && !error && summary != null && days.length === 0;
 
   const toggle = () => {
     setOpen((v) => {
@@ -742,16 +752,26 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
   return (
     <Paper
       variant="outlined"
-      sx={{
-        borderRadius: "14px",
-        overflow: "hidden",
-        bgcolor: "background.paper",
-      }}
+      sx={
+        embedded
+          ? {
+              border: 0,
+              borderTop: `1px solid ${subtleBorder(theme)}`,
+              borderRadius: 0,
+              bgcolor: "transparent",
+            }
+          : {
+              borderRadius: "14px",
+              overflow: "hidden",
+              bgcolor: "background.paper",
+            }
+      }
     >
       {/* ── Шапка ── */}
-      <Stack direction="row" alignItems="center" sx={{ pr: 1 }}>
+      <Stack direction="row" alignItems="center" sx={{ pr: embedded ? 1.5 : 1 }}>
         <ButtonBase
           onClick={toggle}
+          disabled={emptyEmbedded}
           aria-expanded={open}
           aria-label={open ? t("paymentHistory.collapse") : t("paymentHistory.expand")}
           sx={{
@@ -760,7 +780,8 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
             justifyContent: "flex-start",
             textAlign: "left",
             gap: 1.25,
-            px: 1.75,
+            // В чеке — по отступам его строк.
+            px: embedded ? 2.5 : 1.75,
             py: 1.25,
           }}
         >
@@ -772,8 +793,8 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
               display: "grid",
               placeItems: "center",
               flexShrink: 0,
-              color: "primary.main",
-              bgcolor: alpha(theme.palette.primary.main, 0.1),
+              color: embedded ? "text.secondary" : "primary.main",
+              bgcolor: embedded ? subtleBg(theme, true) : alpha(theme.palette.primary.main, 0.1),
             }}
           >
             <ReceiptLongOutlined sx={{ fontSize: 20 }} />
@@ -793,7 +814,7 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
                     : t("paymentHistory.countEmpty")}
               </Typography>
               <AnimatePresence initial={false} mode="popLayout">
-                {view && phaseAccent && (
+                {!embedded && view && phaseAccent && (
                   <motion.span
                     key={view.phase}
                     initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
@@ -828,13 +849,13 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
               </AnimatePresence>
             </Stack>
           </Box>
-          <ExpandMoreOutlined
+          {!emptyEmbedded && <ExpandMoreOutlined
             sx={{
               color: "text.secondary",
               transition: "transform .25s ease",
               transform: open ? "rotate(180deg)" : "none",
             }}
-          />
+          />}
         </ButtonBase>
         {canOpenSettings && (
           <Tooltip title={t("paymentHistory.settings")}>
@@ -845,7 +866,7 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
         )}
       </Stack>
 
-      <Collapse in={open} timeout={reduceMotion ? 0 : 280}>
+      <Collapse in={open && !emptyEmbedded} timeout={reduceMotion ? 0 : 280}>
         <Divider />
         {loading ? (
           <Stack spacing={1.25} sx={{ p: 1.75 }}>
@@ -876,11 +897,16 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
           </Box>
         ) : (
           <>
-            <Box sx={{ pt: 1.5 }}>
-              <SettlementPanel view={view} startsAt={appointment.scheduledAt} reduceMotion={reduceMotion} />
-            </Box>
-            <Divider />
-            <Box sx={{ px: 1.75, pt: 0.75, pb: 1.25 }}>
+            {/* В чеке остаток и предоплату говорит его итог — полоса была бы дублем. */}
+            {!embedded && (
+              <>
+                <Box sx={{ pt: 1.5 }}>
+                  <SettlementPanel view={view} startsAt={appointment.scheduledAt} reduceMotion={reduceMotion} />
+                </Box>
+                <Divider />
+              </>
+            )}
+            <Box sx={{ px: embedded ? 2.5 : 1.75, pt: 0.75, pb: 1.25 }}>
               {days.length === 0 ? (
                 <Stack alignItems="center" textAlign="center" spacing={0.75} sx={{ py: 2.5 }}>
                   <MotionBox
@@ -905,7 +931,7 @@ export const AppointmentPaymentHistory: React.FC<AppointmentPaymentHistoryProps>
                   <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 320 }}>
                     {t("paymentHistory.empty.hint")}
                   </Typography>
-                  {canAcceptPayment && !isCancelled && view.remaining > 0 && (
+                  {!embedded && canAcceptPayment && !isCancelled && view.remaining > 0 && (
                     <Button
                       size="small"
                       variant="outlined"

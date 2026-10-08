@@ -654,6 +654,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
           insurance: insurancePaid,
           insurerName: insurancePayment?.insurerName ?? null,
           isCancelled,
+          phase: paymentPhase,
         }
       : null;
 
@@ -1146,6 +1147,23 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
               consumptionsWrittenOff={
                 appt.status === "completed" || payStatus === "paid" || payStatus === "discounted"
               }
+              // «История оплат» — последней строкой чека: кто, когда и каким
+              // способом принял деньги, правка и возврат. Модуль включается в
+              // настройках организации; права — finance.payments.*.
+              history={
+                canSeeMoney && historyEnabled ? (
+                  <AppointmentPaymentHistory
+                    embedded
+                    appointment={appt}
+                    summary={pay}
+                    loading={payQuery.isLoading}
+                    error={payQuery.isError}
+                    onRetry={() => void payQuery.refetch()}
+                    canAcceptPayment={canManageFinance}
+                    onPay={() => onPay(appt)}
+                  />
+                ) : null
+              }
             />
 
             {/* Положенные дозы — ПОСЛЕ услуг и товаров: это подсказка «заодно
@@ -1226,21 +1244,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   {/* adminComment показан вверху, рядом с пациентом. */}
                 </Stack>
               </>
-            )}
-
-            {/* ── История оплат — в самом низу: кто, когда и каким способом
-                принял деньги, предоплата/долг, правка и возврат. Модуль
-                включается в настройках организации; права — finance.payments.* ── */}
-            {(canViewFinance || canManageFinance) && historyEnabled && (
-              <AppointmentPaymentHistory
-                appointment={appt}
-                summary={pay}
-                loading={payQuery.isLoading}
-                error={payQuery.isError}
-                onRetry={() => void payQuery.refetch()}
-                canAcceptPayment={canManageFinance}
-                onPay={() => onPay(appt)}
-              />
             )}
 
             {/* Заключение теперь открывается отдельной (третьей) колонкой на

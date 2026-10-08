@@ -239,7 +239,10 @@
     "refunded": "Возвращено",
     "toPay": "К оплате",
     "remaining": "Осталось оплатить",
-    "remainingOf": "из {{amount}} сом",
+    "toPayAtVisit": "К оплате на приёме",
+    "debt": "Долг",
+    "paidOf": "Оплачено {{paid}} из {{total}}",
+    "prepaidOf": "Предоплата {{paid}} из {{total}}",
     "paid": "Оплачено",
     "currency": "сом",
     "payRest": "Доплатить"
