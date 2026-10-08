@@ -130,7 +130,12 @@ const DocumentBar: React.FC<{
   canAdd: boolean;
   /** Удалить черновик; нет — крестика на чипах нет. */
   onDelete?: (doc: MedicalConclusion, label: string) => void;
-}> = ({ slot, active, onSelect, canAdd, onDelete }) => {
+  /**
+   * В шапке колонки кабинета, на месте заголовка: без своих отступов,
+   * «Ещё документ» — иконкой (подпись в подсказке).
+   */
+  dense?: boolean;
+}> = ({ slot, active, onSelect, canAdd, onDelete, dense }) => {
   const { t } = useT("appointments");
   const docs = slotConclusions(slot);
   const activeId = active === "new" ? null : active ?? docs[0]?.id ?? null;
@@ -140,7 +145,7 @@ const DocumentBar: React.FC<{
       alignItems="center"
       spacing={0.75}
       aria-label={t("conclusionSlots.documents")}
-      sx={{ px: 2, py: 1, flexShrink: 0, overflowX: "auto" }}
+      sx={{ px: dense ? 0 : 2, py: dense ? 0 : 1, flexShrink: 0, overflowX: "auto", minWidth: 0 }}
     >
       {docs.map((doc, index) => {
         const selected = doc.id === activeId;
@@ -188,7 +193,27 @@ const DocumentBar: React.FC<{
           sx={{ flexShrink: 0 }}
         />
       )}
-      {canAdd && active !== "new" && (
+      {canAdd && active !== "new" && dense && (
+        <Tooltip
+          title={
+            <>
+              <b>{t("conclusionSlots.addDocument")}</b>
+              <div>{t("conclusionSlots.addDocumentHint")}</div>
+            </>
+          }
+        >
+          <IconButton
+            size="small"
+            color="primary"
+            aria-label={t("conclusionSlots.addDocument")}
+            onClick={() => onSelect("new")}
+            sx={{ flexShrink: 0 }}
+          >
+            <AddOutlined fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      )}
+      {canAdd && active !== "new" && !dense && (
         <Tooltip title={t("conclusionSlots.addDocumentHint")}>
           <Button
             size="small"
@@ -396,6 +421,7 @@ const DjangoConclusionSlotsPanel: React.FC<DjangoConclusionSlotsPanelProps> = ({
         documentBar={
           showDocumentBar(onlySlot, inlineDoc) ? (
             <DocumentBar
+              dense
               slot={onlySlot}
               active={inlineDoc}
               canAdd={onlySlot.canEdit && canAddConclusion(onlySlot)}

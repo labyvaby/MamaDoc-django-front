@@ -51,6 +51,8 @@ type Props = {
    * Привязанные строки (`slot`) свою плашку несут в `slotNodes`.
    */
   rowAddon?: (field: FormField) => React.ReactNode;
+  /** Строка во всю ширину, хотя плашки у неё нет (подсказка AI в колонке слева). */
+  rowExpanded?: (field: FormField) => boolean;
   /**
    * Нормы строк бланка (значения по умолчанию). Строка, оставшаяся нормой,
    * помечается «норма из бланка — проверьте»; изменённую можно вернуть к норме.
@@ -69,6 +71,7 @@ export const ConclusionFormInline: React.FC<Props> = ({
   slotNodes,
   disabled,
   rowAddon,
+  rowExpanded,
   defaults,
   onResetRow,
 }) => {
@@ -162,8 +165,8 @@ export const ConclusionFormInline: React.FC<Props> = ({
               </Button>
             ) : null
           ) : null;
-        // Плашка AI встаёт слева от строки; половинная строка на это время
-        // занимает всю ширину — две колонки в половине дровера нечитаемы.
+        // Плашка AI встаёт над строкой; половинная строка на это время
+        // занимает всю ширину — подсказке нужна ширина поля.
         const addon = rowAddon?.(field);
         return (
           <Stack
@@ -171,7 +174,13 @@ export const ConclusionFormInline: React.FC<Props> = ({
             data-conclusion-row={field.id}
             data-ai-key={aiRowKey(field.id)}
             spacing={0.75}
-            sx={{ gridColumn: { xs: "span 1", md: addon ? "span 2" : fieldSpan(field) }, minWidth: 0 }}
+            sx={{
+              gridColumn: {
+                xs: "span 1",
+                md: addon || rowExpanded?.(field) ? "span 2" : fieldSpan(field),
+              },
+              minWidth: 0,
+            }}
           >
             <AiSuggestionBeside suggestion={addon}>
               <Stack spacing={0.75}>

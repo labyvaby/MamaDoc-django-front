@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { diffStats, diffWords, sameText, type DiffPart } from "./textDiff";
+import { addsNewNumber, diffStats, diffWords, sameText, type DiffPart } from "./textDiff";
 
 /** Текст «до» и «после» обязан собираться из частей без потерь. */
 const before = (parts: DiffPart[]) =>
@@ -68,5 +68,34 @@ describe("sameText", () => {
   it("пробелы и переводы строк не в счёт", () => {
     expect(sameText("Жалоб  нет.\n", " Жалоб нет.")).toBe(true);
     expect(sameText("Жалоб нет.", "Жалоб нет")).toBe(false);
+  });
+});
+
+describe("addsNewNumber", () => {
+  const flags = (a: string, b: string) => {
+    const parts = diffWords(a, b);
+    return parts.flatMap((p, i) => (p.kind === "added" ? [[p.text.trim(), addsNewNumber(parts, i)]] : []));
+  };
+
+  it("смена формата числа — не новое число", () => {
+    const result = flags("темп до 38.2, насморк", "температура до 38,2 °C, насморк");
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.every(([, isNew]) => isNew === false)).toBe(true);
+  });
+
+  it("вписанная доза — новое число", () => {
+    const parts = diffWords("парацетамол при t выше 38.5", "парацетамол 240 мг при t выше 38.5");
+    const i = parts.findIndex((p) => p.kind === "added");
+    expect(addsNewNumber(parts, i)).toBe(true);
+  });
+
+  it("черновик пустого поля с числами помечается", () => {
+    const parts = diffWords("", "Болеет 3-й день.");
+    expect(addsNewNumber(parts, 0)).toBe(true);
+  });
+
+  it("не добавленная часть — false", () => {
+    const parts = diffWords("a b", "a c");
+    expect(addsNewNumber(parts, 0)).toBe(false);
   });
 });

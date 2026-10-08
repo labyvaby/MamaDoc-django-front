@@ -57,3 +57,34 @@ export const aiProgressPercentAt = (seconds: number, cap: number, tau = 28): num
 /** Этап по прошедшему времени: последний, чей порог (`from`, с) пройден. */
 export const aiStageAt = (stages: ReadonlyArray<{ from: number }>, seconds: number): number =>
   stages.reduce((stage, item, index) => (seconds >= item.from ? index : stage), 0);
+
+/**
+ * Карточка подсказки «выходит из поля»: разворачивается от края дровера
+ * влево. Обрезка с запасом сверху и справа — подпись на рамке и стрелка
+ * «перенести» выступают за карточку и не должны срезаться.
+ */
+export const aiUnfold = keyframes`
+  from { clip-path: inset(-24px -64px -24px 100%); transform: translateX(14px); }
+  to { clip-path: inset(-24px -64px -24px 0); transform: none; }
+`;
+
+/** Кнопка «выпрыгивает» — стрелка «перенести» вслед за карточкой. */
+export const aiPop = keyframes`
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+`;
+
+/** Заливка вписанного слова растекается слева направо («штамп» правки). */
+export const aiSweep = keyframes`
+  from { background-size: 0% 100%; }
+`;
+
+/** Зачёркивание прочерчивается слева направо, подложка проявляется. */
+export const aiStrikeDraw = keyframes`
+  from { background-size: 0% 1.5px; background-color: transparent; }
+`;
+
+/** Слово черновика проявляется — текст «пишется на глазах». */
+export const aiWordIn = keyframes`
+  from { opacity: 0; transform: translateY(4px); }
+`;

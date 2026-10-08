@@ -125,3 +125,19 @@ export function diffStats(parts: DiffPart[]): { added: number; removed: number }
 /** Тексты совпадают с точностью до пробелов — правки по сути нет. */
 export const sameText = (a: string, b: string): boolean =>
   a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
+
+const numbersOf = (text: string): string[] =>
+  (text.match(/\d+(?:[.,]\d+)?/g) ?? []).map((n) => n.replace(",", "."));
+
+/**
+ * Добавленная часть вносит число, которого не было в заменённом тексте, —
+ * доза, температура, вес. Такие места подсвечиваем отдельно: «38.2 → 38,2 °C»
+ * — не новое число, а «парацетамол → парацетамол 240 мг» — новое.
+ */
+export function addsNewNumber(parts: DiffPart[], index: number): boolean {
+  const part = parts[index];
+  if (part?.kind !== "added") return false;
+  const prev = parts[index - 1];
+  const replaced = prev?.kind === "removed" ? numbersOf(prev.text) : [];
+  return numbersOf(part.text).some((n) => !replaced.includes(n));
+}

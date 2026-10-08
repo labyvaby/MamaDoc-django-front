@@ -32,6 +32,7 @@ import {
   LinearProgress,
   Modal,
   Paper,
+  Popper,
   Stack,
   TextField,
   Tooltip,
@@ -48,7 +49,7 @@ import StarOutlined from "@mui/icons-material/StarOutlined";
 import AddPhotoAlternateOutlined from "@mui/icons-material/AddPhotoAlternateOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import LockOutlined from "@mui/icons-material/LockOutlined";
-import VerticalSplitOutlined from "@mui/icons-material/VerticalSplitOutlined";
+import PreviewOutlined from "@mui/icons-material/PreviewOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
@@ -84,17 +85,21 @@ import {
   AiAssistHeaderButton,
   AiAssistPendingStrip,
   AiAssistSuggestion,
+  AiGutterPult,
   AiSuggestionBeside,
 } from "../../components/conclusion-forms/AiAssistControls";
 import {
   AiSuggestionGutter,
+  AI_GUTTER_PAD_LEFT,
+  AI_GUTTER_PAD_RIGHT,
   AI_GUTTER_WIDTH,
+  type AiGutterMode,
   type AiGutterUndo,
   type AiSuggestionGutterHandle,
 } from "../../components/conclusion-forms/AiSuggestionGutter";
 import { useAiFieldMarks } from "../../components/conclusion-forms/aiFieldMarks";
 import { AiThinkingOverlay, AiThinkingStrip } from "../../components/conclusion-forms/AiThinkingStrip";
-import { aiFieldGlow, reducedMotion } from "../../components/ai/aiMotion";
+import { aiCardIn, aiFieldGlow, reducedMotion } from "../../components/ai/aiMotion";
 import {
   AiReviewDialog,
   type AiReviewEntry,
@@ -275,6 +280,26 @@ function writeSheetPref(visible: boolean) {
   }
 }
 
+// ── Знакомство с предварительным просмотром: показываем один раз ───────────────
+const PREVIEW_COACH_KEY = "mamadoc:conclusion-preview-coach-seen";
+
+function readPreviewCoachSeen(): boolean {
+  try {
+    return window.localStorage.getItem(PREVIEW_COACH_KEY) === "1";
+  } catch {
+    // Хранилище недоступно — не показываем: иначе плашка вылезала бы каждый раз.
+    return true;
+  }
+}
+
+function writePreviewCoachSeen() {
+  try {
+    window.localStorage.setItem(PREVIEW_COACH_KEY, "1");
+  } catch {
+    /* localStorage недоступен — плашка просто не вернётся до перезагрузки */
+  }
+}
+
 // ── «Частые у вас»: личный выбор врача, помним в браузере ──────────────────────
 // По умолчанию выключено (01.10.2026): части врачей строка мешала. Кому нужна —
 // включает звёздочкой у поля диагноза. Хранить в профиле бэк пока не умеет.
@@ -432,14 +457,43 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const showSheetSide = sheetSide && sheetPinned;
   const showSheetTab = !sheetSide && sheetTab;
   // Подсказки AI — слева от дровера, напротив полей; дровер не расширяется.
-  // Нужно место под колонку слева от него; иначе — плашки у своих полей.
-  const aiGutterRoom = useMediaQuery(
-    `(min-width: ${DRAWER_WIDTH_MD + AI_GUTTER_WIDTH + 48}px)`,
-  );
-  const aiGutterRoomWithSheet = useMediaQuery(
-    `(min-width: ${SHEET_DRAWER_MAX_WIDTH + AI_GUTTER_WIDTH + 48}px)`,
-  );
-  const aiGutterFits = !inline && (showSheetSide ? aiGutterRoomWithSheet : aiGutterRoom);
+  // Широкий экран — «Зеркало» (карточка шириной с поле), поуже — «Фокус»
+  // (метки у полей и одна раскрытая подсказка), ещё уже — плашки над полями.
+  const gutterQuery = (mode: AiGutterMode, drawerWidth: number) =>
+    `(min-width: ${drawerWidth + AI_GUTTER_WIDTH[mode] + 48}px)`;
+  const mirrorRoom = useMediaQuery(gutterQuery("mirror", DRAWER_WIDTH_MD));
+  const mirrorRoomWithSheet = useMediaQuery(gutterQuery("mirror", SHEET_DRAWER_MAX_WIDTH));
+  const focusRoom = useMediaQuery(gutterQuery("focus", DRAWER_WIDTH_MD));
+  const focusRoomWithSheet = useMediaQuery(gutterQuery("focus", SHEET_DRAWER_MAX_WIDTH));
+  const aiGutterMode: AiGutterMode | null = inline
+    ? null
+    : (showSheetSide ? mirrorRoomWithSheet : mirrorRoom)
+      ? "mirror"
+      : (showSheetSide ? focusRoomWithSheet : focusRoom)
+        ? "focus"
+        : null;
+  const aiGutterFits = aiGutterMode != null;
+  /**
+   * Кнопка предварительного просмотра — иконка, и врачи её не находили.
+   * При первом открытии формы один раз показываем плашку-знакомство со
+   * стрелкой на кнопку; «Понятно» или нажатие самой кнопки её убирают.
+   */
+  const [sheetButtonEl, setSheetButtonEl] = React.useState<HTMLElement | null>(null);
+  const [previewCoachSeen, setPreviewCoachSeen] = React.useState(readPreviewCoachSeen);
+  const [previewCoachReady, setPreviewCoachReady] = React.useState(false);
+  React.useEffect(() => {
+    if (!open || previewCoachSeen) return;
+    // Дровер ещё выезжает — плашка встаёт, когда кнопка на месте.
+    const timer = window.setTimeout(() => setPreviewCoachReady(true), 700);
+    return () => window.clearTimeout(timer);
+  }, [open, previewCoachSeen]);
+  const dismissPreviewCoach = () => {
+    if (previewCoachSeen) return;
+    writePreviewCoachSeen();
+    setPreviewCoachSeen(true);
+  };
+  const showPreviewCoach = open && !previewCoachSeen && previewCoachReady && sheetButtonEl != null;
+
   const toggleSheet = () => {
     if (sheetSide) {
       setSheetPinned((prev) => {
@@ -2545,17 +2599,28 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
   const lastUpdated = conclusion?.updatedAt
     ? dayjs(conclusion.updatedAt).format("DD.MM.YYYY HH:mm")
     : null;
-  /** Строка в футере: где сейчас лежит последняя правка. */
-  const savedNote = draftSavedAt
-    ? t("conclusion.savedLocal", { time: dayjs(draftSavedAt).format("HH:mm") })
-    : lastUpdated
-      ? t("conclusion.savedServer", { time: lastUpdated })
-      : null;
   const statusChip = !conclusion
     ? { label: t("conclusion.statusNew"), color: "default" as const }
     : conclusion.status === "completed"
       ? { label: t("conclusion.statusCompleted"), color: "success" as const }
       : { label: t("conclusion.statusDraft"), color: "warning" as const };
+  /**
+   * Подпись в футере: статус документа и где лежит последняя правка — одна
+   * мысль, «что сейчас с документом». Сегодняшнее время без даты: строка
+   * делит ряд с кнопками.
+   */
+  const shortTime = (iso: string) =>
+    dayjs(iso).isSame(dayjs(), "day") ? dayjs(iso).format("HH:mm") : dayjs(iso).format("DD.MM HH:mm");
+  const footerState = [
+    statusChip.label,
+    draftSavedAt
+      ? t("conclusion.savedLocalShort", { time: shortTime(draftSavedAt) })
+      : conclusion?.updatedAt
+        ? t("conclusion.savedServer", { time: shortTime(conclusion.updatedAt) })
+        : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   /**
    * Узкий футер: телефон и колонка приёма (~420px). Там четыре кнопки с
@@ -2563,6 +2628,8 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
    * «Сохранить и печать» становится иконкой, «Сохранить черновик» — «Черновик».
    */
   const compactFooter = isMobile || inline;
+  /** Колонка кабинета (просмотр): документы — в шапке, отдельной полосы нет. */
+  const documentInHeader = inline && readOnly && documentBar != null;
 
   /** Нормы строк прикреплённого бланка — для пометки «норма» и «Вернуть норму». */
   const attachedFormDefaults = React.useMemo(
@@ -2628,31 +2695,79 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
             : t("conclusion.sheet.showTab")
       }
     >
-      {isMobile ? (
-        <IconButton
-          size="small"
-          color={showSheetTab ? "primary" : "default"}
-          aria-pressed={showSheetTab}
-          aria-label={t("conclusion.sheet.toggle")}
-          onClick={toggleSheet}
-        >
-          <ArticleOutlined fontSize="small" />
-        </IconButton>
-      ) : (
-        <Button
-          size="small"
-          variant={showSheetSide || showSheetTab ? "contained" : "outlined"}
-          disableElevation
-          aria-pressed={showSheetSide || showSheetTab}
-          startIcon={sheetSide ? <VerticalSplitOutlined /> : <ArticleOutlined />}
-          onClick={toggleSheet}
-          sx={{ whiteSpace: "nowrap" }}
-        >
-          {showSheetTab ? t("conclusion.sheet.backToForm") : t("conclusion.sheet.toggle")}
-        </Button>
-      )}
+      {/* Иконкой на любой ширине: шапка в одну строку (08.10.2026), подпись
+          «Лист» выдавливала имя пациента. Включённый лист — заливкой. */}
+      <IconButton
+        ref={setSheetButtonEl}
+        size="small"
+        color={showSheetSide || showSheetTab ? "primary" : "default"}
+        aria-pressed={showSheetSide || showSheetTab}
+        aria-label={t("conclusion.sheet.toggle")}
+        onClick={() => {
+          dismissPreviewCoach();
+          toggleSheet();
+        }}
+        sx={showSheetSide || showSheetTab ? { bgcolor: "action.selected" } : undefined}
+      >
+        {/* «Документ с глазом», а не «две колонки» (08.10.2026): врачи не
+            понимали, что за кнопкой — лист, каким он выйдет на печать. */}
+        <PreviewOutlined fontSize="small" />
+      </IconButton>
     </Tooltip>
   );
+
+  /** Заполненность документа: полоска под шапкой и счётчик у документа. */
+  const progressDone = progress.filled + progress.norm;
+  const progressPercent = progress.total > 0 ? (progressDone / progress.total) * 100 : 0;
+  const progressLabel = t("conclusion.progress", { filled: progressDone, total: progress.total });
+  /** Куда ведёт счётчик: к первой пустой строке, а если пустых нет — к нетронутой норме. */
+  const progressTarget = firstEmptyRow ?? progress.firstNorm ?? null;
+  const progressNode =
+    progressRows.length > 0 ? (
+      <Tooltip
+        title={
+          <>
+            {progressLabel}
+            {firstEmptyRow && <div>{t("conclusion.progressHint")}</div>}
+            {progress.norm > 0 && (
+              <div>
+                {t("conclusion.progressNorm", { count: progress.norm })}.{" "}
+                {t("conclusion.progressNormHint")}
+              </div>
+            )}
+          </>
+        }
+      >
+        <Box
+          component="button"
+          type="button"
+          aria-label={progressLabel}
+          onClick={() => progressTarget && focusRow(progressTarget)}
+          sx={{
+            flexShrink: 0,
+            border: 0,
+            bgcolor: "transparent",
+            color: firstEmptyRow ? "primary.main" : "text.secondary",
+            font: "inherit",
+            fontSize: 12,
+            fontWeight: 500,
+            fontVariantNumeric: "tabular-nums",
+            px: 0.75,
+            py: 0.5,
+            borderRadius: 1,
+            cursor: progressTarget ? "pointer" : "default",
+            // Нетронутые нормы — пунктиром: карта с нормами выглядит почти
+            // готовой, а врач их ещё не читал.
+            textDecoration: progress.norm > 0 ? "underline dashed" : "none",
+            textUnderlineOffset: 3,
+            "&:hover": progressTarget ? { bgcolor: "action.hover" } : undefined,
+            "&:focus-visible": { outline: 2, outlineColor: "primary.main" },
+          }}
+        >
+          {progressDone}/{progress.total}
+        </Box>
+      </Tooltip>
+    ) : null;
 
   const sheetPane = (
     <ConclusionSheetPane
@@ -2686,6 +2801,22 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       : [];
   // «Вернуть» держит колонку и после последней подсказки.
   const aiGutter = aiGutterItems.length > 0 || (canAiAssist && aiGutterFits && aiUndo != null);
+  /** Пульт над колонкой: ожидание AI, «N правок · Применить все», «Все разобраны». */
+  const aiGutterPult =
+    canAiAssist && aiGutterMode && (ai.loading || aiGutter) ? (
+      <AiGutterPult
+        width={AI_GUTTER_WIDTH[aiGutterMode]}
+        padLeft={AI_GUTTER_PAD_LEFT}
+        padRight={AI_GUTTER_PAD_RIGHT}
+        pendingCount={aiGutterItems.length}
+        thinking={
+          ai.loading ? <AiThinkingStrip fieldCount={ai.loadingCount} onCancel={ai.reset} /> : undefined
+        }
+        onStep={aiGutterMode === "focus" ? (dir) => aiGutterRef.current?.step(dir) : undefined}
+        onApplyAll={handleAiApplyAll}
+        onDismissAll={handleAiDismissAll}
+      />
+    ) : null;
   // Пока AI думает — рамки полей, которые он читает, мерцают.
   useAiFieldMarks(formColumnRef.current, ai.loadingKeys, "data-ai-loading");
 
@@ -2695,12 +2826,20 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       {readOnly ? (
         <Stack
           direction="row"
-          alignItems="flex-start"
+          alignItems={documentInHeader ? "center" : "flex-start"}
           justifyContent="space-between"
+          columnGap={1}
           px={2}
-          py={isMobile ? 1 : 1.5}
-          sx={{ flexShrink: 0 }}
+          py={documentInHeader ? 1 : isMobile ? 1 : 1.5}
+          sx={{ flexShrink: 0, minHeight: documentInHeader ? 52 : undefined }}
         >
+          {/* Колонка кабинета: переключатель документов встаёт на место
+              заголовка (08.10.2026) — «Заключение» над чипом «Амбулаторная
+              карта…» и тем же названием в тексте ниже было тремя ярусами
+              про одно и то же. */}
+          {documentInHeader ? (
+            <Box sx={{ minWidth: 0, flex: 1 }}>{documentBar}</Box>
+          ) : (
           <Stack spacing={0.25} sx={{ minWidth: 0 }}>
             <Typography variant={isMobile ? "subtitle1" : "h6"} lineHeight={1.3} fontWeight={600}>
               {t("conclusion.title")}
@@ -2720,6 +2859,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               </>
             )}
           </Stack>
+          )}
           <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
             {/* Лист в просмотре — документ, каким его напечатают. Без
                 заключения показывать нечего. */}
@@ -2730,45 +2870,46 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           </Stack>
         </Stack>
       ) : (
-        /* Правка: кто на приёме, что за документ и насколько он заполнен. */
-        <Stack spacing={1} px={2} py={isMobile ? 1 : 1.5} sx={{ flexShrink: 0 }}>
-          <Stack direction="row" alignItems="flex-start" spacing={1}>
-            <Stack spacing={0.25} sx={{ minWidth: 0, flex: 1 }}>
-              <Typography
-                variant={isMobile ? "subtitle1" : "h6"}
-                lineHeight={1.3}
-                fontWeight={600}
-                noWrap
-              >
-                {patientName
-                  ? [patientName, patientAge].filter(Boolean).join(", ")
-                  : conclusion
-                    ? t("conclusion.editTitle")
-                    : t("conclusion.newTitle")}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" noWrap>
-                {[serviceName, doctorName, visitDateTime].filter(Boolean).join(" · ")}
-              </Typography>
-            </Stack>
-            <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
-              {/* AI — одна кнопка на все поля; в шапке, потому что она не
-                  прокручивается, а просят AI обычно дописав форму до низа. */}
-              {canAiAssist && (
-                <AiAssistHeaderButton
-                  loading={ai.loading}
-                  fieldCount={ai.loadingCount}
-                  compact={isMobile}
-                  onClick={handleAiRequest}
-                />
-              )}
-              {sheetToggleNode}
-              <IconButton onClick={saving ? undefined : onClose} size="small">
-                <CloseOutlined />
-              </IconButton>
-            </Stack>
-          </Stack>
-
-          <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+        /* Правка — одна строка (08.10.2026, было ~112px в три яруса): кто на
+           приёме и документ слева, действия справа. Статус документа уехал
+           вниз к «Сохранено…», заполненность — в полоску под шапкой и счётчик
+           рядом с документом. На телефоне документ — второй строкой. */
+        <Stack
+          direction="row"
+          alignItems="center"
+          columnGap={1}
+          rowGap={0.75}
+          flexWrap={isMobile ? "wrap" : "nowrap"}
+          px={2}
+          py={1}
+          sx={{ flexShrink: 0, minHeight: 56, position: "relative" }}
+        >
+          {/* Имя — со своей шириной: с `flex: 1` (основа 0) длинное название
+              бланка в меню документа съедало его целиком. */}
+          <Box sx={{ minWidth: 72, flex: "1 1 auto" }}>
+            <Typography variant="subtitle1" lineHeight={1.3} fontWeight={600} noWrap>
+              {patientName
+                ? [patientName, patientAge].filter(Boolean).join(", ")
+                : conclusion
+                  ? t("conclusion.editTitle")
+                  : t("conclusion.newTitle")}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" component="div" noWrap>
+              {[serviceName, doctorName, visitDateTime].filter(Boolean).join(" · ")}
+            </Typography>
+          </Box>
+          <Stack
+            direction="row"
+            alignItems="center"
+            gap={0.75}
+            sx={{
+              minWidth: 0,
+              flex: "0 1 auto",
+              maxWidth: isMobile ? "100%" : "45%",
+              order: isMobile ? 3 : 0,
+              width: isMobile ? "100%" : "auto",
+            }}
+          >
             <ConclusionDocumentMenu
               forms={selectableForms}
               form={attachedForm}
@@ -2786,77 +2927,47 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               previous={previousConclusions}
               onApplyPrevious={(item) => void applyPrevious(item)}
               previousLoading={previousLoading}
-              compact={isMobile}
+              compact
             />
-            <Chip
-              size="small"
-              variant="outlined"
-              color={statusChip.color}
-              label={statusChip.label}
-            />
-            {progressRows.length > 0 && (
-              <Tooltip title={firstEmptyRow ? t("conclusion.progressHint") : ""}>
-                <Box
-                  component="button"
-                  type="button"
-                  onClick={() => firstEmptyRow && focusRow(firstEmptyRow)}
-                  sx={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 1,
-                    border: 0,
-                    bgcolor: "transparent",
-                    color: "text.secondary",
-                    font: "inherit",
-                    fontSize: 12,
-                    px: 0.5,
-                    py: 0.25,
-                    borderRadius: 1,
-                    cursor: firstEmptyRow ? "pointer" : "default",
-                    "&:hover": firstEmptyRow ? { bgcolor: "action.hover" } : undefined,
-                    "&:focus-visible": { outline: 2, outlineColor: "primary.main" },
-                  }}
-                >
-                  <LinearProgress
-                    variant="determinate"
-                    value={((progress.filled + progress.norm) / progress.total) * 100}
-                    sx={{ width: 56, height: 4, borderRadius: 2 }}
-                  />
-                  <span>
-                    {t("conclusion.progress", { filled: progress.filled + progress.norm, total: progress.total })}
-                  </span>
-                  {firstEmptyRow && (
-                    <Box component="span" sx={{ color: "primary.main", fontWeight: 500 }}>
-                      → {t("conclusion.progressGo")}
-                    </Box>
-                  )}
-                </Box>
-              </Tooltip>
-            )}
-            {/* Нетронутые нормы бланка: строка заполнена, но врач её не читал.
-                Отдельно от счётчика — иначе карта с нормами при открытии
-                выглядит почти готовой. */}
-            {progress.firstNorm && (
-              <Tooltip title={t("conclusion.progressNormHint")}>
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={t("conclusion.progressNorm", { count: progress.norm })}
-                  onClick={() => progress.firstNorm && focusRow(progress.firstNorm)}
-                  sx={{ borderStyle: "dashed" }}
-                />
-              </Tooltip>
-            )}
+            {progressNode}
           </Stack>
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+            {/* AI — одна кнопка на все поля; в шапке, потому что она не
+                прокручивается, а просят AI обычно дописав форму до низа. */}
+            {canAiAssist && (
+              <AiAssistHeaderButton
+                loading={ai.loading}
+                fieldCount={ai.loadingCount}
+                compact={isMobile}
+                onClick={handleAiRequest}
+              />
+            )}
+            {sheetToggleNode}
+            <IconButton onClick={saving ? undefined : onClose} size="small">
+              <CloseOutlined />
+            </IconButton>
+          </Stack>
+          {/* Пульт подсказок AI — слева от шапки, над колонкой подсказок. */}
+          {aiGutterPult}
         </Stack>
       )}
-      <Divider />
+      {/* Полоска под шапкой — заполненность документа вместо разделителя. */}
+      {!readOnly && progressRows.length > 0 ? (
+        <LinearProgress
+          variant="determinate"
+          value={progressPercent}
+          aria-label={progressLabel}
+          sx={{ height: 2, flexShrink: 0, bgcolor: "divider" }}
+        />
+      ) : (
+        <Divider />
+      )}
       {/* Прошлое заключение догружается (карточка с formData): меню уже
           закрыто, и без полоски врач не видит, что нажатие сработало. */}
       {previousLoading && <LinearProgress sx={{ height: 2, flexShrink: 0 }} />}
 
       {/* ── документы строки услуги (если их несколько или можно добавить) ── */}
-      {documentBar && (
+      {documentBar && !documentInHeader && (
         <>
           {documentBar}
           <Divider />
@@ -2864,7 +2975,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       )}
 
       {/* ── AI думает: этапы и процент вместо полосы подсказок ── */}
-      {canAiAssist && ai.loading && (
+      {canAiAssist && ai.loading && !aiGutterFits && (
         <>
           <AiThinkingStrip fieldCount={ai.loadingCount} onCancel={ai.reset} />
           <Divider />
@@ -2872,13 +2983,12 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       )}
 
       {/* ── подсказки AI: массовые действия, пока есть неразобранные ── */}
-      {canAiAssist && !ai.loading && ai.suggestedKeys.length > 0 && (
+      {/* С колонкой слева пульт — над ней (aiGutterPult), здесь полосы нет. */}
+      {canAiAssist && !ai.loading && !aiGutterFits && ai.suggestedKeys.length > 0 && (
         <>
           <AiAssistPendingStrip
             pendingCount={ai.suggestedKeys.length}
-            // Карточки слева от дровера — разбор прямо по ним, с клавиатуры;
-            // без них — окно проверки.
-            onReview={aiGutter ? () => aiGutterRef.current?.focusFirst() : handleAiReview}
+            onReview={handleAiReview}
             onApplyAll={handleAiApplyAll}
             onDismissAll={handleAiDismissAll}
           />
@@ -2895,73 +3005,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         />
       )}
 
-      {/* ── inline-просмотр: тулбар действий под шапкой (единая высота) ── */}
-      {inline && readOnly && (onStartEdit || (canPrint && conclusion)) && (
-        <>
-          <Stack
-            direction="row"
-            spacing={1}
-            flexWrap="wrap"
-            sx={{ px: 2, py: 1, gap: 1, flexShrink: 0 }}
-          >
-            {onStartEdit && (
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<EditOutlined />}
-                onClick={onStartEdit}
-                sx={{ whiteSpace: "nowrap" }}
-              >
-                {t("conclusion.editConclusion")}
-              </Button>
-            )}
-            {canPrint && conclusion && (
-              <>
-                {/* Одна кнопка на весь документ — страница печати сама решает,
-                    печатать лист бланка с хвостом или штатное заключение. */}
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<PrintOutlined />}
-                  onClick={openPrint}
-                  sx={{ whiteSpace: "nowrap" }}
-                >
-                  {t("conclusion.print")}
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<ArticleOutlined />}
-                  onClick={() =>
-                    window.open(
-                      `/print/certificate/${conclusion.appointmentId}?lineId=${serviceLineId}&conclusionId=${conclusion.id}`,
-                      "_blank",
-                      "noopener",
-                    )
-                  }
-                  sx={{ whiteSpace: "nowrap" }}
-                >
-                  {t("conclusion.certificate")}
-                </Button>
-                {receiptAppointmentId != null && receiptAvailable && (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<ReceiptLongOutlined />}
-                    onClick={() => setReceiptFormatOpen(true)}
-                    disabled={receiptPending}
-                    sx={{ whiteSpace: "nowrap" }}
-                  >
-                    {t("conclusion.receipt")}
-                  </Button>
-                )}
-              </>
-            )}
-          </Stack>
-          <Divider />
-        </>
-      )}
-
       {/* ── body ── */}
       {/* Форма и лист. Лист стоит справа (дровер на широком экране) или
           вместо формы (телефон, колонка приёма); форма при этом не
@@ -2975,6 +3018,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           scrollEl={formColumnRef.current}
           items={aiGutterItems}
           undo={aiUndo}
+          mode={aiGutterMode ?? "focus"}
         />
       )}
       {/* Скан по форме, пока AI думает (по ширине колонки формы). */}
@@ -3265,6 +3309,14 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                       canAiAssist
                         ? (field) =>
                             aiSuggestionNode(aiRowKey(field.id))
+                        : undefined
+                    }
+                    // Строка с подсказкой — во всю ширину, и когда подсказка в
+                    // колонке слева: две половинные строки рядом дали бы две
+                    // карточки на одной высоте.
+                    rowExpanded={
+                      canAiAssist
+                        ? (field) => ai.of(aiRowKey(field.id)).suggestion != null
                         : undefined
                     }
                     slotNodes={slotNodes}
@@ -3607,43 +3659,150 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       )}
       </Box>
 
+      {/* ── inline-просмотр: действия внизу колонки (08.10.2026) ──
+          Раньше ряд стоял под шапкой и делал верх тяжёлым. Внизу он — своя
+          строка раскладки, а не наложение поверх текста: прокрутка кончается
+          над ним, и история правок в конце заключения не прячется.
+          Главное — «Изменить» (залито), печать и справка — вторичные. */}
+      {inline && readOnly && (onStartEdit || (canPrint && conclusion)) && (
+        <>
+          <Divider />
+          <Stack
+            direction="row"
+            spacing={1}
+            flexWrap="wrap"
+            sx={{
+              px: 2,
+              py: 1,
+              pb: isMobile ? "calc(8px + env(safe-area-inset-bottom))" : 1,
+              gap: 1,
+              flexShrink: 0,
+              bgcolor: "background.paper",
+            }}
+          >
+            {onStartEdit && (
+              <Button
+                size="small"
+                variant="contained"
+                disableElevation
+                startIcon={<EditOutlined />}
+                onClick={onStartEdit}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                {t("conclusion.editConclusion")}
+              </Button>
+            )}
+            {canPrint && conclusion && (
+              <>
+                {/* Одна кнопка на весь документ — страница печати сама решает,
+                    печатать лист бланка с хвостом или штатное заключение. */}
+                <Button
+                  size="small"
+                  color="inherit"
+                  startIcon={<PrintOutlined />}
+                  onClick={openPrint}
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  {t("conclusion.print")}
+                </Button>
+                <Button
+                  size="small"
+                  color="inherit"
+                  startIcon={<ArticleOutlined />}
+                  onClick={() =>
+                    window.open(
+                      `/print/certificate/${conclusion.appointmentId}?lineId=${serviceLineId}&conclusionId=${conclusion.id}`,
+                      "_blank",
+                      "noopener",
+                    )
+                  }
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  {t("conclusion.certificate")}
+                </Button>
+                {receiptAppointmentId != null && receiptAvailable && (
+                  <Button
+                    size="small"
+                    color="inherit"
+                    startIcon={<ReceiptLongOutlined />}
+                    onClick={() => setReceiptFormatOpen(true)}
+                    disabled={receiptPending}
+                    sx={{ whiteSpace: "nowrap" }}
+                  >
+                    {t("conclusion.receipt")}
+                  </Button>
+                )}
+              </>
+            )}
+          </Stack>
+        </>
+      )}
+
       {/* ── footer ── (в inline-просмотре скрыт: закрытие — крестиком в шапке) */}
       {!(inline && readOnly) && (
       <>
       <Divider />
-      {/* На телефоне ряд кнопок переносился в две-три строки и съедал место у
-          поля ввода: метки короче, «Сохранить и печать» — иконкой. */}
-      <Box
+      {/* Одна строка (08.10.2026, было ~97px): слева — статус документа и где
+          лежит последняя правка, справа — кнопки. В колонке приёма (~420px) и
+          на телефоне подпись не помещается рядом с кнопками (сжималась до
+          «С…» и выталкивала «Завершить») — там она остаётся строкой над ними,
+          а метки кнопок короче. «Сохранить и печать» — иконкой везде. */}
+      <Stack
+        direction={compactFooter ? "column" : "row"}
+        alignItems={compactFooter ? "stretch" : "center"}
+        gap={compactFooter ? 0.75 : 1}
         sx={{
           px: 2,
-          py: isMobile ? 1 : 2,
-          pb: isMobile ? "calc(8px + env(safe-area-inset-bottom))" : 2,
+          py: 1,
+          pb: isMobile ? "calc(8px + env(safe-area-inset-bottom))" : 1,
+          minHeight: compactFooter ? undefined : 52,
           flexShrink: 0,
         }}
       >
+        {!readOnly && (
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={0.75}
+            title={footerState}
+            sx={{
+              minWidth: 0,
+              flex: compactFooter ? undefined : 1,
+              justifyContent: compactFooter ? "flex-end" : "flex-start",
+            }}
+          >
+            <Box
+              component="span"
+              sx={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                flexShrink: 0,
+                bgcolor:
+                  statusChip.color === "default" ? "text.disabled" : `${statusChip.color}.main`,
+              }}
+            />
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {footerState}
+            </Typography>
+          </Stack>
+        )}
         {/* flexWrap — страховка для крупного масштаба интерфейса: ряд с
             nowrap-метками иначе выехал бы за край узкого экрана. */}
-        {/* Где лежит последняя правка: в браузере (черновик) или в карте.
-            Отдельной строкой над кнопками: в ряду с ними в колонке приёма
-            (~420px) подпись сжималась до «С…» и всё равно выталкивала
-            «Завершить» на вторую строку. */}
-        {!readOnly && savedNote && (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            component="div"
-            noWrap
-            sx={{ mb: 1, textAlign: "right" }}
-          >
-            {savedNote}
-          </Typography>
-        )}
-        <Stack direction="row" gap={1} flexWrap="wrap" justifyContent="flex-end" alignItems="center">
+        <Stack
+          direction="row"
+          gap={1}
+          flexWrap="wrap"
+          justifyContent="flex-end"
+          alignItems="center"
+          sx={{ flexShrink: 0, ml: readOnly ? "auto" : undefined }}
+        >
           <Button
             onClick={saving ? undefined : onClose}
             disabled={saving}
-            size={compactFooter ? "small" : "medium"}
-            sx={{ whiteSpace: "nowrap" }}
+            size="small"
+            color="inherit"
+            sx={{ whiteSpace: "nowrap", color: "text.secondary" }}
           >
             {readOnly ? t("conclusion.close") : t("conclusion.cancel")}
           </Button>
@@ -3652,55 +3811,46 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               {/* В правке печать идёт через сохранение: на бумагу должно уйти
                   ровно то, что легло в карту (см. handleSaveAndPrint). */}
               {canPrint && conclusion && (
-                compactFooter ? (
-                  <IconButton
-                    color="primary"
-                    disabled={saving}
-                    onClick={handleSaveAndPrint}
-                    title={t("conclusion.saveAndPrint")}
-                    size="small"
-                  >
-                    <PrintOutlined fontSize="small" />
-                  </IconButton>
-                ) : (
-                <Button
-                  variant="outlined"
-                  startIcon={<PrintOutlined />}
-                  disabled={saving}
-                  onClick={handleSaveAndPrint}
-                >
-                  {t("conclusion.saveAndPrint")}
-                </Button>
-                )
+                <Tooltip title={t("conclusion.saveAndPrint")}>
+                  <span>
+                    <IconButton
+                      color="primary"
+                      disabled={saving}
+                      onClick={handleSaveAndPrint}
+                      aria-label={t("conclusion.saveAndPrint")}
+                      size="small"
+                      sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}
+                    >
+                      <PrintOutlined fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
               )}
-              <Button
-                variant="outlined"
-                disabled={saving}
-                size={compactFooter ? "small" : "medium"}
-                onClick={() => handleSave("draft")}
-                startIcon={
-                  saving ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : undefined
-                }
-                sx={{ whiteSpace: "nowrap" }}
-              >
-                {compactFooter ? t("conclusion.saveDraftShort") : t("conclusion.saveDraft")}
-              </Button>
+              <Tooltip title={t("conclusion.saveDraft")}>
+                <span>
+                  <Button
+                    variant="outlined"
+                    disabled={saving}
+                    size="small"
+                    onClick={() => handleSave("draft")}
+                    startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}
+                    sx={{ whiteSpace: "nowrap" }}
+                  >
+                    {t("conclusion.saveDraftShort")}
+                  </Button>
+                </span>
+              </Tooltip>
               <Tooltip title={isMobile ? "" : t("conclusion.completeHotkey")}>
                 <span>
                   <Button
                     variant="contained"
                     color="success"
+                    disableElevation
                     disabled={saving}
-                    size={compactFooter ? "small" : "medium"}
+                    size="small"
                     onClick={() => requestSave("completed", false)}
                     startIcon={
-                      saving ? (
-                        <CircularProgress size={16} color="inherit" />
-                      ) : (
-                        <SaveOutlined />
-                      )
+                      saving ? <CircularProgress size={16} color="inherit" /> : <SaveOutlined />
                     }
                     sx={{ whiteSpace: "nowrap" }}
                   >
@@ -3711,9 +3861,61 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
             </>
           )}
         </Stack>
-      </Box>
+      </Stack>
       </>
       )}
+
+      {/* Знакомство с предварительным просмотром — один раз на браузер. */}
+      <Popper
+        open={showPreviewCoach}
+        anchorEl={sheetButtonEl}
+        placement="bottom-end"
+        modifiers={[{ name: "offset", options: { offset: [8, 10] } }]}
+        sx={{ zIndex: (th) => th.zIndex.modal + 1 }}
+      >
+        <Box
+          role="dialog"
+          aria-label={t("conclusion.sheet.coachTitle")}
+          sx={{
+            position: "relative",
+            width: 280,
+            p: 1.5,
+            borderRadius: 1,
+            bgcolor: "primary.main",
+            color: "primary.contrastText",
+            animation: `${aiCardIn} 220ms ease-out both`,
+            ...reducedMotion,
+            // Стрелка на кнопку.
+            "&::before": {
+              content: '""',
+              position: "absolute",
+              top: -6,
+              right: 16,
+              border: "6px solid transparent",
+              borderTop: 0,
+              borderBottomColor: (th) => th.palette.primary.main,
+            },
+          }}
+        >
+          <Typography variant="subtitle2" fontWeight={700}>
+            {t("conclusion.sheet.coachTitle")}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.92 }}>
+            {t("conclusion.sheet.coachText")}
+          </Typography>
+          <Stack direction="row" justifyContent="flex-end" sx={{ mt: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              color="inherit"
+              onClick={dismissPreviewCoach}
+              sx={{ borderColor: "currentColor" }}
+            >
+              {t("conclusion.sheet.coachOk")}
+            </Button>
+          </Stack>
+        </Box>
+      </Popper>
 
       {/* ── смена бланка поверх текста врача ── */}
       <Dialog
@@ -3957,7 +4159,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           display: "flex",
           flexDirection: "column",
           // Подсказки AI висят за левым краем дровера — не обрезаем их.
-          overflow: aiGutter ? "visible" : "hidden",
+          overflow: aiGutter || aiGutterPult ? "visible" : "hidden",
         },
       }}
     >
