@@ -25,6 +25,7 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   rbac: 'rbac',
   tenancy: 'rbac',
   tasks: 'tasks',
+  support: 'support',
   achievements: 'achievements',
   waitlist: 'waitlist',
   deals: 'deals',

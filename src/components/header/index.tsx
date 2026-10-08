@@ -217,7 +217,9 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
           position: { xs: "absolute", md: "static" },
           left: { xs: "50%", md: "auto" },
           transform: { xs: "translateX(-50%)", md: "none" },
-          maxWidth: { xs: "50%", md: "none" },
+          // Центр по экрану, а справа три круглые кнопки (~132 px): без
+          // симметричного запаса длинный заголовок («Поддержка») заезжал под них.
+          maxWidth: { xs: "calc(100% - 264px)", md: "none" },
           minWidth: 0,
           display: "flex",
           justifyContent: "center",
@@ -228,7 +230,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
             variant="subtitle1"
             sx={{
               fontWeight: 700,
-              fontSize: "1.5rem",
+              fontSize: { xs: "1.125rem", md: "1.5rem" },
               color: "text.primary",
               minWidth: 0,
               whiteSpace: "nowrap",

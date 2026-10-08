@@ -2,6 +2,7 @@ import React from "react";
 
 import { usePermissions } from "../hooks/usePermissions";
 import { BugFab } from "./BugFab";
+import { useSupportAccess } from "./useSupport";
 import { buildAutoDescription } from "./autoDescription";
 import {
   clearProblem,
@@ -43,6 +44,7 @@ export const useSupportReport = (): SupportReportContextValue => {
  */
 export const SupportReportProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const { role, activeOrganization, activeBranch } = usePermissions();
+  const { canCreate } = useSupportAccess();
   const [problem, setProblem] = React.useState<Problem | null>(() => getRecentProblem());
   const [fabVisible, setFabVisible] = React.useState(() => getRecentProblem() !== null);
   const [preparing, setPreparing] = React.useState(false);
@@ -72,7 +74,7 @@ export const SupportReportProvider: React.FC<React.PropsWithChildren> = ({ child
 
   const openReport = React.useCallback(
     async (options: OpenReportOptions = {}) => {
-      if (busyRef.current) return;
+      if (busyRef.current || !canCreate) return;
       busyRef.current = true;
       setPreparing(true);
       try {
@@ -100,7 +102,7 @@ export const SupportReportProvider: React.FC<React.PropsWithChildren> = ({ child
         setPreparing(false);
       }
     },
-    [roleName, organizationId, branchId],
+    [roleName, organizationId, branchId, canCreate],
   );
 
   const value = React.useMemo<SupportReportContextValue>(
@@ -112,7 +114,7 @@ export const SupportReportProvider: React.FC<React.PropsWithChildren> = ({ child
     <SupportReportContext.Provider value={value}>
       {children}
       <BugFab
-        visible={fabVisible && !open}
+        visible={canCreate && fabVisible && !open}
         busy={preparing}
         onOpen={() => void openReport({ category: "bug" })}
         onDismiss={() => {

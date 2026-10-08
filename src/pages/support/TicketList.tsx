@@ -200,7 +200,8 @@ export const TicketListSkeleton: React.FC<{ rows?: number }> = ({ rows = 5 }) =>
 
 export const TicketsEmpty: React.FC<{
   filtered: boolean;
-  onReport: () => void;
+  /** Нет — без кнопки «Сообщить» (у роли нет support.create). */
+  onReport?: () => void;
   onReset: () => void;
 }> = ({ filtered, onReport, onReset }) => {
   const reduceMotion = useReducedMotion();
@@ -234,13 +235,15 @@ export const TicketsEmpty: React.FC<{
           ? "Попробуйте изменить фильтры или поиск."
           : "Что-то не работает или есть идея, как сделать удобнее? Напишите — мы соберём всё нужное сами."}
       </Typography>
-      <Button
-        variant="contained"
-        onClick={filtered ? onReset : onReport}
-        sx={{ textTransform: "none", fontWeight: 700, borderRadius: "12px", px: 2.5 }}
-      >
-        {filtered ? "Сбросить фильтры" : "Сообщить о проблеме"}
-      </Button>
+      {(filtered || onReport) && (
+        <Button
+          variant="contained"
+          onClick={filtered ? onReset : onReport}
+          sx={{ textTransform: "none", fontWeight: 700, borderRadius: "12px", px: 2.5 }}
+        >
+          {filtered ? "Сбросить фильтры" : "Сообщить о проблеме"}
+        </Button>
+      )}
     </Box>
   );
 };

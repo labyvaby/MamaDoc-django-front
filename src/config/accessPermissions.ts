@@ -46,6 +46,9 @@ export const PAGE_PERMISSIONS = {
   // ролей; сам аккаунт в Chatwoot заводит его администратор отдельно.
   chats: "chatwoot.view",
   tasks: "tasks.list",
+  // Поддержка — обычный модуль: страница и свои обращения — support.view,
+  // отправка — support.create (кнопки проверяют сами, см. useSupportAccess).
+  support: "support.view",
   waitlist: ["waitlist.view", "waitlist.manage"],
   // Воронка продаж: смотреть доску даёт deals.list, настраивать — deals.manage.
   deals: ["deals.list", "deals.manage"],

@@ -39,6 +39,7 @@ import { ClinicPagePrefetch } from "./components/layout/ClinicPagePrefetch";
 import { BranchPickerDialog } from "./components/auth/BranchPickerDialog";
 import { MobileSidebarProvider } from "./components/sidebar/mobile-context";
 import { SupportReportProvider } from "./support/SupportReportProvider";
+import { RequireSupportAccess } from "./support/RequireSupportAccess";
 import { ColorModeContextProvider } from "./contexts/color-mode";
 import { RefreshProvider } from "./contexts/refresh-context";
 import { TitleProvider } from "./contexts/title-context";
@@ -1484,15 +1485,17 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            {/* Поддержка — канал связи с разработчиками платформы.
-                                Права не нужны: любой вошедший сотрудник видит свои
-                                обращения; что видно сверх этого, решает бэкенд. */}
+                            {/* Поддержка — модуль `support` + право support.view;
+                                разработчик платформы проходит всегда. Что видно
+                                сверх своих обращений, решает бэкенд. */}
                             <Route
                               path="support"
                               element={
-                                <Suspense fallback={<LinearProgress />}>
-                                  <SupportPage />
-                                </Suspense>
+                                <RequireSupportAccess>
+                                  <Suspense fallback={<LinearProgress />}>
+                                    <SupportPage />
+                                  </Suspense>
+                                </RequireSupportAccess>
                               }
                             />
                             {/* Лист ожидания — вместе с флагом
