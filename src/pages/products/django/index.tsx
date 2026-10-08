@@ -18,6 +18,11 @@ import {
   Badge,
   TextField,
   MenuItem,
+  Checkbox,
+  Menu,
+  ListItemIcon,
+  ListItemText,
+  LinearProgress,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useNotification } from "@refinedev/core";
@@ -28,9 +33,15 @@ import Inventory2OutlinedIcon from "@mui/icons-material/Inventory2Outlined";
 import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
+import CloseIcon from "@mui/icons-material/Close";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
+import SellOutlined from "@mui/icons-material/SellOutlined";
+import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import dayjs from "dayjs";
 
-import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState, InfoTile } from "../../../components/ui";
+import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState, InfoTile, SelectionMark, selectionHintHoverSx } from "../../../components/ui";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 import CategoryOutlined from "@mui/icons-material/CategoryOutlined";
@@ -51,7 +62,10 @@ import {
   getProductGallery,
   getProductCostPrice,
   deleteProduct,
+  updateProduct,
+  getProductCategoryTree,
   DjangoProduct,
+  DjangoProductCategoryNode,
   DjangoPriceHistoryEntry,
   DjangoProductImage,
 } from "../../../api/warehouse";
@@ -59,6 +73,11 @@ import { formatKGS } from "../../../utility/format";
 import { DjangoProductFormDrawer } from "../../../components/products/django/DjangoProductFormDrawer";
 import { DjangoProductImageSlider } from "../../../components/products/django/DjangoProductImageSlider";
 import ProductFilterDrawer, { ProductFilters } from "../../../components/products/ProductFilterDrawer";
+import { describeFailures, runBulk, toggleSelection, type BulkResult } from "../../../utility/bulkSelection";
+import { BulkCategoryDialog, BulkPriceDialog, type CategoryChoice } from "./BulkProductDialogs";
+import { exportProductsXlsx } from "./exportProductsXlsx";
+import { useLongPress } from "../../../hooks/useLongPress";
+import { hapticTap } from "../../../utility/haptics";
 
 /**
  * Состояние остатка для бейджа в строке: нет / мало / есть.
@@ -92,7 +111,8 @@ const DjangoProductsPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { open: notify } = useNotification();
   const { confirm, ConfirmDialog } = useConfirmDialog();
-  const { loading: permLoading } = usePermissions();
+  const { loading: permLoading, activeOrganization } = usePermissions();
+  const isRetail = activeOrganization?.vertical === "retail";
   // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту.
   const orgId = useApiOrgId();
   const canView = useCan(["warehouse.view", "warehouse.sales.view"]);
@@ -124,6 +144,16 @@ const DjangoProductsPage: React.FC = () => {
   // Selection state (Desktop & Mobile)
   const [selectedProduct, setSelectedProduct] = React.useState<DjangoProduct | null>(null);
 
+  // Массовый выбор: отдельно от «открытого» товара справа. Якорь — последняя
+  // строка, отмеченная без Shift, от неё считается диапазон.
+  const [checkedIds, setCheckedIds] = React.useState<Set<number>>(() => new Set());
+  const anchorIdRef = React.useRef<number | null>(null);
+  const [bulkMenuAnchor, setBulkMenuAnchor] = React.useState<HTMLElement | null>(null);
+  const [bulkProgress, setBulkProgress] = React.useState<{ label: string; done: number; total: number } | null>(null);
+  const [categoryDialogOpen, setCategoryDialogOpen] = React.useState(false);
+  const [priceDialogOpen, setPriceDialogOpen] = React.useState(false);
+  const [categoryTree, setCategoryTree] = React.useState<DjangoProductCategoryNode[] | null>(null);
+
   const productsAbortRef = React.useRef<AbortController | null>(null);
   const fetchProducts = React.useCallback(async () => {
     productsAbortRef.current?.abort();
@@ -137,6 +167,13 @@ const DjangoProductsPage: React.FC = () => {
       setSelectedProduct((prev) =>
         prev ? data.find((p) => p.id === prev.id) ?? null : null,
       );
+      // Удалённые и ушедшие в архив товары из выбора выпадают.
+      setCheckedIds((prev) => {
+        if (prev.size === 0) return prev;
+        const alive = new Set(data.map((p) => p.id));
+        const next = new Set([...prev].filter((id) => alive.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
     } catch (e) {
       if (isAbortError(e)) return;
       console.error("Failed to load products:", e);
@@ -338,6 +375,178 @@ const DjangoProductsPage: React.FC = () => {
 
   const isFilterActive = filters.category || filters.saleStatus !== "all" || filters.stockStatus !== "all";
 
+  // ── Массовый выбор и действия ──
+  const visibleIds = React.useMemo(() => filteredProducts.map((p) => p.id), [filteredProducts]);
+  // В порядке списка на экране (так же уйдут в Excel), скрытые фильтром — в конце.
+  const checkedProducts = React.useMemo(() => {
+    const visible = filteredProducts.filter((p) => checkedIds.has(p.id));
+    const shown = new Set(visible.map((p) => p.id));
+    return [...visible, ...products.filter((p) => checkedIds.has(p.id) && !shown.has(p.id))];
+  }, [filteredProducts, products, checkedIds]);
+  const visibleCheckedCount = visibleIds.filter((id) => checkedIds.has(id)).length;
+  const allVisibleChecked = visibleIds.length > 0 && visibleCheckedCount === visibleIds.length;
+  const hiddenCheckedCount = checkedIds.size - visibleCheckedCount;
+  const checkedTotals = React.useMemo(() => {
+    let value = 0;
+    for (const p of checkedProducts) value += p.price * Math.max(0, p.stock || 0);
+    return { value };
+  }, [checkedProducts]);
+  const bulkBusy = bulkProgress !== null;
+  const hasChecked = checkedIds.size > 0;
+
+  const toggleChecked = (id: number, shift: boolean) => {
+    setCheckedIds((prev) => toggleSelection(prev, visibleIds, id, anchorIdRef.current, shift));
+    if (!shift) anchorIdRef.current = id;
+  };
+
+  const toggleAllVisible = () => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of visibleIds) {
+        if (allVisibleChecked) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+    anchorIdRef.current = null;
+  };
+
+  // Долгое нажатие включает выбор и отмечает строку (повторное — не снимает).
+  const startSelection = (id: number) => {
+    setCheckedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    anchorIdRef.current = id;
+  };
+  const longPress = useLongPress((id) => {
+    hapticTap();
+    startSelection(id);
+  }, !bulkBusy);
+
+  const clearChecked = () => {
+    setCheckedIds(new Set());
+    anchorIdRef.current = null;
+  };
+
+  const nameOf = (id: number) => products.find((p) => p.id === id)?.name ?? `#${id}`;
+
+  /** Прогоняет действие по выбранным, сообщает итог и оставляет выбранными только сбойные. */
+  const runBulkAction = async (
+    label: string,
+    ids: number[],
+    action: (id: number) => Promise<unknown>,
+    successMessage: (result: BulkResult) => string,
+  ) => {
+    setBulkMenuAnchor(null);
+    if (ids.length === 0) {
+      notify?.({ type: "success", message: "Менять нечего — у выбранных товаров уже так" });
+      return;
+    }
+    setBulkProgress({ label, done: 0, total: ids.length });
+    const result = await runBulk(ids, action, {
+      onProgress: (done) => setBulkProgress({ label, done, total: ids.length }),
+    });
+    setBulkProgress(null);
+    await fetchProducts();
+    if (result.failed.length === 0) {
+      notify?.({ type: "success", message: successMessage(result) });
+      clearChecked();
+    } else {
+      setCheckedIds(new Set(result.failed.map((f) => f.id)));
+      notify?.({
+        type: "error",
+        message: `Готово ${result.done.length} из ${ids.length}. Не получилось: ${describeFailures(result.failed, nameOf)}`,
+      });
+    }
+  };
+
+  const handleBulkSaleStatus = (isForSale: boolean) => {
+    const ids = checkedProducts.filter((p) => (p.isForSale ?? true) !== isForSale).map((p) => p.id);
+    void runBulkAction(
+      isForSale ? "Включаю в продажу" : "Скрываю из продажи",
+      ids,
+      (id) => updateProduct(id, { isForSale }),
+      (r) => `${isForSale ? "В продаже" : "Скрыто из продажи"}: ${r.done.length}`,
+    );
+  };
+
+  const openCategoryDialog = async () => {
+    setBulkMenuAnchor(null);
+    if (isRetail) {
+      try {
+        setCategoryTree(await getProductCategoryTree(undefined, orgId));
+      } catch (e) {
+        const message = e instanceof ApiError ? e.message : "Не удалось загрузить категории";
+        notify?.({ type: "error", message });
+        return;
+      }
+    } else {
+      setCategoryTree(null);
+    }
+    setCategoryDialogOpen(true);
+  };
+
+  const handleBulkCategory = (choice: CategoryChoice) => {
+    setCategoryDialogOpen(false);
+    const ids = checkedProducts
+      .filter((p) => ("categoryId" in choice ? p.categoryId !== choice.categoryId : p.category !== choice.name))
+      .map((p) => p.id);
+    void runBulkAction(
+      "Меняю категорию",
+      ids,
+      (id) =>
+        updateProduct(
+          id,
+          "categoryId" in choice ? { categoryId: choice.categoryId, category: choice.name } : { category: choice.name },
+        ),
+      (r) => `Категория «${choice.name}» у ${r.done.length} товаров`,
+    );
+  };
+
+  const handleBulkPrice = (prices: Map<number, number>) => {
+    setPriceDialogOpen(false);
+    void runBulkAction(
+      "Меняю цены",
+      [...prices.keys()],
+      (id) => updateProduct(id, { price: prices.get(id) }),
+      (r) => `Цена изменена у ${r.done.length} товаров`,
+    );
+  };
+
+  const handleBulkExport = async () => {
+    setBulkMenuAnchor(null);
+    try {
+      await exportProductsXlsx(checkedProducts);
+    } catch (e) {
+      console.error("Export failed:", e);
+      notify?.({ type: "error", message: "Не удалось выгрузить файл" });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setBulkMenuAnchor(null);
+    const ids = checkedProducts.map((p) => p.id);
+    const confirmed = await confirm({
+      title: `Удалить товары (${ids.length})?`,
+      message:
+        "Товары с историей движений и продаж уйдут в архив, остальные удалятся насовсем. Действие нельзя отменить.",
+      confirmText: "Удалить",
+      cancelText: "Отмена",
+      variant: "error",
+    });
+    if (!confirmed) return;
+    let archived = 0;
+    void runBulkAction(
+      "Удаляю",
+      ids,
+      async (id) => {
+        if (await deleteProduct(id)) archived += 1;
+      },
+      (r) =>
+        archived > 0
+          ? `Удалено: ${r.done.length - archived}, в архив: ${archived}`
+          : `Удалено товаров: ${r.done.length}`,
+    );
+  };
+
   if (!permLoading && !canView) return <AccessDenied />;
 
   return (
@@ -374,42 +583,158 @@ const DjangoProductsPage: React.FC = () => {
                 flexDirection: "column",
               }}
             >
-              <Stack
-                direction="row"
-                alignItems="center"
-                justifyContent="space-between"
-                useFlexGap
-                flexWrap="wrap"
-                sx={{ p: 1.5, borderBottom: 1, borderColor: "divider", gap: 1 }}
+              {/* Шапка списка. Пока что-то выбрано, на её месте — панель
+                  массовых действий той же высоты: список не прыгает, и
+                  следующий клик (в том числе с Shift) попадает в свою строку. */}
+              <Box
+                sx={(t) => ({
+                  position: "relative",
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 1,
+                  minHeight: 64,
+                  px: 1.5,
+                  py: 1.5,
+                  borderBottom: 1,
+                  borderColor: "divider",
+                  bgcolor: hasChecked
+                    ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.06)
+                    : undefined,
+                })}
               >
-                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                  Товары ({isFilterActive ? `${filteredProducts.length} из ${products.length}` : products.length})
-                </Typography>
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <TextField
-                    select
-                    size="small"
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                    sx={{ minWidth: 150 }}
-                  >
-                    <MenuItem value="name">По названию</MenuItem>
-                    <MenuItem value="stock">По остатку</MenuItem>
-                    <MenuItem value="price">По цене</MenuItem>
-                  </TextField>
-                  <Badge badgeContent={activeFilterCount} color="primary">
+                {hasChecked && (
+                <Tooltip title={allVisibleChecked ? "Снять выбор" : "Выбрать все в списке"}>
+                  <span>
+                    <Checkbox
+                      size="small"
+                      checked={allVisibleChecked}
+                      indeterminate={visibleCheckedCount > 0 && !allVisibleChecked}
+                      disabled={loading || bulkBusy || visibleIds.length === 0}
+                      onChange={toggleAllVisible}
+                      inputProps={{ "aria-label": "Выбрать все товары в списке" }}
+                      sx={{ ml: -0.5, p: 0.5 }}
+                    />
+                  </span>
+                </Tooltip>
+                )}
+                {hasChecked ? (
+                  <>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                        Выбрано: {checkedIds.size}
+                        {hiddenCheckedCount > 0 && (
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            {` (${hiddenCheckedCount} скрыто фильтром)`}
+                          </Typography>
+                        )}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" noWrap display="block">
+                        {bulkProgress
+                          ? `${bulkProgress.label}… ${bulkProgress.done} из ${bulkProgress.total}`
+                          : `Остаток на ${Math.round(checkedTotals.value).toLocaleString()} сом`}
+                      </Typography>
+                    </Box>
                     <Button
                       size="small"
-                      variant="outlined"
-                      startIcon={<FilterListIcon fontSize="small" />}
-                      onClick={() => setFilterDrawerOpen(true)}
-                      sx={{ textTransform: "none" }}
+                      variant="contained"
+                      endIcon={<MoreHorizIcon fontSize="small" />}
+                      disabled={bulkBusy}
+                      onClick={(e) => setBulkMenuAnchor(e.currentTarget)}
+                      sx={{ textTransform: "none", flexShrink: 0 }}
                     >
-                      Фильтры
+                      Действия
                     </Button>
-                  </Badge>
-                </Stack>
-              </Stack>
+                    <Tooltip title="Снять выбор">
+                      <span>
+                        <IconButton size="small" disabled={bulkBusy} onClick={clearChecked} aria-label="Снять выбор">
+                          <CloseIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>
+                      Товары ({isFilterActive ? `${filteredProducts.length} из ${products.length}` : products.length})
+                    </Typography>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <TextField
+                        select
+                        size="small"
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                        sx={{ minWidth: 150 }}
+                      >
+                        <MenuItem value="name">По названию</MenuItem>
+                        <MenuItem value="stock">По остатку</MenuItem>
+                        <MenuItem value="price">По цене</MenuItem>
+                      </TextField>
+                      <Badge badgeContent={activeFilterCount} color="primary">
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<FilterListIcon fontSize="small" />}
+                          onClick={() => setFilterDrawerOpen(true)}
+                          sx={{ textTransform: "none" }}
+                        >
+                          Фильтры
+                        </Button>
+                      </Badge>
+                    </Stack>
+                  </>
+                )}
+                {bulkProgress && (
+                  <LinearProgress
+                    variant="determinate"
+                    value={(bulkProgress.done / bulkProgress.total) * 100}
+                    sx={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 3 }}
+                  />
+                )}
+                <Menu
+                  anchorEl={bulkMenuAnchor}
+                  open={Boolean(bulkMenuAnchor)}
+                  onClose={() => setBulkMenuAnchor(null)}
+                  anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                  transformOrigin={{ vertical: "top", horizontal: "right" }}
+                >
+                  {canManage && [
+                    <MenuItem key="on" onClick={() => handleBulkSaleStatus(true)}>
+                      <ListItemIcon><VisibilityOutlined fontSize="small" /></ListItemIcon>
+                      <ListItemText>Включить в продажу</ListItemText>
+                    </MenuItem>,
+                    <MenuItem key="off" onClick={() => handleBulkSaleStatus(false)}>
+                      <ListItemIcon><VisibilityOffOutlined fontSize="small" /></ListItemIcon>
+                      <ListItemText>Скрыть из продажи</ListItemText>
+                    </MenuItem>,
+                    <MenuItem key="cat" onClick={() => void openCategoryDialog()}>
+                      <ListItemIcon><CategoryOutlined fontSize="small" /></ListItemIcon>
+                      <ListItemText>Сменить категорию</ListItemText>
+                    </MenuItem>,
+                    <MenuItem
+                      key="price"
+                      onClick={() => {
+                        setBulkMenuAnchor(null);
+                        setPriceDialogOpen(true);
+                      }}
+                    >
+                      <ListItemIcon><SellOutlined fontSize="small" /></ListItemIcon>
+                      <ListItemText>Изменить цену</ListItemText>
+                    </MenuItem>,
+                  ]}
+                  <MenuItem onClick={() => void handleBulkExport()}>
+                    <ListItemIcon><FileDownloadOutlined fontSize="small" /></ListItemIcon>
+                    <ListItemText>Выгрузить в Excel</ListItemText>
+                  </MenuItem>
+                  {canManage && <Divider />}
+                  {canManage && (
+                    <MenuItem onClick={() => void handleBulkDelete()} sx={{ color: "error.main" }}>
+                      <ListItemIcon><DeleteOutlineOutlined fontSize="small" color="error" /></ListItemIcon>
+                      <ListItemText>Удалить</ListItemText>
+                    </MenuItem>
+                  )}
+                </Menu>
+              </Box>
 
               {/* Сводка по наличию — кликабельные чипы-фильтры */}
               <Stack
@@ -572,18 +897,39 @@ const DjangoProductsPage: React.FC = () => {
                 ) : (
                   <Stack spacing={1} sx={{ p: 1.5 }}>
                     {filteredProducts.map((p) => {
+                      const isChecked = checkedIds.has(p.id);
                       const isSelected = selectedProduct?.id === p.id;
                       const stockState = getStockState(p);
                       return (
                         <ButtonBase
                           key={p.id}
                           focusRipple
-                          onClick={() => {
+                          {...longPress.bind(p.id)}
+                          role={hasChecked ? "checkbox" : undefined}
+                          aria-checked={hasChecked ? isChecked : undefined}
+                          // Shift-клик иначе выделяет текст строк вместо диапазона.
+                          onMouseDown={(e: React.MouseEvent) => {
+                            if (e.shiftKey) e.preventDefault();
+                          }}
+                          onClick={(e: React.MouseEvent) => {
+                            // Хвост долгого нажатия: отметку оно уже поставило.
+                            if (longPress.consumeClick()) return;
+                            // Как в галерее: пока идёт выбор, тап отмечает строку.
+                            // Ctrl/Cmd/Shift-клик — то же с мыши, без долгого нажатия.
+                            if (hasChecked || e.ctrlKey || e.metaKey || e.shiftKey) {
+                              if (!bulkBusy) toggleChecked(p.id, e.shiftKey);
+                              return;
+                            }
                             if (selectedProduct?.id !== p.id) {
                               setSelectedProduct(p);
                             }
                           }}
                           sx={{
+                            // Долгое касание не должно выделять текст и звать
+                            // системное меню iOS.
+                            userSelect: "none",
+                            WebkitUserSelect: "none",
+                            WebkitTouchCallout: "none",
                             display: "flex",
                             alignItems: "center",
                             gap: 1.5,
@@ -592,33 +938,41 @@ const DjangoProductsPage: React.FC = () => {
                             p: 1.25,
                             borderRadius: "14px",
                             border: 1,
-                            borderColor: isSelected ? "primary.main" : "divider",
+                            borderColor: isSelected ? "primary.main" : isChecked ? (theme) => alpha(theme.palette.primary.main, 0.4) : "divider",
                             bgcolor: (theme) =>
-                              isSelected ? alpha(theme.palette.primary.main, 0.08) : "background.paper",
+                              isChecked ? alpha(theme.palette.primary.main, 0.08) : "background.paper",
                             transition:
                               "border-color .15s ease, background-color .15s ease",
+                            ...selectionHintHoverSx,
                             "&:hover": {
                               borderColor: (theme) => alpha(theme.palette.primary.main, 0.28),
                               bgcolor: (theme) => subtleBg(theme, true),
                             },
                           }}
                         >
-                          {/* Левая часть приглушается, если товара нет в наличии */}
-                          <Avatar
-                            variant="rounded"
-                            src={p.imageThumbnailUrl ?? p.imageUrl ?? undefined}
-                            sx={{
-                              flexShrink: 0,
-                              width: 48,
-                              height: 48,
-                              borderRadius: "14px",
-                              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                              color: "primary.onSurface",
-                              opacity: stockState.out ? 0.55 : 1,
-                            }}
-                          >
-                            {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
-                          </Avatar>
+                          {/* Фото; в режиме выбора поверх него — отметка, как в галерее.
+                              Левая часть приглушается, если товара нет в наличии. */}
+                          <Box sx={{ position: "relative", flexShrink: 0, width: 48, height: 48 }}>
+                            <Avatar
+                              variant="rounded"
+                              src={p.imageThumbnailUrl ?? p.imageUrl ?? undefined}
+                              sx={{
+                                width: 48,
+                                height: 48,
+                                borderRadius: "14px",
+                                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                                color: "primary.onSurface",
+                                opacity: stockState.out && !hasChecked ? 0.55 : 1,
+                              }}
+                            >
+                              {p.name.charAt(0) || <Inventory2OutlinedIcon fontSize="small" />}
+                            </Avatar>
+                            {hasChecked ? (
+                              <SelectionMark checked={isChecked} />
+                            ) : (
+                              !bulkBusy && <SelectionMark checked={false} onStart={() => startSelection(p.id)} />
+                            )}
+                          </Box>
                           <Box sx={{ flex: 1, minWidth: 0, opacity: stockState.out ? 0.55 : 1 }}>
                             <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                               {p.name}
@@ -721,6 +1075,21 @@ const DjangoProductsPage: React.FC = () => {
           )}
         </AppBottomSheet>
       )}
+
+      <BulkCategoryDialog
+        open={categoryDialogOpen}
+        count={checkedIds.size}
+        tree={categoryTree}
+        legacyCategories={availableCategories}
+        onClose={() => setCategoryDialogOpen(false)}
+        onSubmit={handleBulkCategory}
+      />
+      <BulkPriceDialog
+        open={priceDialogOpen}
+        products={checkedProducts}
+        onClose={() => setPriceDialogOpen(false)}
+        onSubmit={handleBulkPrice}
+      />
 
       {/* Диалог подтверждения удаления товара */}
       <ConfirmDialog />

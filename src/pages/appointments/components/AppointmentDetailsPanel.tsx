@@ -33,7 +33,6 @@ import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import DirectionsWalkOutlined from "@mui/icons-material/DirectionsWalkOutlined";
 import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
-import StarOutlineRounded from "@mui/icons-material/StarOutlineRounded";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useNotification } from "@refinedev/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -85,8 +84,9 @@ import AppointmentBill, {
 } from "./details/AppointmentBill";
 import AppointmentDueDoses from "./details/AppointmentDueDoses";
 import AppointmentPriceHistory from "./details/AppointmentPriceHistory";
+import AppointmentPaymentHistory from "./details/AppointmentPaymentHistory";
 import { appointmentNetPaid } from "./paymentCancelGuard";
-import { useAppointmentReview } from "../../reviews/AppointmentReviewBlock";
+import { knownPaymentPhase } from "../../../utility/paymentPhase";
 
 /** Действие шапки карточки — рисуется кнопкой или пунктом меню. */
 interface HeaderAction {
@@ -389,11 +389,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
     [dueDoses],
   );
 
-
-  // Запрос отзыва — статус виден в AppointmentWhenBlock, кнопка живёт в
-  // общем списке действий шапки (см. ниже, actions.push key "review").
-  const review = useAppointmentReview(appt.id);
-
   const pay = payQuery.data;
   const isCancelled =
     appt.status === "canceled" ||
@@ -405,6 +400,18 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const discountAmount = pay?.discountAmount ?? appt.discountAmount;
   const refundedTotal = pay?.refundedTotal;
   const payStatus = pay?.paymentStatus ?? appt.paymentStatus;
+  // До начала приёма остаток — «к оплате», после — долг. Сводка оплат свежее
+  // приёма из списка, поэтому её фаза важнее.
+  const paymentPhase =
+    pay?.settlement?.phase ??
+    knownPaymentPhase({
+      ...appt,
+      paymentStatus: payStatus,
+      paidTotal: pay?.paidNet ?? paidTotal,
+      payableAmount: pay?.payableAmount ?? appt.payableAmount,
+    }) ??
+    undefined;
+  const historyEnabled = pay?.access?.historyEnabled === true;
 
   // Подтверждение банка бэк шлёт не на всех эндпоинтах, в типе приёма поля нет.
   const hasBankConfirmation = (appt as DjangoAppointment & { hasBankConfirmation?: boolean })
@@ -414,8 +421,7 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
   const hasPaid = !!(paidTotal && paidTotal !== "0.00" && paidTotal !== "0");
 
   // Оплату приняли — визит де-факто состоялся: «Подтвердить» и «Пациент здесь»
-  // больше не нужны, а запрос отзыва, наоборот, доступен только с этого
-  // момента (см. actions ниже). Смотрим на деньги,
+  // больше не нужны. Смотрим на деньги,
   // а не на статус приёма: бэк оставляет его scheduled/confirmed и после оплаты.
   // «discounted» без внесённых сумм — скидка 100%, тоже закрытый расчёт.
   const isPaymentAccepted = hasPaid || payStatus === "paid" || payStatus === "discounted";
@@ -551,10 +557,11 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       ...appt,
       paymentStatus: payStatus,
       paidTotal,
+      paymentPhase,
       paymentMethods:
         methodsFromPayments.length > 0 ? methodsFromPayments : appt.paymentMethods,
     };
-  }, [appt, payStatus, paidTotal, cashPaid, cardPaid, balancePaid, bonusesPaid, insurancePaid]);
+  }, [appt, payStatus, paidTotal, paymentPhase, cashPaid, cardPaid, balancePaid, bonusesPaid, insurancePaid]);
 
   // Services grouped by employee — исполнитель и его услуги одной группой
   const servicesByEmployee = React.useMemo<ServiceEmployeeGroup[]>(() => {
@@ -761,23 +768,6 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
       label: t("details.edit"),
       icon: <EditOutlined fontSize="small" />,
       onClick: () => onEdit(appt),
-    });
-  }
-
-  // Запросить отзыв — только после принятой оплаты: до расчёта просить отзыв
-  // не о чем. Низкоприоритетное действие, обычно уходит в меню «⋯»;
-  // если запрос уже был, кнопка предлагает переотправить.
-  if (review.showButton && isPaymentAccepted) {
-    actions.push({
-      key: "review",
-      label: review.latest ? "Переотправить отзыв" : "Запросить отзыв",
-      icon: review.isPending ? (
-        <CircularProgress size={14} color="inherit" />
-      ) : (
-        <StarOutlineRounded fontSize="small" />
-      ),
-      disabled: review.isPending,
-      onClick: review.requestReview,
     });
   }
 
@@ -1236,6 +1226,21 @@ const AppointmentDetailsPanel: React.FC<AppointmentDetailsPanelProps> = ({
                   {/* adminComment показан вверху, рядом с пациентом. */}
                 </Stack>
               </>
+            )}
+
+            {/* ── История оплат — в самом низу: кто, когда и каким способом
+                принял деньги, предоплата/долг, правка и возврат. Модуль
+                включается в настройках организации; права — finance.payments.* ── */}
+            {(canViewFinance || canManageFinance) && historyEnabled && (
+              <AppointmentPaymentHistory
+                appointment={appt}
+                summary={pay}
+                loading={payQuery.isLoading}
+                error={payQuery.isError}
+                onRetry={() => void payQuery.refetch()}
+                canAcceptPayment={canManageFinance}
+                onPay={() => onPay(appt)}
+              />
             )}
 
             {/* Заключение теперь открывается отдельной (третьей) колонкой на

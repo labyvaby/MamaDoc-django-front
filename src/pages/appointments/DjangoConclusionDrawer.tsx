@@ -54,19 +54,13 @@ import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
-import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import { useNotification } from "@refinedev/core";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { useKeyboardViewportHeight } from "../../hooks/useKeyboardViewportHeight";
-import {
-  useAppointmentReceipt,
-  useReceiptAvailable,
-} from "../../components/appointments/useAppointmentReceipt";
-import InvoiceFormatDialog from "../../components/appointments/InvoiceFormatDialog";
-import type { InvoicePageSize } from "../../components/appointments/appointmentInvoice";
 import { formatQuantity, trimDecimalInput } from "../../utility/format";
 import { PHOTO_ACCEPT } from "../../utility/imageCompression";
 import { useT } from "../../i18n/VerticalProvider";
@@ -80,6 +74,7 @@ import { formatPatientAge } from "../../utility/age";
 import { subtleBg } from "../../theme";
 import { ConclusionHistory } from "../../components/conclusion-forms/ConclusionHistory";
 import { ConclusionFormReadView } from "../../components/conclusion-forms/ConclusionFormReadView";
+import { PatientConclusionHistoryPanel } from "../../components/conclusion-forms/PatientConclusionHistoryPanel";
 import { buildConclusionPrintParts, formatDiagnoses } from "../../utility/conclusionPrintParts";
 import {
   AiAssistHeaderButton,
@@ -365,29 +360,6 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
     ? Math.max(132, Math.round(keyboard.availableHeight * 0.45))
     : undefined;
 
-  // ── чек (лист A5) ─────────────────────────────────────────────────────────
-  // Печатается по всему приёму, а не по строке услуги: касса принимает оплату
-  // за визит целиком.
-  const { printReceipt, pending: receiptPending } = useAppointmentReceipt();
-  const receiptAppointmentId = appointmentId ?? conclusion?.appointmentId ?? null;
-  // До оплаты чека нет: врач заполняет заключение раньше кассы, и печатать
-  // бланк с нулями пациенту нельзя.
-  const receiptAvailable = useReceiptAvailable(receiptAppointmentId, open);
-  // Лист выбираем перед печатью: A5 — кассовый чек, A4 — счёт на руки.
-  const [receiptFormatOpen, setReceiptFormatOpen] = React.useState(false);
-  const handlePrintReceipt = async (pageSize: InvoicePageSize) => {
-    setReceiptFormatOpen(false);
-    if (receiptAppointmentId == null) return;
-    try {
-      const result = await printReceipt(receiptAppointmentId, pageSize);
-      if (result === "blocked") {
-        notify?.({ type: "error", message: t("invoice.popupBlocked") });
-      }
-    } catch {
-      notify?.({ type: "error", message: t("conclusion.receiptError") });
-    }
-  };
-
   // ── form state ────────────────────────────────────────────────────────────
   const [complaints, setComplaints] = React.useState("");
   const [anamnesis, setAnamnesis] = React.useState("");
@@ -444,6 +416,14 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
   const readOnly = !canEdit;
+  const canViewPatientHistory = useCan("medical.conclusions.view");
+  const [patientHistoryOpen, setPatientHistoryOpen] = React.useState(false);
+  const historySide = !inline && !isMobile;
+  const showHistorySide = patientHistoryOpen && historySide;
+  const showHistoryTab = patientHistoryOpen && !historySide;
+  React.useEffect(() => {
+    setPatientHistoryOpen(false);
+  }, [open, appointmentId, canViewPatientHistory]);
 
   // ── лист рядом с формой (редизайн 28.09.2026) ─────────────────────────────
   // Справа от формы лист встаёт только в дровере на широком экране. В колонке
@@ -454,8 +434,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const [sheetPinned, setSheetPinned] = React.useState(readSheetPref);
   const [sheetTab, setSheetTab] = React.useState(false);
   // Лист есть и в просмотре: там это и есть документ, каким его напечатают.
-  const showSheetSide = sheetSide && sheetPinned;
-  const showSheetTab = !sheetSide && sheetTab;
+  const showSheetSide = sheetSide && sheetPinned && !patientHistoryOpen;
+  const showSheetTab = !sheetSide && sheetTab && !patientHistoryOpen;
   // Подсказки AI — слева от дровера, напротив полей; дровер не расширяется.
   // Широкий экран — «Зеркало» (карточка шириной с поле), поуже — «Фокус»
   // (метки у полей и одна раскрытая подсказка), ещё уже — плашки над полями.
@@ -465,7 +445,8 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const mirrorRoomWithSheet = useMediaQuery(gutterQuery("mirror", SHEET_DRAWER_MAX_WIDTH));
   const focusRoom = useMediaQuery(gutterQuery("focus", DRAWER_WIDTH_MD));
   const focusRoomWithSheet = useMediaQuery(gutterQuery("focus", SHEET_DRAWER_MAX_WIDTH));
-  const aiGutterMode: AiGutterMode | null = inline
+  const aiGutterMode: AiGutterMode | null =
+    inline || patientHistoryOpen
     ? null
     : (showSheetSide ? mirrorRoomWithSheet : mirrorRoom)
       ? "mirror"
@@ -495,6 +476,7 @@ const DjangoConclusionDrawer: React.FC<DjangoConclusionDrawerProps> = ({
   const showPreviewCoach = open && !previewCoachSeen && previewCoachReady && sheetButtonEl != null;
 
   const toggleSheet = () => {
+    setPatientHistoryOpen(false);
     if (sheetSide) {
       setSheetPinned((prev) => {
         writeSheetPref(!prev);
@@ -2581,7 +2563,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
    * по привычке посреди текста.
    */
   const handleHotkeys = (e: React.KeyboardEvent) => {
-    if (readOnly || saving || !(e.ctrlKey || e.metaKey)) return;
+    if (readOnly || saving || showHistoryTab || !(e.ctrlKey || e.metaKey)) return;
     if (e.key === "Enter") {
       e.preventDefault();
       requestSave("completed", false);
@@ -2819,6 +2801,15 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
     ) : null;
   // Пока AI думает — рамки полей, которые он читает, мерцают.
   useAiFieldMarks(formColumnRef.current, ai.loadingKeys, "data-ai-loading");
+  const historyToggleNode = canViewPatientHistory && historyPatientId != null ? (
+    <Button size="small" startIcon={<HistoryOutlined />} disableElevation
+      variant={patientHistoryOpen ? "contained" : "outlined"}
+      aria-pressed={patientHistoryOpen}
+      onClick={() => setPatientHistoryOpen((previous) => !previous)}
+      sx={{ alignSelf: "flex-start", whiteSpace: "nowrap" }}>
+      {t("conclusion.patientHistory.trigger")}
+    </Button>
+  ) : null;
 
   const content = (
     <>
@@ -2863,7 +2854,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
             {/* Лист в просмотре — документ, каким его напечатают. Без
                 заключения показывать нечего. */}
-            {conclusion && sheetToggleNode}
+            {conclusion && !showHistoryTab && sheetToggleNode}
             <IconButton onClick={onClose} size="small">
               <CloseOutlined />
             </IconButton>
@@ -2910,6 +2901,8 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               width: isMobile ? "100%" : "auto",
             }}
           >
+            {historyToggleNode}
+            {!showHistoryTab && <>
             <ConclusionDocumentMenu
               forms={selectableForms}
               form={attachedForm}
@@ -2930,11 +2923,12 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               compact
             />
             {progressNode}
+            </>}
           </Stack>
           <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
             {/* AI — одна кнопка на все поля; в шапке, потому что она не
                 прокручивается, а просят AI обычно дописав форму до низа. */}
-            {canAiAssist && (
+            {canAiAssist && !showHistoryTab && (
               <AiAssistHeaderButton
                 loading={ai.loading}
                 fieldCount={ai.loadingCount}
@@ -2942,7 +2936,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                 onClick={handleAiRequest}
               />
             )}
-            {sheetToggleNode}
+            {!showHistoryTab && sheetToggleNode}
             <IconButton onClick={saving ? undefined : onClose} size="small">
               <CloseOutlined />
             </IconButton>
@@ -2967,7 +2961,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       {previousLoading && <LinearProgress sx={{ height: 2, flexShrink: 0 }} />}
 
       {/* ── документы строки услуги (если их несколько или можно добавить) ── */}
-      {documentBar && !documentInHeader && (
+      {documentBar && !documentInHeader && !showHistoryTab && (
         <>
           {documentBar}
           <Divider />
@@ -2975,7 +2969,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       )}
 
       {/* ── AI думает: этапы и процент вместо полосы подсказок ── */}
-      {canAiAssist && ai.loading && !aiGutterFits && (
+      {canAiAssist && !showHistoryTab && ai.loading && !aiGutterFits && (
         <>
           <AiThinkingStrip fieldCount={ai.loadingCount} onCancel={ai.reset} />
           <Divider />
@@ -2984,7 +2978,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
 
       {/* ── подсказки AI: массовые действия, пока есть неразобранные ── */}
       {/* С колонкой слева пульт — над ней (aiGutterPult), здесь полосы нет. */}
-      {canAiAssist && !ai.loading && !aiGutterFits && ai.suggestedKeys.length > 0 && (
+      {canAiAssist && !showHistoryTab && !ai.loading && !aiGutterFits && ai.suggestedKeys.length > 0 && (
         <>
           <AiAssistPendingStrip
             pendingCount={ai.suggestedKeys.length}
@@ -3040,13 +3034,13 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         ref={formColumnRef}
         onFocus={handleFormFocus}
         sx={{
-          flex: showSheetSide ? `0 0 ${FORM_COLUMN_WIDTH}px` : 1,
+          flex: showHistorySide ? "0 0 52%" : showSheetSide ? `0 0 ${FORM_COLUMN_WIDTH}px` : 1,
           minWidth: 0,
-          display: showSheetTab ? "none" : "block",
+          display: showSheetTab || showHistoryTab ? "none" : "block",
           overflowY: "auto",
           p: 2,
           minHeight: 0,
-          borderRight: showSheetSide ? 1 : 0,
+          borderRight: showSheetSide || showHistorySide ? 1 : 0,
           borderColor: "divider",
           scrollbarWidth: "none",
           "&::-webkit-scrollbar": { display: "none" },
@@ -3628,17 +3622,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               >
                 {t("conclusion.certificate")}
               </Button>
-              {receiptAppointmentId != null && receiptAvailable && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<ReceiptLongOutlined />}
-                  onClick={() => setReceiptFormatOpen(true)}
-                  disabled={receiptPending}
-                >
-                  {t("conclusion.receipt")}
-                </Button>
-              )}
             </Stack>
           )}
         </Stack>
@@ -3657,6 +3640,13 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           {sheetPane}
         </Box>
       )}
+      {patientHistoryOpen && canViewPatientHistory && historyPatientId != null && (
+        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+          <PatientConclusionHistoryPanel key={historyPatientId}
+            patientId={historyPatientId} currentAppointmentId={appointmentId}
+            onClose={() => setPatientHistoryOpen(false)} />
+        </Box>
+      )}
       </Box>
 
       {/* ── inline-просмотр: действия внизу колонки (08.10.2026) ──
@@ -3664,7 +3654,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           строка раскладки, а не наложение поверх текста: прокрутка кончается
           над ним, и история правок в конце заключения не прячется.
           Главное — «Изменить» (залито), печать и справка — вторичные. */}
-      {inline && readOnly && (onStartEdit || (canPrint && conclusion)) && (
+      {inline && readOnly && !showHistoryTab && (onStartEdit || (canPrint && conclusion)) && (
         <>
           <Divider />
           <Stack
@@ -3720,18 +3710,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                 >
                   {t("conclusion.certificate")}
                 </Button>
-                {receiptAppointmentId != null && receiptAvailable && (
-                  <Button
-                    size="small"
-                    color="inherit"
-                    startIcon={<ReceiptLongOutlined />}
-                    onClick={() => setReceiptFormatOpen(true)}
-                    disabled={receiptPending}
-                    sx={{ whiteSpace: "nowrap" }}
-                  >
-                    {t("conclusion.receipt")}
-                  </Button>
-                )}
               </>
             )}
           </Stack>
@@ -3739,7 +3717,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
       )}
 
       {/* ── footer ── (в inline-просмотре скрыт: закрытие — крестиком в шапке) */}
-      {!(inline && readOnly) && (
+      {!(inline && readOnly) && !showHistoryTab && (
       <>
       <Divider />
       {/* Одна строка (08.10.2026, было ~97px): слева — статус документа и где
@@ -4114,12 +4092,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
           )}
         </Box>
       </Modal>
-
-      <InvoiceFormatDialog
-        open={receiptFormatOpen}
-        onCancel={() => setReceiptFormatOpen(false)}
-        onConfirm={handlePrintReceipt}
-      />
     </>
   );
 
@@ -4150,7 +4122,9 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
         sx: {
           // С листом справа дровер шире ровно на лист: колонка формы остаётся
           // прежней ширины (FORM_COLUMN_WIDTH), лист занимает остальное.
-          width: showSheetSide
+          width: showHistorySide
+            ? "min(1080px, calc(100vw - 32px))"
+            : showSheetSide
             ? `min(${SHEET_DRAWER_MAX_WIDTH}px, calc(100vw - 48px))`
             : { xs: "100vw", sm: 520, md: DRAWER_WIDTH_MD },
           transition: (th) =>

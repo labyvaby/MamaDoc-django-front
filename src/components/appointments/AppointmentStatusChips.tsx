@@ -51,6 +51,7 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
+import PieChartOutlined from "@mui/icons-material/PieChartOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 
@@ -111,6 +112,7 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
     showDiscountChip,
     discountPercent,
     debtAmount,
+    prepaidAmount,
     totalAmount,
     isOverdue,
     paymentStyleStatus,
@@ -232,6 +234,24 @@ const AppointmentStatusChips: React.FC<AppointmentStatusChipsProps> = ({
           }
           size="small"
           sx={chipSx("debt")}
+        />
+      )}
+
+      {/* Предоплата: деньги внесены до начала приёма, остаток ещё не долг.
+          Фиолетовый «частично» — не красный: тревожиться пока не о чем. */}
+      {prepaidAmount != null && (
+        <Chip
+          icon={<PieChartOutlined />}
+          label={
+            totalAmount != null
+              ? t("chips.prepaidOfTotal", {
+                  amount: formatKGS(prepaidAmount),
+                  total: formatKGS(totalAmount),
+                })
+              : t("chips.prepaid", { amount: formatKGS(prepaidAmount) })
+          }
+          size="small"
+          sx={chipSx("partially_paid")}
         />
       )}
 

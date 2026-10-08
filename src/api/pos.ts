@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { GiftCertificateDetail, GiftCertificateStatus } from "./promotions";
 
 export type PosScope = { organizationId: number; branchId: number };
 export type PosProduct = {
@@ -21,21 +22,42 @@ export type PosBootstrap = {
   cashier: string;
   shiftId: number | null;
   warehouses: Array<{ id: number; name: string }>;
-  cashlessMethods: Array<{ id: number; name: string }>;
+  /** Терминалы банков; `isDefault` — преднабор в окне оплаты (сервер отдаёт его первым). */
+  cashlessMethods: Array<{ id: number; name: string; isDefault?: boolean }>;
   categories: Array<{ id: number; name: string }>;
   actions: Record<string, boolean>;
   rules: Record<string, boolean | number | string>;
+  /**
+   * Активные автоматические акции (без промокода) организации в этом филиале.
+   * 0 — кнопке «Акции» нечего применять. Нет поля — старый бэкенд, неизвестно.
+   */
+  activePromotionsCount?: number;
 };
 export type PosTender = {
   method: "cash" | "card" | "cashless";
   amount: string;
   cashlessMethodId?: number;
 };
+/**
+ * Подарочный сертификат, который продаётся строкой чека (сертификаты v2).
+ * Код выдаёт сервер при оплате; скидки, акции и бонусы на строку не действуют.
+ */
+export type PosCertificateInput = {
+  clientId: number;
+  nominal: string;
+  /** Последний день действия, YYYY-MM-DD; null — бессрочный. */
+  expiresOn: string | null;
+  noExpiry: boolean;
+  comment: string;
+};
 export type PosCart = {
   warehouseId: number;
   branchId: number;
   clientId?: number;
+  /** Может быть пустым, если в чеке только сертификаты. */
   lines: Array<{ productId: number; quantity: string; discountAmount?: string }>;
+  /** Продажа сертификатов в этом чеке. Пустой список не отправляем. */
+  certificates?: PosCertificateInput[];
   /** Ручная скидка на чек процентом — от суммы после скидок на позиции. */
   discountPercent: string;
   discountAmount: string;
@@ -52,9 +74,15 @@ export type PosQuote = {
   total: string;
   bonuses: string;
   certificateAmount: string;
+  /** К оплате: товары после скидок, бонусов и оплаты сертификатом + проданные сертификаты. */
   due: string;
+  /** Сумма номиналов продаваемых сертификатов. Нет поля — бэкенд их не поддерживает. */
+  certificatesTotal?: string;
+  certificates?: Array<PosCertificateInput & { clientName: string }>;
   /** True only when a promotion produced a larger discount than the manual one. */
   promotionApplied?: boolean;
+  /** Какие акции дали скидку и сколько каждая; есть, только когда `promotionApplied`. */
+  appliedPromotions?: Array<{ id: number; name: string; amount: string }>;
   lines: Array<{
     productId: number;
     quantity: string;
@@ -158,6 +186,14 @@ export const posRequest = <T>(
 };
 export const getPosBootstrap = (scope: PosScope, signal?: AbortSignal) =>
   posRequest<PosBootstrap>(scope, "", { signal });
+/**
+ * Правило организации `promo_codes` (настройки «Магазин»): выключает только
+ * промокоды — автоакции, скидка уровня, ваучеры и сертификаты работают.
+ * Своего права у него нет. Ключа нет (старый бэкенд) — промокоды включены.
+ */
+export const promoCodesEnabled = (
+  rules?: Record<string, boolean | number | string>
+) => rules?.promo_codes !== false;
 export const getPosProducts = (
   scope: PosScope,
   params: Record<string, string | number>,
@@ -187,10 +223,21 @@ export const checkoutPosCart = (
     comment?: string;
   }
 ) =>
-  posRequest<PosSavedReceipt>(scope, "checkout/", {
+  posRequest<PosCheckoutResponse>(scope, "checkout/", {
     method: "POST",
     body: { ...cart, ...data },
   });
+
+/**
+ * Ответ checkout/: прежний чек и проданные сертификаты. В чеке только из
+ * сертификатов товарного чека нет — `id: null` (или `receipt: null`).
+ * Разбирает его `normalizeCheckoutResult` (pages/pos/certificateCart.ts).
+ */
+export type PosCheckoutResponse = Partial<Omit<PosSavedReceipt, "id">> & {
+  id?: number | null;
+  receipt?: PosSavedReceipt | null;
+  soldCertificates?: GiftCertificateDetail[];
+};
 
 /** Страница истории — 25 чеков, размер задаёт бэк. */
 export const POS_HISTORY_PAGE_SIZE = 25;
@@ -226,3 +273,45 @@ export const getPosHistorySummary = (
   signal?: AbortSignal,
 ) =>
   posRequest<PosHistorySummary>(scope, withQuery("history/summary/", historyQuery(params)), { signal });
+
+// ── Gift certificates at the till (docs/certificates-contract.md §2) ──────────
+
+/** GET workspace/certificates/lookup/?code= — balance and whether it can pay now. */
+export type PosCertificateLookup = {
+  id: number;
+  code: string;
+  nominal: string;
+  balance: string;
+  status: GiftCertificateStatus | string;
+  usable: boolean;
+  /** Why it cannot pay (Russian, ready to show); empty when usable. */
+  reason: string;
+  /** Start of the day after the last valid day; null — no expiry. */
+  expiresAt: string | null;
+  soldBranchName: string;
+};
+
+/** 404 — сертификата с таким номером нет. */
+export const lookupPosCertificate = (scope: PosScope, code: string, signal?: AbortSignal) =>
+  posRequest<PosCertificateLookup>(
+    scope,
+    `certificates/lookup/?code=${encodeURIComponent(code.trim())}`,
+    { signal },
+  );
+
+/** GET workspace/certificates/?clientId= — активные сертификаты покупателя для оплаты. */
+export type PosClientCertificate = {
+  id: number;
+  code: string;
+  nominal: string;
+  balance: string;
+  status: GiftCertificateStatus | string;
+  usable: boolean;
+  /** Начало дня после последнего дня действия; null — бессрочный. */
+  expiresAt: string | null;
+  soldAt: string | null;
+  soldBranchName: string;
+};
+
+export const getPosClientCertificates = (scope: PosScope, clientId: number, signal?: AbortSignal) =>
+  posRequest<PosClientCertificate[]>(scope, `certificates/?clientId=${clientId}`, { signal });

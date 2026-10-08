@@ -9,6 +9,7 @@ import type { DjangoAppointment } from "../../api/appointments";
 import { resolveStatusCode } from "../../config/appointmentStatuses";
 import type { StatusCode } from "../../config/appointmentStatuses";
 import { discountPercentOf } from "../../utility/format";
+import { knownPaymentPhase } from "../../utility/paymentPhase";
 
 /** Приёму нужны только эти поля — компонент принимает и укороченные формы
  *  приёма из карточек-дроверов, а не только полный DjangoAppointment. */
@@ -25,6 +26,9 @@ export type AppointmentStatusSource = Pick<DjangoAppointment, "status"> &
       | "totalAmount"
       | "discountAmount"
       | "cancelReason"
+      | "paymentPhase"
+      | "scheduledAt"
+      | "payableAmount"
     >
   >;
 
@@ -49,8 +53,13 @@ export interface StatusChipState {
   showDiscountChip: boolean;
   /** Фактический процент скидки; null — сумм нет, процент не посчитать. */
   discountPercent: number | null;
-  /** Частичная оплата: показываем остаток суммой. */
+  /** Частичная оплата после начала приёма: показываем остаток суммой. */
   debtAmount: number | null;
+  /**
+   * Частичная оплата ДО начала приёма — предоплата, а не долг: чип
+   * «Предоплата 500 из 1600». Взаимоисключается с debtAmount.
+   */
+  prepaidAmount: number | null;
   /** Сумма чека — вторая половина фразы «Долг 1100 из 1600». */
   totalAmount: number | null;
   /** Время приёма прошло, а статус остался «открытым». */
@@ -110,10 +119,17 @@ export function getStatusChipState(
 
   // Долг показываем только при частичной оплате: у неоплаченного приёма долг
   // равен всей сумме и дублировал бы «Итого».
+  //
+  // До начала приёма частичная оплата — предоплата, а остаток ещё не долг:
+  // красный «Долг 1100 из 1600» у завтрашней записи с предоплатой путал кассу
+  // (решение заказчика 05.10.2026). Фазу считает бэк (paymentPhase).
   const debt = Number(appt.debt ?? 0);
   // После возврата «долг» — не недоплата, а возвращённые деньги: чип «Долг»
   // там ввёл бы кассу в заблуждение.
-  const debtAmount = hasPaid && !isRefunded && debt > 0 ? debt : null;
+  const partlyPaid = hasPaid && !isRefunded && debt > 0;
+  const isPrepaidPhase = partlyPaid && knownPaymentPhase(appt, now) === "prepaid";
+  const debtAmount = partlyPaid && !isPrepaidPhase ? debt : null;
+  const prepaidAmount = isPrepaidPhase ? Number(appt.paidTotal ?? 0) : null;
   const total = Number(appt.totalAmount ?? 0);
 
   // Скидка без оплаты: приём иначе выглядит просто неоплаченным, хотя часть
@@ -131,7 +147,7 @@ export function getStatusChipState(
   // При частичной оплате хватает одного чипа: «Долг 1100 из 1600» говорит и
   // что часть внесена, и сколько осталось. Раньше рядом стояли «Частично
   // оплачено» и «Долг 1100» — две метки об одном, а место в строке общее.
-  const showPayChip = hasPaid && debtAmount == null;
+  const showPayChip = hasPaid && !partlyPaid;
 
   // Закрытый чек: внесена вся сумма либо она полностью погашена скидкой.
   // Возврат тоже закрывает расчёт — деньги отданы, строка показывает «Возврат».
@@ -167,7 +183,8 @@ export function getStatusChipState(
     showDiscountChip,
     discountPercent,
     debtAmount,
-    totalAmount: debtAmount != null && total > 0 ? total : null,
+    prepaidAmount,
+    totalAmount: partlyPaid && total > 0 ? total : null,
     isOverdue,
     paymentStyleStatus,
   };

@@ -7,6 +7,8 @@ import { useTheme } from "@mui/material/styles";
 
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 
+import { CertificateReceiptRow, type PosReceiptCertificate } from "./CertificateReceiptRow";
+
 import { POS_RADIUS, posColors } from "./layout";
 import { PosReceiptRow, RECEIPT_GRID } from "./ReceiptRow";
 import type { PosReceiptLine } from "./types";
@@ -18,6 +20,11 @@ type Props = {
   readOnly?: boolean;
   number: string;
   lines: PosReceiptLine[];
+  /** Продаваемые сертификаты — отдельные строки без количества и скидки. */
+  certificates?: PosReceiptCertificate[];
+  onRemoveCertificate?: (key: string) => void;
+  /** Почему «Отложить» недоступно — подсказка на кнопке. */
+  holdHint?: string;
   onChangeColor: (lineId: string, colorId: string) => void;
   onChangeSize: (lineId: string, sizeId: string) => void;
   onChangeQuantity: (lineId: string, quantity: number) => void;
@@ -31,11 +38,12 @@ type Props = {
 const HEADER_LABELS = ["товар", "кол-во", "цена", "сумма", ""];
 
 /** Кнопка-«таблетка» шапки чека. */
-const HeaderButton: React.FC<{ label: string; onClick: () => void; disabled?: boolean; danger?: boolean }> = ({
+const HeaderButton: React.FC<{ label: string; onClick: () => void; disabled?: boolean; danger?: boolean; title?: string }> = ({
   label,
   onClick,
   disabled,
   danger,
+  title,
 }) => {
   const theme = useTheme();
   const c = posColors(theme);
@@ -43,8 +51,9 @@ const HeaderButton: React.FC<{ label: string; onClick: () => void; disabled?: bo
     <ButtonBase
       onClick={onClick}
       disabled={disabled}
+      title={title}
       sx={{
-        height: 30,
+        height: { xs: 44, md: 40, lg: 30 },
         px: "12px",
         borderRadius: `${POS_RADIUS.pill}px`,
         bgcolor: danger ? "transparent" : c.tile,
@@ -77,6 +86,9 @@ export const PosReceipt: React.FC<Props> = ({
   canHold = false,
   canDiscount = false,
   readOnly = false,
+  certificates = [],
+  onRemoveCertificate,
+  holdHint,
 }) => {
   const theme = useTheme();
   const c = posColors(theme);
@@ -84,6 +96,13 @@ export const PosReceipt: React.FC<Props> = ({
   const activeCount = lines.filter((line) => !line.removed).length;
   const removedCount = lines.length - activeCount;
   const units = lines.filter((line) => !line.removed).reduce((total, line) => total + line.quantity, 0);
+  const hasContent = lines.length > 0 || certificates.length > 0;
+  const counts = [
+    activeCount ? `${activeCount} поз. · ${units} шт.` : "",
+    certificates.length ? `${certificates.length} серт.` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <Box
@@ -109,16 +128,16 @@ export const PosReceipt: React.FC<Props> = ({
         <Stack direction="row" alignItems="baseline" gap="10px" sx={{ minWidth: 0 }}>
           <Typography noWrap sx={{ fontSize: 15, fontWeight: 800, color: c.text }}>Чек №{number}</Typography>
           <Typography noWrap sx={{ fontSize: 12, color: c.textDim }}>
-            {activeCount ? `${activeCount} поз. · ${units} шт.` : "пусто"}
+            {counts || "пусто"}
             {removedCount > 0 ? (
               <Box component="span" sx={{ color: c.danger }}> · удалено {removedCount}</Box>
             ) : null}
           </Typography>
         </Stack>
 
-        {lines.length > 0 && (
+        {hasContent && (
           <Stack direction="row" alignItems="center" gap="6px">
-            <HeaderButton label="Отложить" onClick={onHold} disabled={!canHold} />
+            <HeaderButton label="Отложить" onClick={onHold} disabled={!canHold} title={holdHint} />
             <HeaderButton label="Отменить чек" onClick={onCancel} danger />
           </Stack>
         )}
@@ -127,7 +146,7 @@ export const PosReceipt: React.FC<Props> = ({
       {lines.length > 0 && (
         <Box
           sx={{
-            display: { xs: "none", md: "grid" },
+            display: { xs: "none", lg: "grid" },
             gridTemplateColumns: RECEIPT_GRID,
             columnGap: "12px",
             px: "16px",
@@ -169,7 +188,15 @@ export const PosReceipt: React.FC<Props> = ({
             onRestore={() => onRestoreLine(line.id)}
           />
         ))}
-        {lines.length === 0 ? (
+        {certificates.map((certificate) => (
+          <CertificateReceiptRow
+            key={certificate.key}
+            certificate={certificate}
+            readOnly={readOnly}
+            onRemove={onRemoveCertificate ? () => onRemoveCertificate(certificate.key) : undefined}
+          />
+        ))}
+        {!hasContent ? (
           <Stack alignItems="center" justifyContent="center" gap="8px" sx={{ py: { xs: "28px", md: "48px" }, textAlign: "center" }}>
             <Box sx={{ width: 44, height: 44, borderRadius: "50%", bgcolor: c.tile, display: "grid", placeItems: "center" }}>
               <ReceiptLongOutlined sx={{ fontSize: 22, color: c.textDim }} />

@@ -14,6 +14,7 @@ import type { PosQuote } from "../../api/pos";
 import type { DiscountKind } from "../../api/promotions";
 import { QUICK_DISCOUNT_PERCENTS, normalizeManualDiscount, normalizeManualPercent } from "./discountInput";
 import { POS_LAYOUT, POS_RADIUS, posColors } from "./layout";
+import { promotionCardView } from "./promotionCard";
 import { PosAmount } from "./ui";
 
 /**
@@ -67,7 +68,9 @@ const ApplyButton: React.FC<{
   disabled?: boolean;
   onClick: () => void;
   width?: number;
-}> = ({ applied, appliedLabel, disabled, onClick, width }) => {
+  /** Подпись вместо «Применить», когда правило включено, но не сработало. */
+  label?: string | null;
+}> = ({ applied, appliedLabel, disabled, onClick, width, label }) => {
   const c = posColors(useTheme());
   return (
     <ButtonBase
@@ -75,6 +78,7 @@ const ApplyButton: React.FC<{
       disabled={disabled}
       sx={{
         width,
+        minHeight: { xs: 44, md: 0 },
         px: "14px",
         py: "4px",
         gap: "6px",
@@ -91,7 +95,7 @@ const ApplyButton: React.FC<{
       }}
     >
       {applied ? <CheckOutlined sx={{ fontSize: 12 }} /> : null}
-      {applied ? appliedLabel ?? "Применено" : "Применить"}
+      {applied ? appliedLabel ?? "Применено" : label ?? "Применить"}
     </ButtonBase>
   );
 };
@@ -104,15 +108,19 @@ const RedemptionCard: React.FC<{
   appliedLabel?: React.ReactNode;
   disabled?: boolean;
   onToggle: () => void;
-}> = ({ title, hint, applied, appliedLabel, disabled, onToggle }) => {
+  /** `warning` — правило включено, но ничего не дало; `applied` — сработало. */
+  hintTone?: "dim" | "warning" | "applied";
+  buttonLabel?: string | null;
+}> = ({ title, hint, applied, appliedLabel, disabled, onToggle, hintTone = "dim", buttonLabel }) => {
   const c = posColors(useTheme());
+  const hintColor = hintTone === "warning" ? c.danger : hintTone === "applied" ? c.positive : c.textDim;
   return (
     <Box
       sx={{
         p: "12px",
         borderRadius: `${POS_RADIUS.card}px`,
         bgcolor: applied ? c.accentBg : c.card,
-        border: `1px solid ${applied ? c.accent : c.hairline}`,
+        border: `1px solid ${applied ? c.accent : hintTone === "warning" ? c.danger : c.hairline}`,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -121,9 +129,9 @@ const RedemptionCard: React.FC<{
     >
       <Stack gap="2px" sx={{ minWidth: 0 }}>
         <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text }}>{title}</Typography>
-        <Typography sx={{ fontSize: 14, lineHeight: 1.2, color: c.textDim }}>{hint}</Typography>
+        <Typography aria-live="polite" sx={{ fontSize: 14, lineHeight: 1.25, color: hintColor, fontWeight: hintTone === "dim" ? 400 : 600 }}>{hint}</Typography>
       </Stack>
-      <ApplyButton applied={applied} appliedLabel={appliedLabel} disabled={disabled} onClick={onToggle} />
+      <ApplyButton applied={applied} appliedLabel={appliedLabel} disabled={disabled} onClick={onToggle} label={buttonLabel} />
     </Box>
   );
 };
@@ -199,8 +207,8 @@ const DiscountField: React.FC<{
         flex: 1,
         minWidth: 0,
         // Тема задаёт InputBase minHeight 40, поэтому одной height мало.
-        height: 32,
-        minHeight: 32,
+        height: { xs: 44, md: 32 },
+        minHeight: { xs: 44, md: 32 },
         px: "12px",
         bgcolor: c.page,
         border: `1px solid ${active ? c.accent : c.hairline}`,
@@ -215,7 +223,7 @@ const DiscountField: React.FC<{
   );
 };
 
-/** Поле-«таблетка» с кнопкой «Применить»: промокод, сертификат. */
+/** Поле-«таблетка» с кнопкой «Применить»: промокод. */
 const CodeField: React.FC<{
   label: string;
   placeholder: string;
@@ -246,10 +254,12 @@ const CodeField: React.FC<{
               }}
               placeholder={placeholder}
               disabled={disabled}
+              inputProps={{ "aria-label": label, autoComplete: "off" }}
               sx={{
                 flex: 1,
                 minWidth: 0,
-                height: 40,
+                height: { xs: 44, md: 40 },
+                minHeight: { xs: 44, md: 40 },
                 boxSizing: "border-box",
                 px: "14px",
                 display: "flex",
@@ -267,7 +277,7 @@ const CodeField: React.FC<{
               onClick={submit}
               disabled={disabled}
               sx={{
-                height: 40,
+                height: { xs: 44, md: 40 },
                 boxSizing: "border-box",
                 px: "14px",
                 flexShrink: 0,
@@ -308,6 +318,7 @@ const amount = (value: string | undefined) => (value === undefined ? 0 : Number(
 
 export function LivePaymentPanel({
   actions,
+  canPromoCode,
   benefits,
   onChange,
   quote,
@@ -323,8 +334,17 @@ export function LivePaymentPanel({
   maxPercent = 100,
   lineDiscounts = [],
   lineDiscountIgnored = false,
+  certificatesTotal = 0,
+  hidePayButton = false,
+  payDisabledReason = null,
+  activePromotionsCount,
 }: {
   actions: Record<string, boolean>;
+  /**
+   * Поле промокода: право «Акции» и правило организации `promo_codes`.
+   * Не передано — решает только `actions.promotions`, как раньше.
+   */
+  canPromoCode?: boolean;
   benefits: Benefits;
   onChange: (value: Benefits) => void;
   quote?: PosQuote;
@@ -344,6 +364,14 @@ export function LivePaymentPanel({
   lineDiscounts?: Array<{ id: string; name: string; label: string; amount: number }>;
   /** Сервер вернул итог без скидок на позиции (старый бэкенд) — предупреждаем. */
   lineDiscountIgnored?: boolean;
+  /** Сумма продаваемых в этом чеке сертификатов (входит в «ИТОГО»). */
+  certificatesTotal?: number;
+  /** Телефон: кнопку оплаты держит липкая панель внизу страницы. */
+  hidePayButton?: boolean;
+  /** Почему оплатить нельзя (например, бэкенд не поддерживает сертификаты в чеке). */
+  payDisabledReason?: string | null;
+  /** `activePromotionsCount` бутстрапа: 0 — акций нет, кнопка «Акции» неактивна. */
+  activePromotionsCount?: number;
 }) {
   const c = posColors(useTheme());
   const [kindsOpen, setKindsOpen] = React.useState(false);
@@ -366,6 +394,15 @@ export function LivePaymentPanel({
     patch({ discount: value, discountKindId: null, ...(Number(value) > 0 ? { discountPercent: "0" } : {}) });
   const showKinds = discountMode !== "manual" && discountKinds.length > 0;
   const showManual = discountMode !== "kinds";
+  const promotionView = promotionCardView({
+    count: activePromotionsCount,
+    enabled: benefits.promotions,
+    quote,
+    busy,
+    frozen,
+    manualDiscount: manualActive || selectedKind !== null || lineDiscounts.length > 0,
+    clientDiscount: benefits.clientDiscount,
+  });
   const showDiscountCard = actions.client_discount || (actions.discount && (showKinds || showManual));
 
   const cardSx = {
@@ -394,18 +431,19 @@ export function LivePaymentPanel({
   return (
     <Box
       sx={{
-        width: { xs: "100%", lg: POS_LAYOUT.paymentPanelWidth },
+        // Планшет — две колонки с панелью поуже, десктоп — макет 340.
+        width: { xs: "100%", md: 300, lg: POS_LAYOUT.paymentPanelWidth },
         flexShrink: 0,
         minHeight: 0,
-        px: "10px",
+        px: { xs: "12px", md: "10px" },
         py: "16px",
         bgcolor: c.page,
-        borderLeft: `1px solid ${c.outline}`,
+        borderLeft: { xs: "none", md: `1px solid ${c.outline}` },
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
         gap: "16px",
-        overflowY: { xs: "visible", lg: "auto" },
+        overflowY: { xs: "visible", md: "auto" },
       }}
     >
       <Stack gap="12px">
@@ -449,6 +487,7 @@ export function LivePaymentPanel({
                     sx={{
                       px: "12px",
                       py: "6px",
+                      minHeight: { xs: 44, md: 0 },
                       justifyContent: "space-between",
                       borderRadius: `${POS_RADIUS.card}px`,
                       bgcolor: selectedKind ? c.accentBg : c.page,
@@ -480,6 +519,7 @@ export function LivePaymentPanel({
                             sx={{
                               px: "8px",
                               py: "6px",
+                              minHeight: { xs: 44, md: 0 },
                               gap: "10px",
                               justifyContent: "flex-start",
                               borderRadius: `${POS_RADIUS.tile}px`,
@@ -549,7 +589,7 @@ export function LivePaymentPanel({
                           aria-pressed={selected}
                           sx={{
                             flex: 1,
-                            height: 26,
+                            height: { xs: 44, md: 26 },
                             borderRadius: `${POS_RADIUS.pill}px`,
                             bgcolor: selected ? c.accent : c.page,
                             border: `1px solid ${selected ? c.accent : c.hairline}`,
@@ -572,20 +612,12 @@ export function LivePaymentPanel({
           {actions.promotions && (
             <RedemptionCard
               title="Акции"
-              hint={
-                !benefits.promotions
-                  ? "автоматические скидки по акциям"
-                  : busy
-                    ? "Проверяем подходящие акции…"
-                    : quote?.promotionApplied
-                      ? "Акция применена к этому чеку"
-                      : quote
-                        ? "Нет подходящих акций или скидка меньше уже выбранной"
-                        : "автоматические скидки по акциям"
-              }
-              applied={Boolean(benefits.promotions && quote?.promotionApplied)}
-              appliedLabel="Применена"
-              disabled={frozen}
+              hint={promotionView.hint}
+              hintTone={promotionView.tone}
+              applied={promotionView.applied}
+              appliedLabel={<PosAmount value={amount(quote?.discount)} negative />}
+              buttonLabel={promotionView.buttonLabel}
+              disabled={promotionView.disabled}
               onToggle={() => patch({ promotions: !benefits.promotions })}
             />
           )}
@@ -602,7 +634,7 @@ export function LivePaymentPanel({
           )}
         </Stack>
 
-        {actions.promotions && (
+        {(canPromoCode ?? actions.promotions) && (
           <CodeField
             label="Промокод"
             placeholder="Введите промокод"
@@ -613,15 +645,37 @@ export function LivePaymentPanel({
           />
         )}
 
-        {actions.certificate && (
-          <CodeField
-            label="Сертификат"
-            placeholder="Введите сертификат"
-            applied={benefits.certificateCode}
-            disabled={locked}
-            error={certificateError}
-            onApply={(certificateCode) => patch({ certificateCode })}
-          />
+        {/* Сертификат выбирают способом оплаты «Сертификат» в окне оплаты; здесь — только снять. */}
+        {benefits.certificateCode && (
+          <Stack gap="6px" sx={{ ...cardSx, borderColor: certificateError ? c.danger : c.accent, bgcolor: c.accentBg }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap="8px">
+              <Stack gap="2px" sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.2, color: c.text }}>Оплата сертификатом</Typography>
+                <Typography noWrap sx={{ fontSize: 13, lineHeight: 1.3, color: c.textDim, fontFamily: "monospace", letterSpacing: ".08em" }}>
+                  {benefits.certificateCode}
+                </Typography>
+              </Stack>
+              <ButtonBase
+                onClick={() => patch({ certificateCode: "" })}
+                disabled={locked}
+                sx={{
+                  minHeight: { xs: 44, md: 30 },
+                  px: "14px",
+                  flexShrink: 0,
+                  borderRadius: `${POS_RADIUS.pill}px`,
+                  border: `1px solid ${c.hairline}`,
+                  bgcolor: c.card,
+                  color: c.textSoft,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  "&.Mui-disabled": { opacity: 0.45 },
+                }}
+              >
+                Снять
+              </ButtonBase>
+            </Stack>
+            {certificateError ? <FieldError text={certificateError} /> : null}
+          </Stack>
         )}
       </Stack>
 
@@ -649,6 +703,9 @@ export function LivePaymentPanel({
           {summary.map((line) => (
             <SummaryLine key={line.label} label={line.label} value={<PosAmount value={line.value} negative />} tone={line.tone} />
           ))}
+          {certificatesTotal > 0 && (
+            <SummaryLine label="Подарочные сертификаты" value={<>+<PosAmount value={certificatesTotal} /></>} />
+          )}
           {lineDiscountIgnored && (
             <Typography sx={{ mt: "4px", p: "8px", borderRadius: `${POS_RADIUS.tile}px`, bgcolor: c.dangerBg, color: c.danger, fontSize: 12, lineHeight: 1.35 }}>
               Сервер не применил скидку на товар — итог посчитан без неё. Уберите скидку с позиции или обновите бэкенд кассы.
@@ -664,11 +721,17 @@ export function LivePaymentPanel({
             </Typography>
           </Stack>
 
-          {actions.sell && (
+          {payDisabledReason ? (
+            <Typography sx={{ p: "8px", borderRadius: `${POS_RADIUS.tile}px`, bgcolor: c.dangerBg, color: c.danger, fontSize: 12, lineHeight: 1.35 }}>
+              {payDisabledReason}
+            </Typography>
+          ) : null}
+
+          {actions.sell && !hidePayButton && (
             <ButtonBase
               onClick={onCheckout}
               // Не даём пробить чек дороже, чем показано в строках.
-              disabled={busy || !quote || lineDiscountIgnored}
+              disabled={busy || !quote || lineDiscountIgnored || Boolean(payDisabledReason)}
               sx={{
                 px: "20px",
                 py: "16px",

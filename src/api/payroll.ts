@@ -40,6 +40,24 @@ export interface PayrollRow {
    * нужно. May be absent on older backends — treat undefined as "0.00".
    */
   cleaningEarnings?: string;
+  /**
+   * Карточка ЗП (05.10.2026): комиссия за выигранные сделки, свои поля
+   * организации и налоги. Всё уже внутри `earnings`/`netSalary`:
+   * «на руки» = начислено − ПН − Соцфонд работника − удержания − авансы.
+   * Соцфонд работодателя — сверху, из «на руки» не вычитается.
+   * May be absent on older backends — treat undefined as "0.00".
+   */
+  dealPay?: string;
+  dealsWonCount?: number;
+  dealsWonAmount?: string;
+  customAccruals?: string;
+  customDeductions?: string;
+  /** "" — профиля нет; иначе employment | civil | patent | unofficial. */
+  taxRegime?: string;
+  taxBase?: string;
+  incomeTax?: string;
+  socialFundEmployee?: string;
+  socialFundEmployer?: string;
   earnings: string;
   advances: string;
   netSalary: string;
@@ -314,6 +332,224 @@ export function createBonus(data: BonusWriteData): Promise<PayrollBonus> {
 /** DELETE /api/payroll/bonuses/<id>/ — remove a bonus. */
 export function deleteBonus(id: number): Promise<void> {
   return apiRequest<void>(`/payroll/bonuses/${id}/`, { method: "DELETE" });
+}
+
+// ── Карточка ЗП сотрудника (v2) ─────────────────────────────────────────────
+// Надмножество v1-правил: ставки + сделки + налоги + свои поля организации.
+// Сохраняется по разделам (PATCH), у каждого раздела своё право; что можно
+// менять, бэк отдаёт в `access`, а по своим полям — в `fields[].canEdit`.
+
+export type TaxRegime = "unofficial" | "employment" | "civil" | "patent";
+export type TaxBaseMode = "official" | "earnings";
+export type PayrollFieldKind = "accrual" | "deduction";
+export type PayrollFieldValueType = "amount" | "percent";
+
+export interface DealRate {
+  pipelineId: number;
+  pipelineName: string;
+  percent: string;
+  fixedAmount: string;
+}
+
+export interface SalaryCardRates {
+  appointmentRate: string;
+  dayHourlyRate: string;
+  nightHourlyRate: string;
+  productPercent: string;
+  productFixedAmount: string;
+  dealPercent: string;
+  dealFixedAmount: string;
+  serviceRates: ServiceRate[];
+  productRates: ProductRate[];
+  dealRates: DealRate[];
+}
+
+export interface SalaryCardTax {
+  regime: TaxRegime;
+  taxBase: TaxBaseMode;
+  officialSalary: string;
+}
+
+export interface SalaryCardField {
+  id: number;
+  name: string;
+  kind: PayrollFieldKind;
+  valueType: PayrollFieldValueType;
+  value: string;
+  canEdit: boolean;
+}
+
+export interface TaxRates {
+  incomeTax: string;
+  socialEmployee: string;
+  socialEmployer: string;
+}
+
+export interface TaxSettings {
+  standardDeduction: string;
+  employment: TaxRates;
+  civil: TaxRates;
+}
+
+export interface SalaryCardAccess {
+  /** Своя карточка по payroll.view_own — только просмотр. */
+  readOnly: boolean;
+  canEditRates: boolean;
+  canEditTax: boolean;
+  canManageFields: boolean;
+  canManageTaxSettings: boolean;
+}
+
+export interface SalaryCard {
+  employeeId: number;
+  employeeFullName: string;
+  rates: SalaryCardRates;
+  tax: SalaryCardTax;
+  fields: SalaryCardField[];
+  taxSettings: TaxSettings;
+  pipelines: { id: number; name: string }[];
+  access: SalaryCardAccess;
+}
+
+type RateLineWrite = {
+  percent: string | number;
+  fixedAmount: string | number;
+  serviceId?: number;
+  productId?: number;
+  pipelineId?: number;
+};
+
+export interface SalaryCardPatch {
+  rates?: {
+    appointmentRate: string | number;
+    dayHourlyRate: string | number;
+    nightHourlyRate: string | number;
+    productPercent: string | number;
+    productFixedAmount: string | number;
+    dealPercent: string | number;
+    dealFixedAmount: string | number;
+    serviceRates: RateLineWrite[];
+    productRates: RateLineWrite[];
+    dealRates: RateLineWrite[];
+  };
+  tax?: {
+    regime: TaxRegime;
+    taxBase: TaxBaseMode;
+    officialSalary: string | number;
+  };
+  fieldValues?: { fieldId: number; value: string | number }[];
+}
+
+export interface PayrollCustomField {
+  id: number;
+  name: string;
+  kind: PayrollFieldKind;
+  valueType: PayrollFieldValueType;
+  viewRoleIds: number[];
+  editRoleIds: number[];
+  sortOrder: number;
+  /** У скольких сотрудников заполнено — для подтверждения удаления. */
+  valuesCount: number;
+}
+
+export interface PayrollFieldsResponse {
+  fields: PayrollCustomField[];
+  roles: { id: number; name: string }[];
+}
+
+export interface PayrollFieldWrite {
+  name?: string;
+  kind?: PayrollFieldKind;
+  valueType?: PayrollFieldValueType;
+  viewRoleIds?: number[];
+  editRoleIds?: number[];
+  sortOrder?: number;
+}
+
+const PAYROLL_V2 = "/v2/payroll";
+
+const orgHeaders = (organizationId?: number | null): Record<string, string> =>
+  organizationId != null ? { "X-Organization-Id": String(organizationId) } : {};
+
+/** GET /api/v2/payroll/employees/<id>/salary-card/ */
+export function getSalaryCard(
+  employeeId: number,
+  organizationId?: number | null,
+  signal?: AbortSignal,
+): Promise<SalaryCard> {
+  return apiRequest<SalaryCard>(
+    `${PAYROLL_V2}/employees/${employeeId}/salary-card/`,
+    { headers: orgHeaders(organizationId), signal },
+  );
+}
+
+/** PATCH /api/v2/payroll/employees/<id>/salary-card/ — только присланные разделы. */
+export function patchSalaryCard(
+  employeeId: number,
+  body: SalaryCardPatch,
+  organizationId?: number | null,
+): Promise<SalaryCard> {
+  return apiRequest<SalaryCard>(
+    `${PAYROLL_V2}/employees/${employeeId}/salary-card/`,
+    { method: "PATCH", body, headers: orgHeaders(organizationId) },
+  );
+}
+
+/** PATCH /api/v2/payroll/tax-settings/ — ставки налогов организации. */
+export function patchTaxSettings(
+  body: Partial<TaxSettings>,
+  organizationId?: number | null,
+): Promise<TaxSettings> {
+  return apiRequest<TaxSettings>(`${PAYROLL_V2}/tax-settings/`, {
+    method: "PATCH",
+    body,
+    headers: orgHeaders(organizationId),
+  });
+}
+
+/** GET /api/v2/payroll/fields/ — свои поля + роли организации (payroll.fields.manage). */
+export function getPayrollFields(
+  organizationId?: number | null,
+  signal?: AbortSignal,
+): Promise<PayrollFieldsResponse> {
+  return apiRequest<PayrollFieldsResponse>(`${PAYROLL_V2}/fields/`, {
+    headers: orgHeaders(organizationId),
+    signal,
+  });
+}
+
+export function createPayrollField(
+  body: PayrollFieldWrite,
+  organizationId?: number | null,
+): Promise<PayrollCustomField> {
+  return apiRequest<PayrollCustomField>(`${PAYROLL_V2}/fields/`, {
+    method: "POST",
+    body,
+    headers: orgHeaders(organizationId),
+  });
+}
+
+/** PATCH — вид и тип значения после создания не меняются. */
+export function updatePayrollField(
+  id: number,
+  body: Omit<PayrollFieldWrite, "kind" | "valueType">,
+  organizationId?: number | null,
+): Promise<PayrollCustomField> {
+  return apiRequest<PayrollCustomField>(`${PAYROLL_V2}/fields/${id}/`, {
+    method: "PATCH",
+    body,
+    headers: orgHeaders(organizationId),
+  });
+}
+
+export function deletePayrollField(
+  id: number,
+  organizationId?: number | null,
+): Promise<void> {
+  return apiRequest<void>(`${PAYROLL_V2}/fields/${id}/`, {
+    method: "DELETE",
+    headers: orgHeaders(organizationId),
+  });
 }
 
 /** GET /api/payroll/employees/<id>/details/ — employee's per-day breakdown.

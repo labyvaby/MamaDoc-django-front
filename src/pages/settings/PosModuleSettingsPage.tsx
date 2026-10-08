@@ -21,6 +21,18 @@ type PosRulesResponse = {
   labels: Record<string, string>;
 };
 
+/** Подписи правил, которых нет в `labels` ответа (организационные переключатели). */
+const RULE_LABELS: Record<string, string> = {
+  require_shift: "Требовать открытую смену",
+  promo_codes: "Промокоды",
+};
+
+/** Пояснения под переключателем, где одной подписи мало. */
+const RULE_HINTS: Record<string, string> = {
+  promo_codes:
+    "Выключите, чтобы касса и витрина не принимали промокоды. Автоматические акции, скидка уровня покупателя, ваучеры и сертификаты продолжат работать.",
+};
+
 export default function PosModuleSettingsPage() {
   const auth = usePermissions();
   const org = auth.activeOrganization;
@@ -109,10 +121,18 @@ export default function PosModuleSettingsPage() {
                       />
                     }
                     label={
-                      rules.data.labels[key] ??
-                      (key === "require_shift"
-                        ? "Требовать открытую смену"
-                        : key)
+                      RULE_HINTS[key] ? (
+                        <Stack>
+                          <span>
+                            {rules.data.labels[key] ?? RULE_LABELS[key] ?? key}
+                          </span>
+                          <Typography variant="caption" color="text.secondary">
+                            {RULE_HINTS[key]}
+                          </Typography>
+                        </Stack>
+                      ) : (
+                        rules.data.labels[key] ?? RULE_LABELS[key] ?? key
+                      )
                     }
                   />
                 ) : key === "discount_mode" ? (

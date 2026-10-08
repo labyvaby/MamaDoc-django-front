@@ -1,5 +1,5 @@
 import { apiRequest, ApiError } from "./client";
-import type { CashlessMethodBreakdownRow } from "./cashbox";
+import type { CashlessMethodBreakdownRow, CertificateCashFields } from "./cashbox";
 export { parseBackendError } from "./appointments";
 
 /**
@@ -33,7 +33,11 @@ export interface CashboxShift {
   createdAt: string;
 }
 
-export interface CashboxShiftSummary {
+/**
+ * `expectedCash` включает `certificateCashIncome − certificateCashRefunds`:
+ * деньги за подарочные сертификаты лежат в ящике, хотя выручкой не являются.
+ */
+export interface CashboxShiftSummary extends CertificateCashFields {
   shift: CashboxShift;
   cashIncome: string;
   cashRefunds: string;

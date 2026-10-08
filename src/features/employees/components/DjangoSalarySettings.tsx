@@ -99,7 +99,7 @@ const num = (s: string) => parseFloat(s) || 0;
 // ── маленькие строительные блоки ─────────────────────────────────────────────
 
 /** Числовое поле с кастомными степперами ▲/▼ (нативные спиннеры скрыты). */
-const NumberField: React.FC<{
+export const NumberField: React.FC<{
   value: string;
   onChange: (v: string) => void;
   unit?: string;
@@ -194,7 +194,7 @@ const NumberField: React.FC<{
 };
 
 /** Заголовок секции: иконка-плашка + название/подпись + опц. тумблер. */
-const SalarySection: React.FC<{
+export const SalarySection: React.FC<{
   icon: React.ReactNode;
   title: string;
   subtitle: string;
@@ -252,13 +252,20 @@ const DjangoSalarySettings: React.FC<Props> = ({
 }) => {
   const patch = (p: Partial<SalarySettingsValue>) => onChange({ ...value, ...p });
 
-  const addRule = () =>
+  // Второе и следующие правила сразу берут услуги, которых нет в прежних
+  // правилах: обычно новое правило — «всё остальное» по другой ставке.
+  const addRule = () => {
+    const taken = new Set(value.rules.flatMap((r) => r.serviceIds));
+    const rest = value.rules.length === 0
+      ? []
+      : services.map((s) => s.id).filter((id) => !taken.has(id));
     patch({
       rules: [
         ...value.rules,
-        { id: newRuleId(), serviceIds: [], percent: "", fixedAmount: "" },
+        { id: newRuleId(), serviceIds: rest, percent: "", fixedAmount: "" },
       ],
     });
+  };
 
   const removeRule = (id: string) =>
     patch({ rules: value.rules.filter((r) => r.id !== id) });
@@ -378,7 +385,7 @@ const DjangoSalarySettings: React.FC<Props> = ({
         <Box
           sx={{
             display: "grid",
-            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr 1fr" },
+            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr" },
             gap: 1.25,
             opacity: value.enabled ? 1 : 0.4,
             pointerEvents: value.enabled && !disabled ? "auto" : "none",

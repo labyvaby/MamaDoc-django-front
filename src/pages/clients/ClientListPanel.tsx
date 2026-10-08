@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, LinearProgress, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, CircularProgress, LinearProgress, Stack, Tooltip, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import dayjs from "dayjs";
 import "dayjs/locale/ru";
@@ -22,10 +22,36 @@ type Props = {
   error: string | null;
   /** Активен фильтр — пустой список значит «никого не нашли», а не «клиентов нет». */
   filtered?: boolean;
+  /** Сколько клиентов подходит под фильтр всего, а не сколько загружено. */
+  total?: number;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
   onSelect: (client: DjangoClient) => void;
 };
 
-export default function ClientListPanel({ clients, selectedId, loading, fetching = false, error, filtered = false, onSelect }: Props) {
+export default function ClientListPanel({ clients, selectedId, loading, fetching = false, error, filtered = false, total, hasMore = false, loadingMore = false, onLoadMore, onSelect }: Props) {
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const sentinelRef = React.useRef<HTMLDivElement>(null);
+  const count = total ?? clients.length;
+
+  // Следующая страница — когда низ списка подходит к краю прокрутки.
+  React.useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || !hasMore || !onLoadMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries.some((entry) => entry.isIntersecting)) onLoadMore(); },
+      { root: scrollRef.current, rootMargin: "300px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, onLoadMore, clients.length]);
+
+  // Сменили поиск или месяц — список начинается заново, и прокрутка тоже.
+  React.useEffect(() => {
+    if (loading && scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [loading]);
+
   return (
     <AppCard
       variant="outlined"
@@ -37,10 +63,10 @@ export default function ClientListPanel({ clients, selectedId, loading, fetching
             <PeopleOutlineOutlined color="primary" />
             <Typography variant="h6">Клиенты</Typography>
           </Stack>
-          {!error && clients.length > 0 && (
+          {!error && count > 0 && (
             <Box sx={(t) => ({ px: 1, py: 0.25, borderRadius: "999px", bgcolor: subtleBg(t, true) })}>
               <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                {clients.length}{clients.length >= 100 ? "+" : ""}
+                {count}
               </Typography>
             </Box>
           )}
@@ -48,7 +74,7 @@ export default function ClientListPanel({ clients, selectedId, loading, fetching
       }
     >
       {fetching && !loading && <LinearProgress sx={{ position: "absolute", top: 0, left: 0, right: 0, height: 2 }} />}
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", borderTop: 1, borderColor: "divider" }}>
+      <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflowY: "auto", borderTop: 1, borderColor: "divider" }}>
         {error ? (
           <ListEmptyState icon={<ErrorOutlineOutlined />} title="Не удалось загрузить клиентов" description={error} />
         ) : loading ? (
@@ -64,6 +90,11 @@ export default function ClientListPanel({ clients, selectedId, loading, fetching
             {clients.map((client) => (
               <ClientRow key={client.id} client={client} active={selectedId === client.id} onSelect={onSelect} />
             ))}
+            {hasMore && (
+              <Box ref={sentinelRef} sx={{ display: "flex", justifyContent: "center", py: 1.5 }}>
+                {loadingMore && <CircularProgress size={20} />}
+              </Box>
+            )}
           </Stack>
         )}
       </Box>

@@ -65,6 +65,9 @@ export const djangoQueryKeys = {
       ["django", "appointments", "form-data", context] as const,
     payments: (appointmentId: number) =>
       ["django", "appointments", appointmentId, "payments"] as const,
+    /** Переключатели модуля «История оплат» — на организацию. */
+    paymentSettings: (organizationId: number | null) =>
+      ["django", "appointments", "payment-settings", organizationId] as const,
     conclusionSlots: (appointmentId: number) =>
       ["django", "appointments", appointmentId, "conclusion-slots"] as const,
     /** Шапка заключения: пациент и время приёма (см. getConclusionContext). */
@@ -79,12 +82,23 @@ export const djangoQueryKeys = {
     /** Живые заключения пациента (patient-conclusions) — «как в прошлый раз». */
     conclusions: (patientId: number) =>
       ["django", "patients", patientId, "conclusions"] as const,
+    conclusionHistory: (patientId: number, scope: unknown) =>
+      ["django", "patients", patientId, "conclusions", "history", scope] as const,
+    historicalConclusion: (patientId: number, conclusionId: number, scope: unknown) =>
+      ["django", "patients", patientId, "conclusions", "detail", conclusionId, scope] as const,
     // Root key — use for invalidateQueries to bust all pages.
     transactions: (patientId: number) =>
       ["django", "patients", patientId, "balance-transactions"] as const,
     // Keyed by page params — use for individual page queries.
     transactionsPage: (patientId: number, params: { page: number; pageSize: number }) =>
       ["django", "patients", patientId, "balance-transactions", params] as const,
+  },
+
+  /** Файлы карточки пациента или клиента (src/api/attachments.ts). */
+  attachments: {
+    all: ["django", "attachments"] as const,
+    list: (ownerKind: "patient" | "client", ownerId: number) =>
+      ["django", "attachments", ownerKind, ownerId] as const,
   },
 
   cashbox: {
@@ -175,6 +189,10 @@ export const djangoQueryKeys = {
       ["django", "payroll", "active-months", params] as const,
     rules: (employeeId: number) =>
       ["django", "payroll", employeeId, "rules"] as const,
+    salaryCard: (employeeId: number, organizationId: number | null) =>
+      ["django", "payroll", employeeId, "salary-card", organizationId] as const,
+    fields: (organizationId: number | null) =>
+      ["django", "payroll", "fields", organizationId] as const,
     bonuses: (params: Record<string, unknown>) =>
       ["django", "payroll", "bonuses", params] as const,
   },

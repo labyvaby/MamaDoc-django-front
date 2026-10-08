@@ -44,6 +44,13 @@ export interface PaymentInfo {
   finalTotal: number;
   debt?: number;
   status?: string;
+  /**
+   * Фаза счёта приёма (см. utility/paymentPhase). До начала приёма остаток —
+   * «К оплате» янтарным, а не красный «Долг»; при внесённой предоплате чип
+   * статуса — «Предоплата». Без фазы блок ведёт себя как раньше (продажи,
+   * расходы).
+   */
+  phase?: import("../../api/payments").PaymentPhase;
 }
 
 export interface PaymentInfoBlockProps {
@@ -80,9 +87,14 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
   const {
     discountAmount, baseTotal, cash, card, cashlessMethodName,
     balance = 0, bonuses = 0, insurance = 0, insurerName, policyNumber,
-    finalTotal, debt = 0, status,
+    finalTotal, debt = 0, status, phase,
   } = payment;
   const totalPaid = cash + card + balance + bonuses + insurance;
+  // До начала приёма остаток ещё не долг — не красим его тревожным красным.
+  const beforeStart = phase === "prepaid" || phase === "awaiting";
+  const restPalette = beforeStart ? theme.palette.warning : theme.palette.error;
+  const restColor = beforeStart ? "warning.main" : "error.main";
+  const restLabel = beforeStart ? "К оплате" : phase === "debt" ? "Долг" : "Остаток к оплате";
 
   // Шапка показывает сумму К ОПЛАТЕ: baseTotal — это цена до скидки, и на чеке
   // со скидкой она расходилась с фактически принятыми деньгами (1600 при
@@ -165,6 +177,24 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
         icon: <CheckCircleOutline fontSize="small" />,
         bgColor: theme.palette.success.main,
         lightBg: alpha(theme.palette.success.main, 0.08),
+      };
+    }
+    if (isPartiallyPaid && phase === "prepaid") {
+      return {
+        label: "Предоплата",
+        color: "secondary" as const,
+        icon: <InfoOutlined fontSize="small" />,
+        bgColor: theme.palette.secondary.main,
+        lightBg: alpha(theme.palette.secondary.main, 0.08),
+      };
+    }
+    if (isPartiallyPaid && phase === "debt") {
+      return {
+        label: "Долг",
+        color: "error" as const,
+        icon: <ErrorOutline fontSize="small" />,
+        bgColor: theme.palette.error.main,
+        lightBg: alpha(theme.palette.error.main, 0.08),
       };
     }
     if (isPartiallyPaid) {
@@ -408,26 +438,27 @@ export const PaymentInfoBlock: React.FC<PaymentInfoBlockProps> = ({
             <Box sx={{
               p: dense ? 1 : 1.5,
               borderRadius: "14px",
-              bgcolor: debt > 0 ? alpha(theme.palette.error.main, 0.04) : alpha(theme.palette.success.main, 0.04),
+              bgcolor: debt > 0 ? alpha(restPalette.main, 0.04) : alpha(theme.palette.success.main, 0.04),
               border: '1px solid',
-              borderColor: debt > 0 ? alpha(theme.palette.error.main, 0.1) : alpha(theme.palette.success.main, 0.1),
+              borderColor: debt > 0 ? alpha(restPalette.main, 0.12) : alpha(theme.palette.success.main, 0.1),
+              transition: "background-color .3s ease, border-color .3s ease",
             }}>
               <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
                 {dense ? (
                   <Stack direction="row" alignItems="baseline" spacing={0.75} sx={{ minWidth: 0 }}>
-                    <Typography variant="caption" color={debt > 0 ? "error.main" : "success.main"} sx={{ fontWeight: 700 }}>
-                      {debt > 0 ? "Остаток к оплате" : "Итого оплачено"}
+                    <Typography variant="caption" color={debt > 0 ? restColor : "success.main"} sx={{ fontWeight: 700 }}>
+                      {debt > 0 ? restLabel : "Итого оплачено"}
                     </Typography>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: debt > 0 ? "error.main" : "success.main" }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: debt > 0 ? restColor : "success.main" }}>
                       {formatAmount(debt > 0 ? debt : totalPaid)} сом
                     </Typography>
                   </Stack>
                 ) : (
                   <Box>
-                    <Typography variant="caption" color={debt > 0 ? "error.main" : "success.main"} sx={{ fontWeight: 700, letterSpacing: 0.5, display: 'block', mb: 0.2 }}>
-                      {debt > 0 ? "Остаток к оплате" : "Итого оплачено"}
+                    <Typography variant="caption" color={debt > 0 ? restColor : "success.main"} sx={{ fontWeight: 700, letterSpacing: 0.5, display: 'block', mb: 0.2 }}>
+                      {debt > 0 ? restLabel : "Итого оплачено"}
                     </Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: debt > 0 ? "error.main" : "success.main" }}>
+                    <Typography variant="h5" sx={{ fontWeight: 700, color: debt > 0 ? restColor : "success.main" }}>
                       {formatAmount(debt > 0 ? debt : totalPaid)} сом
                     </Typography>
                   </Box>

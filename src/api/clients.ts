@@ -83,6 +83,82 @@ export function getClients(
   return apiRequest<DjangoClient[]>(`/clients/?${search.toString()}`, { signal });
 }
 
+/** Страница `GET /api/v2/clients/`: поиск идёт по всей организации. */
+export interface ClientPage {
+  items: DjangoClient[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export function getClientPage(
+  organizationId: number,
+  params: { query?: string; birthMonth?: number | null; limit?: number; offset?: number } = {},
+  signal?: AbortSignal,
+): Promise<ClientPage> {
+  const search = new URLSearchParams({ organizationId: String(organizationId) });
+  if (params.query?.trim()) search.set("q", params.query.trim());
+  if (params.birthMonth) search.set("birthMonth", String(params.birthMonth));
+  if (params.limit) search.set("limit", String(params.limit));
+  if (params.offset) search.set("offset", String(params.offset));
+  return apiRequest<ClientPage>(`/v2/clients/?${search.toString()}`, { signal });
+}
+
+export function getClient(id: number, organizationId: number, signal?: AbortSignal): Promise<DjangoClient> {
+  return apiRequest<DjangoClient>(`/clients/${id}/?organizationId=${organizationId}`, { signal });
+}
+
+/** Текущий уровень лояльности клиента (проценты и суммы — строками). */
+export interface ClientMetricsTier {
+  id: number;
+  name: string;
+  discountPercent: string;
+  cashbackPercent: string;
+}
+
+/** Следующий уровень и сколько до него осталось потратить. */
+export interface ClientMetricsNextTier {
+  name: string;
+  threshold: string;
+  remaining: string;
+}
+
+/**
+ * Свёртка покупок клиента — `GET /api/v2/clients/<id>/metrics/`.
+ *
+ * `netTotal` — «потратил всего»: покупки в CRM + `importedPurchaseTotal`
+ * (сумма, перенесённая из прежней учётной системы) − возвраты. По ней же
+ * считается уровень лояльности. `tier`/`nextTier` — null, если у
+ * организации нет активной программы (или модуль лояльности выключен).
+ */
+export interface ClientMetrics {
+  clientId: number;
+  purchaseCount: number;
+  purchaseTotal: string;
+  importedPurchaseTotal?: string;
+  returnCount: number;
+  returnTotal: string;
+  netTotal: string;
+  averageReceipt: string;
+  updatedAt: string;
+  firstPurchaseAt: string | null;
+  lastPurchaseAt: string | null;
+  tier?: ClientMetricsTier | null;
+  nextTier?: ClientMetricsNextTier | null;
+}
+
+export function getClientMetrics(
+  clientId: number,
+  organizationId: number,
+  signal?: AbortSignal,
+): Promise<ClientMetrics> {
+  return apiRequest<ClientMetrics>(`/v2/clients/${clientId}/metrics/`, {
+    signal,
+    headers: { "X-Organization-Id": String(organizationId) },
+  });
+}
+
 export function getClientStatuses(
   organizationId: number,
   signal?: AbortSignal,

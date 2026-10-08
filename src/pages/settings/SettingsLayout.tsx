@@ -47,6 +47,7 @@ import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
 import ForumOutlined from "@mui/icons-material/ForumOutlined";
 import PercentOutlined from "@mui/icons-material/PercentOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 
 import { CASHLESS_METHODS_ENABLED } from "../../api/cashlessMethods";
 import { DEALS_MODULE_ENABLED } from "../../api/deals";
@@ -91,6 +92,12 @@ type TabDef = {
 const TAB_DEFS: TabDef[] = [
   { key: "store", to: "/settings/store", icon: <ReceiptLongOutlined fontSize="small" />, group: "operations" },
   { key: "procurement", to: "/settings/procurement", icon: <LocalShippingOutlined fontSize="small" />, group: "operations" },
+  {
+    key: "appointmentPayments",
+    to: "/settings/appointment-payments",
+    icon: <PaymentsOutlined fontSize="small" />,
+    group: "operations",
+  },
   {
     key: "discountKinds",
     to: "/settings/discount-kinds",
@@ -288,6 +295,13 @@ export function useVisibleSettingsTabs(): TabDef[] {
       return false;
     }
     if (tab.key === "productAttributes" && activeOrganization?.vertical !== "retail") return false;
+    // История оплат живёт в карточке приёма — у магазина и отеля приёмов нет.
+    if (
+      tab.key === "appointmentPayments" &&
+      (activeOrganization?.vertical === "retail" || activeOrganization?.vertical === "hotel")
+    ) {
+      return false;
+    }
     if (tab.key === "clients" && activeOrganization?.vertical !== "retail") return false;
     // Справочник способов безнала: на бэке эндпоинта ещё нет — вкладку
     // показываем только вместе с остальным UI, по флагу (api/cashlessMethods.ts).

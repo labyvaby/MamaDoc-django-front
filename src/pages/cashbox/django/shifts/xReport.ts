@@ -139,6 +139,18 @@ export function buildXReport(summary: CashboxShiftSummary): XReport {
       // строка остаётся без разреза (см. salesIncome в разрезе кассы).
       methodRows(b, (r) => r.salesIncome ?? 0, 1),
     ),
+    // Деньги за подарочные сертификаты: показываем справочно, но в движение
+    // смены и в expectedCash они не входят — магазин откладывает их отдельно.
+    // Нетто — продано минус возвращено при аннулировании.
+    row(
+      "certificates",
+      "Продажа сертификатов (не входит в остаток)",
+      num(summary.certificateCashIncome) - num(summary.certificateCashRefunds),
+      num(summary.certificateCardIncome) - num(summary.certificateCardRefunds),
+      0,
+      (summary.certificateCount ?? 0) + (summary.certificateRefundCount ?? 0),
+      methodRows(b, (r) => num(r.certificateIncome) - num(r.certificateRefunds), 1),
+    ),
     row(
       "supplies",
       "Закупки",
@@ -159,14 +171,16 @@ export function buildXReport(summary: CashboxShiftSummary): XReport {
     ),
   ];
 
-  const sum = (pick: (r: XReportRow) => number) => round2(rows.reduce((acc, r) => acc + pick(r), 0));
+  // Certificate money is listed but kept out of the shift movement.
+  const counted = rows.filter((r) => r.key !== "certificates");
+  const sum = (pick: (r: XReportRow) => number) => round2(counted.reduce((acc, r) => acc + pick(r), 0));
   const movement = row(
     "movement",
     "Движение за смену",
     sum((r) => r.cash),
     sum((r) => r.cashless),
     sum((r) => r.balance),
-    rows.reduce((acc, r) => acc + (r.count ?? 0), 0),
+    counted.reduce((acc, r) => acc + (r.count ?? 0), 0),
   );
 
   const opening = round2(num(summary.shift.openingCash));

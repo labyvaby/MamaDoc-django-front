@@ -5,7 +5,6 @@ import {
   Box,
   Checkbox,
   Chip,
-  CircularProgress,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -55,18 +54,6 @@ import { getServices, type Service } from "../../../api/catalog";
 import ServiceMultiPickerField from "../../../components/services/ServiceMultiPickerField";
 import { orgWide } from "../../../api/scope";
 import { useApiOrgId } from "../../../hooks/useApiOrgId";
-import { getProducts, type DjangoProduct } from "../../../api/warehouse";
-import {
-  getEmployeeRule,
-  putEmployeeRule,
-  type EmployeeRule,
-} from "../../../api/payroll";
-import DjangoSalarySettings, {
-  EMPTY_SALARY,
-  ruleToSalaryValue,
-  salaryValueToPayload,
-  type SalarySettingsValue,
-} from "./DjangoSalarySettings";
 import type { EmployesRow } from "../types";
 import { planStatusSave, restoreOutcomeMessage } from "../employment";
 import { swapHomeInOperational } from "../homeBranch";
@@ -110,7 +97,6 @@ import {
   validateBik,
   validatePrepaymentAmount,
 } from "../employeeValidation";
-import { buildSalaryServiceOptions } from "../salaryServiceOptions";
 
 export type DjangoEditEmployeeDrawerProps = {
   record: EmployesRow | null;
@@ -124,35 +110,6 @@ const MotionBox = motion(Box);
 const isImageFile = (f: File | null) => Boolean(f && f.type.startsWith("image/"));
 const isImageUrl = (u: string | null) =>
   Boolean(u && !/\.pdf($|\?)/i.test(u));
-
-// Canonical string form of the salary value — lets us skip the PUT when the
-// user never touched the salary block (avoids a needless write + request).
-function serializeSalary(v: SalarySettingsValue): string {
-  const num = (s: string) => String(Number(s.trim() || "0"));
-  const rules = v.rules
-    .map((r) => ({
-      services: [...r.serviceIds].sort((a, b) => a - b),
-      percent: num(r.percent),
-      fixed: num(r.fixedAmount),
-    }))
-    .sort((a, b) => a.services.join(",").localeCompare(b.services.join(",")));
-  const productRules = v.productRules
-    .map((r) => ({
-      products: [...r.productIds].sort((a, b) => a - b),
-      percent: num(r.percent),
-      fixed: num(r.fixedAmount),
-    }))
-    .sort((a, b) => a.products.join(",").localeCompare(b.products.join(",")));
-  return JSON.stringify({
-    enabled: v.enabled,
-    night: num(v.nightRate),
-    day: num(v.dayRate),
-    appointment: num(v.appointmentRate),
-    productEnabled: v.productEnabled,
-    rules,
-    productRules,
-  });
-}
 
 /** «500.00» → «500» для поля ввода: хвостовые нули кассиру ни о чём не говорят. */
 function decimalToInput(value: string | null | undefined): string {
@@ -274,8 +231,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   const canUpdateStaff = useCan("staff.update");
   const canViewServices = canViewCatalog;
   const canManageServices = canViewCatalog && canUpdateStaff;
-  const canViewPayroll = useCan("payroll.view");
-  const canManagePayroll = useCan("payroll.manage");
+  // Условия зарплаты здесь больше не правятся: у них своя модалка «Зарплата»
+  // в шапке карточки сотрудника (salary/EmployeeSalaryModal).
 
   // ── Photo ─────────────────────────────────────────────────────────────────
   const [photoFile, setPhotoFile] = React.useState<File | null>(null);
@@ -353,17 +310,8 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   // ── Services ──────────────────────────────────────────────────────────────
   const [allServices, setAllServices] = React.useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = React.useState(false);
-  // Товары склада — для правил ЗП по товарным продажам (недоступны без права —
-  // тогда селект покажет «Товары недоступны», это не ошибка).
-  const [allProducts, setAllProducts] = React.useState<DjangoProduct[]>([]);
-  const [productsLoading, setProductsLoading] = React.useState(false);
   const [assignments, setAssignments] = React.useState<EmployeeServiceAssignment[]>([]);
   const [selectedServices, setSelectedServices] = React.useState<Service[]>([]);
-
-  // ── Salary ────────────────────────────────────────────────────────────────
-  const [salaryLoading, setSalaryLoading] = React.useState(false);
-  const [salary, setSalary] = React.useState<SalarySettingsValue>(EMPTY_SALARY);
-  const initialSalaryRef = React.useRef<string>(serializeSalary(EMPTY_SALARY));
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
@@ -511,8 +459,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
     setSubmitAttempted(false);
     setAssignments([]);
     setSelectedServices([]);
-    setSalary(EMPTY_SALARY);
-    initialSalaryRef.current = serializeSalary(EMPTY_SALARY);
     baselineRef.current = null;
     setDraftRestored(false);
 
@@ -644,15 +590,10 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
       })
       .catch(() => {});
 
-    const needServices = canViewServices || canManageServices || canViewPayroll;
-    const servicesPromise: Promise<Service[]> = needServices
-      ? getServices(orgWide(orgId), undefined, ctrl.signal)
-      : Promise.resolve([]);
-
     if (canViewServices || canManageServices) {
       setServicesLoading(true);
       Promise.all([
-        servicesPromise,
+        getServices(orgWide(orgId), undefined, ctrl.signal),
         getEmployeeServices(empId, ctrl.signal, { includeInactive: true }),
       ])
         .then(([svcList, asgList]) => {
@@ -671,43 +612,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         })
         .finally(() => {
           if (!ctrl.signal.aborted) setServicesLoading(false);
-        });
-    } else if (canViewPayroll) {
-      servicesPromise
-        .then((svcList) => {
-          if (!ctrl.signal.aborted)
-            setAllServices(svcList.filter((s) => s.isActive));
-        })
-        .catch(() => {});
-    }
-
-    if (canViewPayroll) {
-      // Товары для правил по товарным продажам (при отсутствии права — пусто).
-      setProductsLoading(true);
-      getProducts(ctrl.signal, { organizationId: orgId })
-        .then((list) => {
-          if (!ctrl.signal.aborted)
-            setAllProducts(list.filter((p) => p.isActive !== false));
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (!ctrl.signal.aborted) setProductsLoading(false);
-        });
-
-      setSalaryLoading(true);
-      getEmployeeRule(empId, ctrl.signal)
-        .then((rule: EmployeeRule) => {
-          if (ctrl.signal.aborted) return;
-          const value = ruleToSalaryValue(rule);
-          setSalary(value);
-          initialSalaryRef.current = serializeSalary(value);
-        })
-        .catch((e) => {
-          if ((e as Error)?.name !== "AbortError")
-            console.warn("Could not fetch salary rule:", e);
-        })
-        .finally(() => {
-          if (!ctrl.signal.aborted) setSalaryLoading(false);
         });
     }
 
@@ -985,21 +889,7 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
         });
       }
 
-      // 4. Salary rules — only when actually changed (skip the needless PUT).
-      if (
-        canManagePayroll &&
-        serializeSalary(salary) !== initialSalaryRef.current
-      ) {
-        try {
-          await putEmployeeRule(empId, salaryValueToPayload(salary));
-          initialSalaryRef.current = serializeSalary(salary);
-        } catch (e) {
-          console.warn("Could not save salary rule:", e);
-          notify?.({ type: "error", message: "Данные сохранены, но правила ЗП не удалось обновить" });
-        }
-      }
-
-      // 5. Reload updated record
+      // 4. Reload updated record
       const updated = await getDjangoEmployee(empId);
 
       const updatedRow: EmployesRow = {
@@ -1057,36 +947,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
   );
 
   const elqrIsImage = elqrFile ? isImageFile(elqrFile) : isImageUrl(elqrPreview);
-
-  // «Врач» — по роли доступа (её видно в группировке списка) или по клиническому
-  // типу; поля независимы, поэтому учитываем оба.
-  const isDoctor =
-    record?._djangoRole?.code === "doctor" || clinicalRole === "doctor";
-
-  // В правилах ЗП показываем только услуги, закреплённые за сотрудником (живой
-  // выбор из вкладки «Услуги») — ставка на непривязанную услугу всё равно не
-  // отработает, приём с такой парой услуга/исполнитель не собрать. Правило
-  // сужения и его исключения — в buildSalaryServiceOptions.
-  const assignmentsKnown = canViewServices || canManageServices;
-  const salaryServices = React.useMemo(
-    () =>
-      buildSalaryServiceOptions({
-        allServices,
-        assignedServices: selectedServices,
-        ruleServiceIds: salary.rules.flatMap((r) => r.serviceIds),
-        assignmentsKnown,
-      }),
-    [assignmentsKnown, allServices, selectedServices, salary.rules],
-  );
-
-  // Подсказка сотруднику без закреплённых услуг: правила ЗП по услугам
-  // применять не к чему. Врачу — своим термином вертикали.
-  const salaryServicesHint =
-    assignmentsKnown && selectedServices.length === 0
-      ? isDoctor
-        ? t("clinicalRole.doctorNoServicesHint")
-        : t("clinicalRole.employeeNoServicesHint")
-      : undefined;
 
   return (
     <DrawerBase
@@ -1800,41 +1660,6 @@ const DjangoEditEmployeeDrawer: React.FC<DjangoEditEmployeeDrawerProps> = ({
                   </Stack>
                 </Box>
               )}
-            </Stack>
-          </MotionBox>
-        )}
-
-        {/* ── Зарплата ── */}
-        {canViewPayroll && (
-          <MotionBox variants={cascadeItem}>
-            <Stack spacing={2.5}>
-              <SectionLabel title="Зарплата" />
-              <Box
-                sx={{
-                  bgcolor: "action.hover",
-                  p: 2,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                {salaryLoading ? (
-                  <Stack alignItems="center" py={3}>
-                    <CircularProgress size={24} />
-                  </Stack>
-                ) : (
-                  <DjangoSalarySettings
-                    value={salary}
-                    onChange={setSalary}
-                    services={salaryServices}
-                    servicesHint={salaryServicesHint}
-                    loadingServices={salaryLoading}
-                    products={allProducts}
-                    loadingProducts={productsLoading}
-                    disabled={busy || !canManagePayroll}
-                  />
-                )}
-              </Box>
             </Stack>
           </MotionBox>
         )}

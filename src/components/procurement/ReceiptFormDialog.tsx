@@ -52,6 +52,7 @@ import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import BookmarkAddOutlined from "@mui/icons-material/BookmarkAddOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
+import StraightenOutlined from "@mui/icons-material/StraightenOutlined";
 
 import { ApiError, getErrorMessage } from "../../api/client";
 import {
@@ -59,6 +60,7 @@ import {
   getNextReceiptNumber,
   recognizeReceiptPhoto,
   type GoodsReceipt,
+  type GoodsReceiptLineInput,
   type ProcurementScope,
   type ProcurementSupplier,
   type RecognitionResult,
@@ -101,7 +103,13 @@ import {
   emptyDraft,
   matchCategory,
   newProductInput,
+  seasonOptions,
+  sizeLineInputs,
+  sizesProblem,
+  sizesTotal,
+  type CategoryOption,
   type NewProductDraft,
+  type SizeQuantity,
 } from "./newProductDraft";
 
 const CURRENCIES = ["KGS", "USD", "RUB", "KZT", "EUR", "CNY"];
@@ -131,6 +139,12 @@ interface FormLine {
   amount: string;
   lotNumber: string;
   expiresAt: Dayjs | null;
+  /**
+   * Разбивка по размерам («матрёшка»): количество строки — сумма размеров,
+   * цена за единицу у всех общая. Новая карточка уходит на сервер строкой
+   * прихода на каждый размер.
+   */
+  sizes?: SizeRow[];
   /** Строка пришла из распознавания: показываем исходный текст и кандидатов. */
   recognized?: {
     name: string;
@@ -142,6 +156,8 @@ interface FormLine {
     sku: string | null;
     unit: string | null;
     brand?: string | null;
+    season?: string | null;
+    sizes?: Array<{ size: string; quantity: string | null }>;
     /** Вид товара из документа («Пальто») — категория новой карточки. */
     category?: string | null;
     sourceName?: string | null;
@@ -151,6 +167,9 @@ interface FormLine {
     matchScore: number | null;
   };
 }
+
+/** Размер во вложенной строке — со своим ключом для React. */
+type SizeRow = SizeQuantity & { key: string };
 
 /** Строка в отложенной накладной: дата — строкой, остальное как в форме. */
 type StoredLine = Omit<FormLine, "expiresAt"> & { expiresAt: string | null };
@@ -234,6 +253,18 @@ const newLine = (): FormLine => ({
   expiresAt: null,
 });
 
+const sizeRow = (size = "", quantity = ""): SizeRow => ({
+  key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  size,
+  quantity,
+});
+
+/** Количество для поля: ноль — пустое поле, а не «0». */
+const quantityText = (value: number): string => (value > 0 ? String(value) : "");
+
+/** Строка с размером — одним или разложенными: новая категория для неё заводится вариантной. */
+const hasSize = (line: FormLine): boolean => Boolean(line.sizes?.length || line.newProduct?.size.trim());
+
 /** Что строка документа говорит о товаре — для подсказок и для новой карточки. */
 const recognizedOf = (line: RecognizedLine): NonNullable<FormLine["recognized"]> => ({
   name: line.name,
@@ -245,6 +276,8 @@ const recognizedOf = (line: RecognizedLine): NonNullable<FormLine["recognized"]>
   sku: line.sku,
   unit: line.unit,
   brand: line.brand,
+  season: line.season,
+  sizes: line.sizes,
   category: line.category,
   sourceName: line.sourceName,
   description: line.description,
@@ -594,6 +627,23 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     [categoryTreeQuery.data, attributesQuery.data],
   );
   const brands = React.useMemo(() => brandOptions(attributesQuery.data ?? []), [attributesQuery.data]);
+  const seasons = React.useMemo(() => seasonOptions(attributesQuery.data ?? []), [attributesQuery.data]);
+  /**
+   * Новая категория из накладной («Пальто»), чьи строки с размерами, —
+   * заводится вариантной: с цветом и размером организации. Так размеры
+   * становятся клетками одной модели. Нет у организации этих свойств —
+   * категория обычная, а размеры уходят отдельными карточками.
+   */
+  const matrixAxes = React.useMemo(() => {
+    const active = (attributesQuery.data ?? []).filter((a) => a.isActive);
+    const color = active.find((a) => a.role === "color");
+    const size = active.find((a) => a.role === "size");
+    if (!color || !size) return null;
+    const values = (attribute: typeof color) =>
+      attribute.values.filter((v) => v.isActive).sort((a, b) => a.position - b.position).map((v) => v.value);
+    const pending: CategoryOption = { id: -1, label: "", matrix: true, colors: values(color), sizes: values(size) };
+    return { ids: [color.id, size.id], pending };
+  }, [attributesQuery.data]);
   const categoryById = React.useMemo(() => new Map(categoryOptions.map((option) => [option.id, option])), [categoryOptions]);
   const units = React.useMemo(() => unitsQuery.data ?? [], [unitsQuery.data]);
   // Как в карточке товара: у розницы со справочником категория обязательна.
@@ -692,6 +742,39 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
       prev.map((l) => (l.key === key ? { ...l, amount, price: priceFromAmount(amount, l.quantity) } : l)),
     );
 
+  // ── Размеры строки («матрёшка») ──────────────────────────────────────────
+  // Верхние поля строки следуют за размерами: количество — их сумма, а
+  // введённая сумма строки (как в накладной) держится — пересчитывается цена.
+
+  const setLineSizes = (key: string, update: (rows: SizeRow[]) => SizeRow[]) =>
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        const sizes = update(l.sizes ?? []);
+        // Последний размер убрали — строка снова одного размера, количество остаётся.
+        if (sizes.length === 0) return { ...l, sizes: undefined };
+        const quantity = quantityText(sizesTotal(sizes));
+        return { ...l, sizes, quantity, price: l.amount ? priceFromAmount(l.amount, quantity) : l.price };
+      }),
+    );
+  const updateSize = (key: string, rowKey: string, patch: Partial<SizeQuantity>) =>
+    setLineSizes(key, (rows) => rows.map((r) => (r.key === rowKey ? { ...r, ...patch } : r)));
+  const removeSize = (key: string, rowKey: string) => setLineSizes(key, (rows) => rows.filter((r) => r.key !== rowKey));
+  const addSize = (key: string) => setLineSizes(key, (rows) => [...rows, sizeRow()]);
+  /** «По размерам»: текущий размер и количество — первой вложенной строкой. */
+  const splitBySizes = (key: string) =>
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        const size = l.newProduct?.size.trim() || l.recognized?.size?.trim() || "";
+        return {
+          ...l,
+          sizes: [sizeRow(size, l.quantity), sizeRow()],
+          newProduct: l.newProduct ? { ...l.newProduct, size: "" } : l.newProduct,
+        };
+      }),
+    );
+
   // ── Новый товар из строки ────────────────────────────────────────────────
 
   const updateDraft = (key: string, patch: Partial<NewProductDraft>) => {
@@ -707,6 +790,7 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
       ? draftFromRecognized(line.recognized, {
           units,
           brands,
+          seasons,
           categories: categoryOptions,
           // Артикул поставщика общий у размеров одной модели — такой не берём.
           skuIsUnique:
@@ -737,17 +821,37 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
       prev.map((l) => (l.recognized && !l.product && !l.newProduct ? { ...l, newProduct: draftFor(l, undefined, prev) } : l)),
     );
 
+  const applySeasonToNew = (season: string) =>
+    setLines((prev) => prev.map((l) => (l.newProduct ? { ...l, newProduct: { ...l.newProduct, season } } : l)));
+
   const applyCategoryToNew = (categoryId: number | null) => {
     lastCategoryRef.current = categoryId;
     setLines((prev) => prev.map((l) => (l.newProduct ? { ...l, newProduct: { ...l.newProduct, categoryId, newCategory: "" } } : l)));
   };
 
+  /** Новые категории, которые заведутся вариантными: у их строк есть размеры. */
+  const matrixNewCategories = new Set(
+    matrixAxes
+      ? lines
+          .filter((l) => l.newProduct && l.newProduct.categoryId == null && l.newProduct.newCategory.trim() && hasSize(l))
+          .map((l) => l.newProduct!.newCategory.trim().toLowerCase())
+      : [],
+  );
+  /** Категория черновика: из справочника либо та, что заведётся при проведении. */
+  const categoryOf = (draft: NewProductDraft): CategoryOption | null =>
+    draft.categoryId != null
+      ? categoryById.get(draft.categoryId) ?? null
+      : matrixNewCategories.has(draft.newCategory.trim().toLowerCase())
+        ? matrixAxes?.pending ?? null
+        : null;
+
   const problemOf = (line: FormLine): string | null =>
     line.newProduct
-      ? draftProblem(line.newProduct, {
-          categoryRequired,
-          category: line.newProduct.categoryId != null ? categoryById.get(line.newProduct.categoryId) : null,
-        })
+      ? draftProblem(
+          // Размер у разложенной строки — в каждой вложенной, не в карточке.
+          line.sizes?.length ? { ...line.newProduct, size: line.sizes[0].size || "—" } : line.newProduct,
+          { categoryRequired, category: categoryOf(line.newProduct) },
+        )
       : null;
 
   const lineTotal = (line: FormLine) => toNumber(line.quantity) * toNumber(line.price);
@@ -937,8 +1041,16 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           ? "Впишите название нового товара в строке."
           : problem === "Выберите категорию"
             ? "Выберите категорию в карточке нового товара — или сразу для всех новых в списке «Категория для всех новых»."
-            : "Укажите и цвет, и размер или очистите оба поля.";
+            : "Укажите размер или очистите цвет.";
       return { message: `Позиция ${position}${title}: ${problem.toLowerCase()}.`, fix, target: `line-${line.key}` };
+    }
+    const sizeIssue = line.sizes?.length ? sizesProblem(line.sizes) : null;
+    if (sizeIssue) {
+      return {
+        message: `Позиция ${position}${title}: ${sizeIssue.charAt(0).toLowerCase()}${sizeIssue.slice(1)}.`,
+        fix: "Исправьте разбивку под строкой: у каждого размера — свой размер и количество, лишний уберите крестиком.",
+        target: `sizes-${line.key}`,
+      };
     }
     if (toNumber(line.quantity) <= 0) {
       return { message: `Позиция ${position}${title}: не указано количество.`, fix: "Впишите, сколько единиц пришло.", target: `qty-${line.key}` };
@@ -1007,17 +1119,25 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
             }
           : null;
         const expires = line.expiresAt ? dayjs(line.expiresAt) : null;
+        const sizes = (line.sizes ?? []).map((s) => sizeRow(s.size, s.quantity != null ? quantityText(Number(s.quantity)) : ""));
         const quantity = line.quantity ? Number(line.quantity) : null;
-        const quantityText = quantity != null && Number.isFinite(quantity) ? String(quantity) : "";
+        // Разложенная по размерам строка: её количество — сумма размеров,
+        // как и при ручной правке. Расхождение с документом — в предупреждениях.
+        const lineQuantity = sizes.length
+          ? quantityText(sizesTotal(sizes))
+          : quantity != null && Number.isFinite(quantity)
+            ? String(quantity)
+            : "";
         // Цены за единицу в документе нет, есть только сумма строки — её и
         // показываем как введённую сумму, а цену выводим из неё.
         const amount = !line.price && line.total ? String(Number(line.total)) : "";
         return {
           ...newLine(),
           product: matched,
-          quantity: quantityText,
-          price: line.price ? String(Number(line.price)) : priceFromAmount(amount, quantityText),
+          quantity: lineQuantity,
+          price: line.price ? String(Number(line.price)) : priceFromAmount(amount, lineQuantity),
           amount,
+          sizes: sizes.length ? sizes : undefined,
           lotNumber: line.lotNumber ?? "",
           expiresAt: expires && expires.isValid() ? expires : null,
           recognized: recognizedOf(line),
@@ -1106,15 +1226,19 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
    * одной на имя. Уже заведённая за это время (или только что в соседней
    * вкладке) берётся по имени, а не создаётся второй раз.
    */
-  const ensureNewCategories = async (): Promise<Map<string, number>> => {
+  const ensureNewCategories = async (): Promise<Map<string, { id: number; matrix: boolean }>> => {
     const wanted = Array.from(
       new Set(filledLines.map((l) => l.newProduct?.categoryId == null ? l.newProduct?.newCategory.trim() : "").filter(Boolean) as string[]),
     );
-    const ids = new Map<string, number>();
+    const ids = new Map<string, { id: number; matrix: boolean }>();
     for (const name of wanted) {
       const existing = matchCategory(categoryOptions, name);
-      const node = existing ? { id: existing.id } : await createProductCategory({ name, organizationId: orgId });
-      ids.set(name.toLowerCase(), node.id);
+      // Строки с размерами — категория с цветом и размером, иначе размеры не станут вариантами.
+      const axes = matrixNewCategories.has(name.toLowerCase()) ? matrixAxes?.ids : undefined;
+      const node = existing
+        ? { id: existing.id, matrix: existing.matrix }
+        : { id: (await createProductCategory({ name, organizationId: orgId, ...(axes ? { attributeIds: axes } : {}) })).id, matrix: Boolean(axes) };
+      ids.set(name.toLowerCase(), node);
     }
     if (wanted.length > 0) await queryClient.invalidateQueries({ queryKey: ["django", "procurement", "form-category-tree"] });
     return ids;
@@ -1132,10 +1256,20 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
     setError(null);
     try {
       const createdCategories = await ensureNewCategories();
-      const draftWithCategory = (draft: NewProductDraft): NewProductDraft => {
-        const id = draft.categoryId ?? createdCategories.get(draft.newCategory.trim().toLowerCase()) ?? null;
-        return { ...draft, categoryId: id, newCategory: "" };
+      /** Черновик с id категории и её вариантностью — с учётом только что заведённых. */
+      const resolveDraft = (draft: NewProductDraft): { draft: NewProductDraft; category: CategoryOption | null } => {
+        if (draft.categoryId != null) return { draft, category: categoryById.get(draft.categoryId) ?? null };
+        const created = createdCategories.get(draft.newCategory.trim().toLowerCase());
+        const resolved = { ...draft, categoryId: created?.id ?? null, newCategory: "" };
+        return { draft: resolved, category: created?.matrix ? matrixAxes?.pending ?? null : null };
       };
+      const lineCost = (l: FormLine) => ({
+        costAmount: String(toNumber(l.price)),
+        costCurrency: currency,
+        exchangeRate: String(rate),
+        lotNumber: l.lotNumber.trim(),
+        expiresAt: l.expiresAt ? l.expiresAt.endOf("day").toISOString() : null,
+      });
       const created = await createReceipt(
         {
           supplierId: Number(supplierId),
@@ -1148,24 +1282,20 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
           customsCost: String(toNumber(customsCost)),
           deliveryCost: String(toNumber(deliveryCost)),
           otherCosts: String(toNumber(otherCosts)),
-          lines: filledLines.map((l) => ({
-            ...(l.product
-              ? { productId: l.product.id }
-              : (() => {
-                  const draft = draftWithCategory(l.newProduct!);
-                  return { newProduct: newProductInput(draft, draft.categoryId != null ? categoryById.get(draft.categoryId) : null) };
-                })()),
-            quantity: String(toNumber(l.quantity)),
-            costAmount: String(toNumber(l.price)),
-            costCurrency: currency,
-            exchangeRate: String(rate),
-            lotNumber: l.lotNumber.trim(),
-            expiresAt: l.expiresAt ? l.expiresAt.endOf("day").toISOString() : null,
-          })),
+          // Новая карточка по размерам — строка прихода на каждый размер;
+          // товар каталога принимает всё количество одной строкой.
+          lines: filledLines.flatMap((l): GoodsReceiptLineInput[] => {
+            if (l.product) return [{ productId: l.product.id, quantity: String(toNumber(l.quantity)), ...lineCost(l) }];
+            const { draft, category } = resolveDraft(l.newProduct!);
+            if (l.sizes?.length) {
+              return sizeLineInputs(draft, category, l.sizes).map((entry) => ({ ...entry, ...lineCost(l) }));
+            }
+            return [{ newProduct: newProductInput(draft, category), quantity: String(toNumber(l.quantity)), ...lineCost(l) }];
+          }),
         },
         scope,
       );
-      const createdProducts = filledLines.filter((l) => l.newProduct).length;
+      const createdProducts = filledLines.reduce((sum, l) => sum + (l.newProduct ? l.sizes?.length || 1 : 0), 0);
       const { failed } = await photos.flush(created.id);
       await queryClient.invalidateQueries({ queryKey: djangoQueryKeys.procurement.all });
       // Новые карточки — в каталог и во все пикеры товаров, не только в эту форму.
@@ -1920,6 +2050,21 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
               </MenuItem>
             ))}
           </TextField>
+          <Autocomplete<string, false, false, true>
+            freeSolo
+            size="small"
+            options={seasons}
+            value={newLines.every((l) => l.newProduct?.season === newLines[0]?.newProduct?.season) ? newLines[0]?.newProduct?.season ?? "" : ""}
+            onChange={(_, next) => applySeasonToNew(next ?? "")}
+            onBlur={(e) => {
+              const typed = (e.target as HTMLInputElement).value.trim();
+              if (typed) applySeasonToNew(seasons.find((known) => known.toLowerCase() === typed.toLowerCase()) ?? typed);
+            }}
+            sx={{ flex: 1, minWidth: 0 }}
+            renderInput={(params) => (
+              <TextField {...params} label="Сезон для всех новых" placeholder="Разные" InputLabelProps={{ ...params.InputLabelProps, shrink: true }} />
+            )}
+          />
         </Stack>
       )}
       {productsQuery.isLoading && <LinearProgress />}
@@ -1954,6 +2099,8 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
         const scoreOf = (id: number) => line.recognized?.candidates.find((c) => c.id === id)?.score;
         const draft = line.newProduct;
         const unitLabel = line.product?.unit ?? (draft ? units.find((u) => u.id === draft.unitId)?.shortName ?? "шт" : undefined);
+        const bySizes = Boolean(line.sizes?.length);
+        const sizeOptions = (draft ? categoryOf(draft)?.sizes : undefined) ?? matrixAxes?.pending.sizes ?? [];
         // После попытки провести строка с проблемой — красной полосой.
         const rowIssue = showIssues ? lineIssue(line, index + 1) : null;
         return (
@@ -2124,14 +2271,23 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
               <TextField
                 size="small"
                 value={line.quantity}
-                onChange={(e) => setLineQuantity(line.key, e.target.value)}
+                onChange={(e) => {
+                  if (!bySizes) setLineQuantity(line.key, e.target.value);
+                }}
                 placeholder="Кол-во"
                 // На телефоне шапки колонок нет — подпись у самого поля.
                 label={isPhone ? "Кол-во" : undefined}
                 error={showIssues && hasProduct(line) && toNumber(line.quantity) <= 0}
                 data-issue={`qty-${line.key}`}
                 sx={{ gridArea: "qty", minWidth: 0 }}
-                inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": "Количество" }}
+                inputProps={{
+                  inputMode: "decimal",
+                  style: { textAlign: "right" },
+                  "aria-label": "Количество",
+                  // Разложенная строка: количество — сумма размеров, правится в них.
+                  readOnly: bySizes,
+                  title: bySizes ? "Сумма по размерам — меняйте количество в размерах ниже" : undefined,
+                }}
                 InputProps={{
                   endAdornment: unitLabel ? (
                     <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
@@ -2178,6 +2334,123 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
                 <DeleteOutlineOutlined fontSize="small" />
               </IconButton>
             </Box>
+            {bySizes && (
+              <Box data-issue={`sizes-${line.key}`} sx={{ mt: 1, scrollMarginTop: 16 }}>
+                <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.75, pl: { xs: 0.5, md: 1 } }}>
+                  <StraightenOutlined sx={{ fontSize: 16, color: "text.secondary" }} />
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                    По размерам: {line.sizes!.length} · {line.quantity || 0} {unitLabel ?? "шт"}
+                  </Typography>
+                </Stack>
+                {line.sizes!.map((row) => {
+                  const rowTotal = roundMoney(toNumber(row.quantity) * toNumber(line.price));
+                  const rowIssue = showIssues && (!row.size.trim() || toNumber(row.quantity) <= 0);
+                  return (
+                    <Box
+                      key={row.key}
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: { xs: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 32px", md: LINE_COLUMNS },
+                        gridTemplateAreas: { xs: '"size qty total del"', md: '"size qty price total del"' },
+                        gap: 1,
+                        alignItems: "start",
+                        mb: 0.75,
+                      }}
+                    >
+                      {/* Вложенность видна линией слева — «матрёшка» внутри строки. */}
+                      <Box
+                        sx={(t) => ({
+                          gridArea: "size",
+                          minWidth: 0,
+                          display: "flex",
+                          justifyContent: { xs: "stretch", md: "flex-end" },
+                          pl: { xs: 1, md: 2 },
+                          borderLeft: `2px solid ${alpha(t.palette.primary.main, 0.35)}`,
+                        })}
+                      >
+                        <Autocomplete<string, false, false, true>
+                          freeSolo
+                          size="small"
+                          options={sizeOptions}
+                          value={row.size}
+                          onChange={(_, next) => updateSize(line.key, row.key, { size: next ?? "" })}
+                          onInputChange={(_, next) => updateSize(line.key, row.key, { size: next })}
+                          sx={{ width: { xs: "100%", md: 200 }, minWidth: 0 }}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="Размер"
+                              error={showIssues && !row.size.trim()}
+                              inputProps={{ ...params.inputProps, "aria-label": "Размер" }}
+                            />
+                          )}
+                        />
+                      </Box>
+                      <TextField
+                        size="small"
+                        value={row.quantity}
+                        onChange={(e) => updateSize(line.key, row.key, { quantity: e.target.value })}
+                        placeholder="Кол-во"
+                        label={isPhone ? "Кол-во" : undefined}
+                        error={rowIssue && toNumber(row.quantity) <= 0}
+                        sx={{ gridArea: "qty", minWidth: 0 }}
+                        inputProps={{ inputMode: "decimal", style: { textAlign: "right" }, "aria-label": `Количество размера ${row.size}` }}
+                        InputProps={{
+                          endAdornment: unitLabel ? (
+                            <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                              {unitLabel}
+                            </Typography>
+                          ) : undefined,
+                        }}
+                      />
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ gridArea: "price", display: { xs: "none", md: "block" }, textAlign: "right", pt: 1, fontVariantNumeric: "tabular-nums" }}
+                      >
+                        {toNumber(line.price) > 0 ? `× ${formatMoney(toNumber(line.price))}` : ""}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{ gridArea: "total", textAlign: "right", pt: 0.875, pr: 1.75, fontVariantNumeric: "tabular-nums", color: rowTotal > 0 ? "text.primary" : "text.disabled" }}
+                      >
+                        {rowTotal > 0 ? formatMoney(rowTotal) : "—"}
+                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => removeSize(line.key, row.key)}
+                        aria-label={`Убрать размер ${row.size}`}
+                        sx={{ gridArea: "del", justifySelf: "end", mt: 0.375, color: "text.secondary", "&:hover": { color: "error.main" } }}
+                      >
+                        <CloseOutlined fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  );
+                })}
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ pl: { xs: 0.5, md: 1 } }}>
+                  <Button size="small" startIcon={<AddOutlined />} onClick={() => addSize(line.key)} sx={{ py: 0, fontSize: "0.75rem" }}>
+                    Размер
+                  </Button>
+                  {line.product && (
+                    <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3 }}>
+                      Выбран товар каталога — всё количество уйдёт в него одной строкой. Чтобы завести каждый размер, создайте новый товар.
+                    </Typography>
+                  )}
+                </Stack>
+              </Box>
+            )}
+            {draft && !bySizes && (
+              <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 0.5 }}>
+                <Button
+                  size="small"
+                  startIcon={<StraightenOutlined sx={{ fontSize: 16 }} />}
+                  onClick={() => splitBySizes(line.key)}
+                  sx={{ py: 0, fontSize: "0.75rem" }}
+                >
+                  Разбить по размерам
+                </Button>
+              </Box>
+            )}
             {draft && (
               <NewProductFields
                 draft={draft}
@@ -2186,6 +2459,9 @@ export const ReceiptFormDialog: React.FC<ReceiptFormDialogProps> = ({
                 legacyCategories={legacyCategoriesQuery.data ?? []}
                 units={units}
                 brands={brands}
+                seasons={seasons}
+                pendingCategory={categoryOf(draft)}
+                sizes={line.sizes?.map((row) => row.size)}
                 problem={problemOf(line)}
                 disabled={saving}
               />

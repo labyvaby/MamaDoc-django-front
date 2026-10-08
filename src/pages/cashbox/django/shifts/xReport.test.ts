@@ -66,6 +66,26 @@ describe("buildXReport", () => {
     expect(byKey.expenses).toMatchObject({ cash: -300, cashless: -250 });
   });
 
+  it("сертификаты — отдельная строка, не входят в движение и ожидаемые наличные", () => {
+    // Бэк не включает сертификаты в expectedCash: магазин откладывает их отдельно.
+    const report = buildXReport(
+      summary({
+        expectedCash: "5200.00",
+        certificateCashIncome: "3000.00",
+        certificateCashRefunds: "500.00",
+        certificateCardIncome: "2000.00",
+        certificateCount: 2,
+        certificateRefundCount: 1,
+      }),
+    );
+    const certificates = report.rows.find((r) => r.key === "certificates")!;
+
+    expect(certificates).toMatchObject({ cash: 2500, cashless: 2000, count: 3 });
+    expect(certificates.label).toMatch(/не входит в остаток/);
+    expect(report.movement.cash).toBe(4200);
+    expect(report.mismatch).toBe(0);
+  });
+
   it("считает движение за смену и ожидаемую наличность", () => {
     const report = buildXReport(summary());
 

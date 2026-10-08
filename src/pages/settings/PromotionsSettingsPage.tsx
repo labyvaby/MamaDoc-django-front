@@ -6,6 +6,7 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Link,
   MenuItem,
   Stack,
   Table,
@@ -17,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link as RouterLink } from "react-router";
 
 import {
   createPromoCode,
@@ -30,6 +32,7 @@ import {
   setPromotionStatus,
   type Promotion,
 } from "../../api/promotions";
+import { getPosBootstrap, posRequest, promoCodesEnabled } from "../../api/pos";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { SettingsLayout } from "./SettingsLayout";
@@ -41,6 +44,31 @@ const keys = {
   redemptions: (id: number) => ["django", "promotions", "redemptions", id] as const,
 };
 
+/**
+ * Правило `promo_codes` из настроек «Магазин». Правила отдаёт касса:
+ * с `pos.manage` — `rules/` (тот же ключ кэша, что у страницы «Магазин»),
+ * с правом кассира — бутстрап кассы. Ни того ни другого или не выбран
+ * филиал — правило неизвестно, и блок промокодов виден, как раньше.
+ */
+function usePromoCodesEnabled() {
+  const { activeBranch, activeOrganization, canAccess, hasModule } = usePermissions();
+  const scope = { organizationId: activeOrganization?.id ?? 0, branchId: activeBranch?.id ?? 0 };
+  const ready = Boolean(scope.organizationId && scope.branchId && hasModule("pos"));
+  const canManageRules = canAccess("pos.manage");
+  const canOpenCounter = canAccess("pos.view") || canAccess("pos.sell");
+  const rules = useQuery({
+    queryKey: ["organization-pos-rules", scope.organizationId, scope.branchId],
+    queryFn: () => posRequest<{ rules: Record<string, boolean | number | string> }>(scope, "rules/"),
+    enabled: ready && canManageRules,
+  });
+  const bootstrap = useQuery({
+    queryKey: ["pos-workspace", scope.organizationId, scope.branchId, "bootstrap"],
+    queryFn: ({ signal }) => getPosBootstrap(scope, signal),
+    enabled: ready && !canManageRules && canOpenCounter,
+  });
+  return promoCodesEnabled(rules.data?.rules ?? bootstrap.data?.rules);
+}
+
 const toIso = (value: string) => value ? new Date(value).toISOString() : null;
 const datetime = (value: string | null) => value ? new Date(value).toLocaleString("ru-RU") : "Без срока";
 
@@ -49,7 +77,11 @@ export default function PromotionsSettingsPage() {
   const { activeBranch, activeOrganization, canAccess } = usePermissions();
   const cache = useQueryClient();
   const canManage = canAccess("promotions.manage");
+  const promoCodes = usePromoCodesEnabled();
   const [selected, setSelected] = React.useState<Promotion | null>(null);
+  React.useEffect(() => {
+    if (!promoCodes) setSelected(null);
+  }, [promoCodes]);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [promotionName, setPromotionName] = React.useState("");
@@ -143,6 +175,11 @@ export default function PromotionsSettingsPage() {
         </Box>
         {!activeOrganization && <Alert severity="info">Выберите организацию.</Alert>}
         {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+        {!promoCodes && (
+          <Alert severity="info">
+            Промокоды выключены в настройках «Магазин»: касса и витрина их не принимают, акции «по коду» не применяются. Автоматические акции и сертификаты работают.
+          </Alert>
+        )}
         <Stack direction={{ xs: "column", md: "row" }} gap={1.5} alignItems="start">
           <TextField label="Название акции" value={promotionName} onChange={(e) => setPromotionName(e.target.value)} disabled={!canManage || busy} />
           <TextField label="Скидка, %" value={promotionPercent} onChange={(e) => setPromotionPercent(e.target.value)} inputProps={{ inputMode: "decimal" }} disabled={!canManage || busy} />
@@ -154,10 +191,10 @@ export default function PromotionsSettingsPage() {
           {(promotions.data ?? []).map((promotion) => <TableRow key={promotion.id} selected={selected?.id === promotion.id} hover>
             <TableCell>{promotion.name}</TableCell><TableCell>{promotion.discountPercent}% от чека{promotion.requiresPromoCode ? " · по коду" : ""}</TableCell><TableCell>{datetime(promotion.endsAt)}</TableCell>
             <TableCell><Chip size="small" label={promotion.status === "active" ? "Активна" : promotion.status === "draft" ? "Черновик" : promotion.status === "paused" ? "Приостановлена" : "Завершена"} color={promotion.status === "active" ? "success" : "default"} /></TableCell>
-            <TableCell align="right"><Stack direction="row" justifyContent="end"><Button size="small" onClick={() => setSelected(promotion)}>Коды</Button>{canManage && <Button size="small" disabled={busy} onClick={() => void run(() => setPromotionStatus(promotion.id, promotion.status === "active" ? "paused" : "active"))}>{promotion.status === "active" ? "Пауза" : "Включить"}</Button>}</Stack></TableCell>
+            <TableCell align="right"><Stack direction="row" justifyContent="end">{promoCodes && <Button size="small" onClick={() => setSelected(promotion)}>Коды</Button>}{canManage && <Button size="small" disabled={busy} onClick={() => void run(() => setPromotionStatus(promotion.id, promotion.status === "active" ? "paused" : "active"))}>{promotion.status === "active" ? "Пауза" : "Включить"}</Button>}</Stack></TableCell>
           </TableRow>)}
         </TableBody></Table>
-        {selected && <Stack gap={1.5} sx={{ p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
+        {promoCodes && selected && <Stack gap={1.5} sx={{ p: 2, border: "1px solid", borderColor: "divider", borderRadius: 2 }}>
           <Typography fontWeight={700}>Промокоды акции «{selected.name}»</Typography>
           <Stack direction={{ xs: "column", md: "row" }} gap={1.5}><TextField label="Промокод" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} disabled={!canManage || busy} /><TextField label="Лимит использований" value={codeLimit} onChange={(e) => setCodeLimit(e.target.value)} disabled={!canManage || busy} /><TextField label="Срок кода" type="datetime-local" value={codeEndsAt} onChange={(e) => setCodeEndsAt(e.target.value)} InputLabelProps={{ shrink: true }} disabled={!canManage || busy} /><Button onClick={addCode} disabled={!canManage || busy}>Добавить код</Button></Stack>
           {(codes.data ?? []).map((item) => <Stack key={item.id} direction="row" gap={1} alignItems="center"><Chip label={item.code} color={item.isActive ? "primary" : "default"} /><Typography variant="body2">{item.usedCount} / {item.usageLimit ?? "∞"} · {datetime(item.expiresAt)}</Typography>{canManage && <Button size="small" onClick={() => void run(() => setPromoCodeActive(item.id, !item.isActive))}>{item.isActive ? "Отключить" : "Включить"}</Button>}</Stack>)}
@@ -165,6 +202,10 @@ export default function PromotionsSettingsPage() {
         </Stack>}
         <Divider />
         <Typography variant="h6" fontWeight={700}>Подарочные сертификаты</Typography>
+        <Alert severity="info">
+          Здесь сертификат выпускается бесплатно, без денег. Проданные на кассе карты, их историю, аннулирование и
+          отчёт по филиалам смотрите в разделе <Link component={RouterLink} to="/certificates">«Сертификаты»</Link>.
+        </Alert>
         <Stack direction={{ xs: "column", md: "row" }} gap={1.5}><TextField label="Код сертификата" value={certificateCode} onChange={(e) => setCertificateCode(e.target.value.toUpperCase())} disabled={!canManage || busy} /><TextField label="Номинал, сом" value={certificateAmount} onChange={(e) => setCertificateAmount(e.target.value)} inputProps={{ inputMode: "decimal" }} disabled={!canManage || busy} /><TextField label="Срок (необязательно)" type="datetime-local" value={certificateEndsAt} onChange={(e) => setCertificateEndsAt(e.target.value)} InputLabelProps={{ shrink: true }} disabled={!canManage || busy} /><Button onClick={addCertificate} disabled={!canManage || busy}>Выпустить сертификат</Button></Stack>
         <Table size="small"><TableHead><TableRow><TableCell>Код</TableCell><TableCell>Номинал</TableCell><TableCell>Остаток</TableCell><TableCell>Срок</TableCell><TableCell>Статус</TableCell></TableRow></TableHead><TableBody>{(certificates.data ?? []).map((certificate) => <TableRow key={certificate.id}><TableCell>{certificate.code}</TableCell><TableCell>{certificate.nominal}</TableCell><TableCell>{certificate.balance}</TableCell><TableCell>{datetime(certificate.expiresAt)}</TableCell><TableCell>{certificate.isActive && !certificate.isSpent ? "Активен" : "Закрыт"}</TableCell></TableRow>)}</TableBody></Table>
       </Stack>

@@ -90,7 +90,18 @@ function isInflow(entry: CashboxEntry): boolean {
   return entry.entryType === "payment" || entry.entryType === "sale";
 }
 
+/** Продажа подарочного сертификата или возврат денег при его аннулировании. */
+const isCertificate = (e: CashboxEntry): boolean => e.source === "certificate";
+
 function entryTitle(e: CashboxEntry): string {
+  if (isCertificate(e)) {
+    const number = e.certificateCode ? ` №${e.certificateCode}` : "";
+    // У продажи бэк кладёт в note «Продажа сертификата №…» — это и есть заголовок.
+    if (e.entryType !== "refund" && e.note) return e.note;
+    return e.entryType === "refund"
+      ? `Возврат за аннулированный сертификат${number}`
+      : `Продажа сертификата${number}`;
+  }
   if (e.entryType === "sale") {
     return e.productNames?.filter(Boolean).join(", ") || "Товар не указан";
   }
@@ -100,6 +111,14 @@ function entryTitle(e: CashboxEntry): string {
 }
 
 function entrySubtitle(e: CashboxEntry): string {
+  if (isCertificate(e)) {
+    // Аванс, а не выручка: деньги в кассе, выручка — когда картой оплатят товар.
+    const parts = ["Не выручка"];
+    if (e.patientName) parts.push(e.patientName);
+    if (e.entryType === "refund" && e.reason) parts.push(e.reason);
+    if (e.entryType === "refund" && e.note) parts.push(e.note);
+    return parts.join(" · ");
+  }
   if (e.entryType === "sale") {
     const parts = [TYPE_LABELS.sale];
     if (e.patientName) parts.push(e.patientName);
@@ -265,9 +284,26 @@ const EntryRow: React.FC<{ entry: CashboxEntry }> = ({ entry }) => {
       </Box>
 
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="body2" fontWeight={500} noWrap>
-          {entryTitle(entry)}
-        </Typography>
+        <Stack direction="row" alignItems="center" spacing={0.75} sx={{ minWidth: 0 }}>
+          {isCertificate(entry) && (
+            <Chip
+              label="Сертификат"
+              size="small"
+              sx={(t) => ({
+                flexShrink: 0,
+                height: 20,
+                borderRadius: "6px",
+                fontWeight: 600,
+                fontSize: "0.68rem",
+                color: "warning.main",
+                bgcolor: alpha(t.palette.warning.main, t.palette.mode === "dark" ? 0.18 : 0.1),
+              })}
+            />
+          )}
+          <Typography variant="body2" fontWeight={500} noWrap sx={{ minWidth: 0 }}>
+            {entryTitle(entry)}
+          </Typography>
+        </Stack>
         <Typography variant="caption" color="text.secondary" noWrap display="block">
           {entrySubtitle(entry)}
         </Typography>
@@ -635,7 +671,8 @@ const CashFlowFeed: React.FC<Props> = ({
           />
         ) : (
           groups.map(([dayKey, dayRows]) => {
-            const dayNet = dayRows.reduce(
+            // Gift-certificate money is listed but kept out of the day total.
+            const dayNet = dayRows.filter((e) => !isCertificate(e)).reduce(
               (acc, e) => acc + parseFloat(e.amount) * (isInflow(e) ? 1 : -1),
               0,
             );
@@ -670,7 +707,7 @@ const CashFlowFeed: React.FC<Props> = ({
                   )}
                 </Stack>
                 {dayRows.map((e) => (
-                  <EntryRow key={`${e.entryType}-${e.id}`} entry={e} />
+                  <EntryRow key={`${e.source ?? ""}-${e.entryType}-${e.id}`} entry={e} />
                 ))}
               </Box>
             );

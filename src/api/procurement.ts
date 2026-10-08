@@ -155,6 +155,8 @@ export interface GoodsReceiptNewProductInput {
   size?: string;
   /** Свойство «Бренд»; пусто — бэк возьмёт бренд по умолчанию из карточки поставщика. */
   brand?: string;
+  /** Свойство «Сезон»; пусто — не задаётся. */
+  season?: string;
   /** Описание карточки (до 4000 символов). */
   description?: string;
 }
@@ -322,6 +324,10 @@ export interface RecognizedLine {
   modelCode: string | null;
   color: string | null;
   size: string | null;
+  /** Разбивка строки по размерам; пусто — строка одного размера. */
+  sizes?: Array<{ size: string; quantity: string | null }>;
+  /** Сезон или коллекция, если он есть в документе. */
+  season?: string | null;
   quantity: string | null;
   unit: string | null;
   price: string | null;

@@ -83,6 +83,9 @@ export interface RolePermission {
 
 // Контекст пользователя с правами
 export interface UserPermissions {
+  canPreviewRoles?: boolean;
+  rolePreview?: import('../api/auth').RbacRole;
+  switchRolePreview?: (roleId: number | null) => Promise<import('../api/auth').MeResponse>;
   role: Role | null;
   permissions: Permission[];
   loading: boolean;

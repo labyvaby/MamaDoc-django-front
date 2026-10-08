@@ -11,7 +11,8 @@
     "old": "Заключения",
     "oldFull": "{{conclusion.nomPl, capitalize}}",
     "vaccinations": "{{vaccine.nomPl, capitalize}}",
-    "vaccineCalendar": "Календарь прививок"
+    "vaccineCalendar": "Календарь прививок",
+    "files": "Файлы"
   },
   "placeholders": {
     "noSelection": "Выберите {{patient.acc}} слева",
