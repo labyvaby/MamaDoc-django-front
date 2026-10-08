@@ -4,39 +4,28 @@
  * сколько). GET housekeeping-departures/ (право hotel.housekeeping.view —
  * брони горничная не видит): номер, время (поздний выезд брони или правило
  * объекта, после выезда — фактическое), выехал ли гость, горничная этажа по
- * графику. «Только мои» — этажи вошедшей горничной. Сервер без эндпоинта
- * (404) — блок не показывается.
+ * графику. «Только мои» — этажи вошедшей горничной (mine=true).
+ *
+ * Ошибка запроса — блока просто нет, страница уборки работает как раньше. 404
+ * здесь — не «нет эндпоинта», а недоступный объект (чужой филиал), поэтому
+ * запоминать его на всю страницу нельзя: у другого объекта блок должен быть.
  */
 import React from "react";
 import { Box, Stack, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { useQuery } from "@tanstack/react-query";
 
-import { ApiError } from "../api/client";
 import { getHousekeepingDepartures, type HotelHousekeepingDeparture } from "../api/hotel";
 import { plural, SectionLabel, Surface } from "./hotelUi";
-
-let endpointMissing = false;
 
 export const HousekeepingDepartures: React.FC<{ propertyId: number; mine: boolean }> = ({ propertyId, mine }) => {
   const query = useQuery({
     queryKey: ["hotel", "housekeepingDepartures", propertyId, mine],
-    enabled: !endpointMissing,
+    queryFn: ({ signal }) => getHousekeepingDepartures({ propertyId, mine }, signal),
     retry: false,
     staleTime: 30_000,
     // Гости выезжают в течение дня — список сам освежается.
     refetchInterval: 120_000,
-    queryFn: async ({ signal }) => {
-      try {
-        return await getHousekeepingDepartures({ propertyId, mine }, signal);
-      } catch (err) {
-        if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
-          endpointMissing = true;
-          return null;
-        }
-        throw err;
-      }
-    },
   });
   const data = query.data;
   if (!data) return null;
@@ -52,7 +41,9 @@ export const HousekeepingDepartures: React.FC<{ propertyId: number; mine: boolea
       {rooms.length === 0 ? (
         <Surface sx={{ py: 1.5, bgcolor: "transparent", borderStyle: "dashed" }}>
           <Typography variant="body2" color="text.secondary">
-            {mine ? "На ваших этажах сегодня выездов нет." : "Сегодня выездов нет."} Выезд по правилам — в {data.checkOutTime}.
+            {/* «Только мои» — по графику дня: этаж из двух постов закреплён за первым постом,
+                поэтому не «на ваших этажах выездов нет», а «за вами». */}
+            {mine ? "По графику за вами сегодня выездов нет." : "Сегодня выездов нет."} Выезд по правилам — в {data.checkOutTime}.
           </Typography>
         </Surface>
       ) : (

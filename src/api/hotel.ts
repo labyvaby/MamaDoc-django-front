@@ -2718,7 +2718,7 @@ export interface HotelHousekeepingDepartures {
 /**
  * GET housekeeping-departures/ — номера на выезд за день (право
  * hotel.housekeeping.view: у горничной нет доступа к броням). mine — этажи
- * вошедшей горничной по графику. Бэкенд: ветка seitek/hotel-housekeeping-departures.
+ * вошедшей горничной по графику. Бэкенд — test с 0db5280b; 404 — недоступный объект.
  */
 export function getHousekeepingDepartures(
   params: { propertyId: number; date?: string; mine?: boolean },
