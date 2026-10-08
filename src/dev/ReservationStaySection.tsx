@@ -44,6 +44,7 @@ import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 import { HOTEL_BOARD_TYPE_LABELS } from "./hotelDisplay";
 import { formatHotelDate, formatHotelDateRange, nightsBetween } from "./mockDemoData";
 import { DEMO_KEYS, useDemoValue } from "./hotelDemoStore";
+import { NightPriceDialog } from "./NightPriceDialog";
 import { applyDemoPricing, demoPricingFor, saveDemoPricing, type DemoItemPricing, type DemoPrices } from "./priceOverrideDemo";
 
 const WEEKDAYS = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
@@ -62,6 +63,8 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
   const items = [...reservation.items].sort((a, b) => Number(b.id === activeItemId) - Number(a.id === activeItemId));
   const line = `1px solid ${subtleBorder(theme)}`;
   const [editingId, setEditingId] = React.useState<number | null>(null);
+  // Клик по цене ночи — окно «Цена проживания на …» как в Exely.
+  const [priceTarget, setPriceTarget] = React.useState<{ itemId: number; date: string } | null>(null);
   const demoPrices = useDemoValue<DemoPrices>(DEMO_KEYS.prices, {});
   const unitMoney = (v: number) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ${unit}`;
 
@@ -190,7 +193,34 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
                                 />
                               </Tooltip>
                             )}
-                            {money(Number(n.price))}
+                            {editable && onServer ? (
+                              <Tooltip title="Изменить цену ночи">
+                                <Box
+                                  component="button"
+                                  type="button"
+                                  onClick={() => setPriceTarget({ itemId: it.id, date: n.date })}
+                                  aria-label={`Изменить цену ночи ${formatHotelDate(n.date)}: ${money(Number(n.price))}`}
+                                  sx={{
+                                    px: 0.75,
+                                    py: 0.25,
+                                    mr: -0.75,
+                                    border: 0,
+                                    borderRadius: "6px",
+                                    bgcolor: "transparent",
+                                    color: "inherit",
+                                    font: "inherit",
+                                    cursor: "pointer",
+                                    textDecoration: "underline dotted",
+                                    textUnderlineOffset: 3,
+                                    "&:hover": { bgcolor: subtleBg(theme, true) },
+                                  }}
+                                >
+                                  {money(Number(n.price))}
+                                </Box>
+                              </Tooltip>
+                            ) : (
+                              money(Number(n.price))
+                            )}
                           </TableCell>
                           {hasDiscount && (
                             <>
@@ -252,6 +282,23 @@ export const ReservationStaySection: React.FC<{ reservation: HotelReservation; a
           </Box>
         );
       })}
+      {(() => {
+        const target = priceTarget ? items.find((x) => x.id === priceTarget.itemId) : undefined;
+        if (!priceTarget || !target) return null;
+        const d = dayjs(priceTarget.date);
+        return (
+          <NightPriceDialog
+            key={`${priceTarget.itemId}-${priceTarget.date}`}
+            open
+            onClose={() => setPriceTarget(null)}
+            reservation={reservation}
+            item={target}
+            date={priceTarget.date}
+            dateLabel={`${formatHotelDate(priceTarget.date)} ${d.year()} (${WEEKDAYS[d.day()]})`}
+            unit={unit}
+          />
+        );
+      })()}
     </Stack>
   );
 };
