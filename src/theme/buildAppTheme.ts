@@ -2,6 +2,7 @@ import { alpha, createTheme, responsiveFontSizes, lighten, darken, getContrastRa
 import type { PaletteMode, Theme } from "@mui/material/styles";
 import { createFilterOptions } from "@mui/material/Autocomplete";
 import type {} from "@mui/x-data-grid/themeAugmentation";
+import type {} from "@mui/x-date-pickers/themeAugmentation";
 import type { AccentTokens } from "./accentPalette";
 
 const fontStack =
@@ -574,6 +575,15 @@ export function buildAppTheme(
               borderRadius: "inherit",
               transition: "background-color 9999s ease-in-out 0s",
             },
+          }),
+        },
+      },
+      // Инпут пикеров (MUI X v8) — отдельный компонент: правило MuiInputBase до
+      // него не доходит, и без этого любое поле даты на 3px ниже соседних.
+      MuiPickersInputBase: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            minHeight: theme.appLayout.controls.inputHeight,
           }),
         },
       },

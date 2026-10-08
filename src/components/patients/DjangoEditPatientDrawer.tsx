@@ -534,13 +534,6 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                           // Enter сохраняет, как в остальных полях. Если год введен коротко,
                           // первое нажатие уйдет на дописывание века (см. CustomDatePicker).
                           onKeyDown: submitOnEnter,
-                          // Инпут пикера не наследует minHeight из MuiInputBase и
-                          // выходит на 3px ниже — рядом с пилюлями пола это видно.
-                          sx: (theme) => ({
-                            "& .MuiPickersInputBase-root": {
-                              minHeight: theme.appLayout.controls.inputHeight,
-                            },
-                          }),
                         },
                       }}
                     />
