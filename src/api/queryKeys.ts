@@ -142,6 +142,8 @@ export const djangoQueryKeys = {
   },
 
   automations: {
+    templates: (organizationId: number | undefined, page: number, search: string, templateId?: number) =>
+      ["django", "automations", "templates", organizationId ?? null, page, search, templateId ?? null] as const,
     all: ["django", "automations"] as const,
     // Всё, что меняется при сохранении правила. Каталог сюда НЕ входит: он
     // справочник, а его рефетч посреди открытого редактора лишний.

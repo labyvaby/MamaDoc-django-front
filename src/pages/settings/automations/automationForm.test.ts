@@ -111,6 +111,9 @@ function baseForm(overrides: Partial<AutomationForm> = {}): AutomationForm {
         recipientPhone: "",
         title: "",
         body: "Здравствуйте, {{client_name}}!",
+        messageMode: "text",
+        whatsappTemplateId: null,
+        templateVariables: {},
       },
     ],
     ...overrides,
@@ -439,6 +442,60 @@ describe("канал ProfiChat push", () => {
   });
 });
 
+describe("WABA-шаблоны", () => {
+  function templateForm() {
+    const form = baseForm();
+    Object.assign(form.actions[0], {
+      channel: "whatsapp", messageMode: "template", whatsappTemplateId: 42,
+      body: "Старый текст {{employee_phone}}",
+      templateVariables: { patient_name: "{{client_name}}", clinic_name: "Клиника" },
+    });
+    return form;
+  }
+
+  it("отправляет ID и параметры шаблона без произвольного текста", () => {
+    expect(toSaveInput(templateForm()).actions[0].config).toEqual({
+      channel: "whatsapp", recipientField: "client_phone", messageMode: "template",
+      whatsappTemplateId: 42, templateVariables: { patient_name: "{{client_name}}", clinic_name: "Клиника" },
+    });
+  });
+
+  it("в прогонах использует параметры шаблона, а не оставшийся текст", () => {
+    const roles = relevantPayloadFields(templateForm());
+    expect(roles.get("client_name")).toContain("template");
+    expect(roles.has("employee_phone")).toBe(false);
+  });
+
+  it("проверяет выбор, пустые параметры и поля другого события", () => {
+    const form = templateForm();
+    form.actions[0].body = "";
+    expect(validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields).toEqual({});
+    form.actions[0].whatsappTemplateId = null;
+    expect(validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1.whatsappTemplateId).toBeDefined();
+    form.actions[0].whatsappTemplateId = 42;
+    form.actions[0].templateVariables.patient_name = " ";
+    expect(validateForm(form, APPOINTMENT_EVENT, LABELS).actionFields.a1.templateVariables).toBeDefined();
+    form.actions[0].templateVariables.patient_name = "{{employee_name}}";
+    expect(validateForm(form, CLIENT_EVENT, LABELS).actionFields.a1.templateVariables).toBeDefined();
+  });
+
+  it("сохраняет ID и параметры при повторном открытии правила", () => {
+    const saved = { ...toSaveInput(templateForm()), id: 9, organizationId: 1,
+      branchName: null, eventLabel: "Запись создана", createdAt: "", updatedAt: "",
+      actions: toSaveInput(templateForm()).actions.map((action) => ({ ...action, id: 1, position: 0 })) } as Automation;
+    const restored = automationToForm(saved);
+    expect(toSaveInput(restored).actions[0].config).toEqual(toSaveInput(templateForm()).actions[0].config);
+  });
+
+  it("после переключения на SMS передаёт обычный текст без шаблона", () => {
+    const form = templateForm();
+    form.actions[0].channel = "sms";
+    const config = toSaveInput(form).actions[0].config;
+    expect(config.body).toBe(form.actions[0].body);
+    expect(config.whatsappTemplateId).toBeUndefined();
+  });
+});
+
 describe("правило по расписанию", () => {
   const scheduled = (overrides: Partial<AutomationForm> = {}) =>
     baseForm({
@@ -453,6 +510,9 @@ describe("правило по расписанию", () => {
           recipientPhone: "+996700000001",
           title: "",
           body: "Планёрка.",
+          messageMode: "text",
+          whatsappTemplateId: null,
+          templateVariables: {},
         },
       ],
       ...overrides,
@@ -505,6 +565,9 @@ describe("правило по расписанию", () => {
             recipientPhone: "",
             title: "",
             body: "Планёрка.",
+            messageMode: "text",
+            whatsappTemplateId: null,
+            templateVariables: {},
           },
         ],
       }),

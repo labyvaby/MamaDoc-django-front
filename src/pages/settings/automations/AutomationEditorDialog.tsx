@@ -48,12 +48,14 @@ import { ConditionBuilder } from "./ConditionBuilder";
 import { FieldValueInput } from "./FieldValueInput";
 import { PhonePayloadInput } from "./PhonePayloadInput";
 import { ScheduleEditor } from "./ScheduleEditor";
+import { WhatsAppTemplateFields } from "./WhatsAppTemplateFields";
 import {
   automationToForm,
   defaultRecipientField,
   emptyForm,
   hasErrors,
   isScheduledForm,
+  isTemplateAction,
   makeAction,
   supportsTitle,
   relevantPayloadFields,
@@ -192,6 +194,9 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
       }),
       timeRequired: t("automations.schedule.timeRequired"),
       phoneRequired: t("automations.action.phoneRequired"),
+      templateRequired: t("automations.waba.required"),
+      templateVariablesRequired: t("automations.waba.variablesRequired"),
+      templateUnknownVariable: t("automations.waba.unknownVariable"),
     }),
     [t],
   );
@@ -231,6 +236,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
   const updateAction = (key: string, patch: Partial<ActionForm>) => {
     setDirty(true);
     setSaveError(null);
+    setTestResult(null);
     setForm((prev) => ({
       ...prev,
       actions: prev.actions.map((action) =>
@@ -529,7 +535,10 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                           size="small"
                           label={t("automations.action.channelLabel")}
                           value={action.channel}
-                          onChange={(e) => updateAction(action.key, { channel: e.target.value })}
+                          onChange={(e) => updateAction(action.key, {
+                            channel: e.target.value,
+                            messageMode: e.target.value === "whatsapp" ? action.messageMode : "text",
+                          })}
                           disabled={busy}
                           sx={{ minWidth: 160 }}
                         >
@@ -632,6 +641,19 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                         </Typography>
                       )}
 
+                      {action.channel === "whatsapp" && (
+                        <TextField select size="small" label={t("automations.waba.mode")}
+                          value={action.messageMode} disabled={busy}
+                          onChange={(e) => updateAction(action.key, { messageMode: e.target.value as "text" | "template" })}>
+                          <MenuItem value="text">{t("automations.waba.textMode")}</MenuItem>
+                          <MenuItem value="template">{t("automations.waba.templateMode")}</MenuItem>
+                        </TextField>
+                      )}
+                      {isTemplateAction(action) && <WhatsAppTemplateFields
+                        action={action} event={event} organizationId={organizationId} disabled={busy}
+                        errors={errors.actionFields[action.key]} onChange={(patch) => updateAction(action.key, patch)}
+                      />}
+
                       {/* Заголовок есть только у push: в шторке телефона он
                           отдельная строка. У SMS и WhatsApp такой строки нет,
                           и поле там только сбивало бы с толку. */}
@@ -649,7 +671,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                         />
                       )}
 
-                      <TextField
+                      {!isTemplateAction(action) && <TextField
                         required
                         fullWidth
                         multiline
@@ -667,9 +689,9 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                           errors.actionFields[action.key]?.body ??
                           t("automations.action.bodyHint")
                         }
-                      />
+                      />}
 
-                      <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
+                      {!isTemplateAction(action) && <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "center" }}>
                         <Typography variant="caption" color="text.secondary">
                           {t("automations.action.variablesLabel")}
                         </Typography>
@@ -688,7 +710,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                             />
                           </Tooltip>
                         ))}
-                      </Box>
+                      </Box>}
                     </Stack>
                   </Paper>
                 ))}
@@ -840,6 +862,9 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                               {preview.renderedTitle || form.name.trim()}
                             </Typography>
                           )}
+                          {preview.messageMode === "template" && <Typography variant="subtitle2">
+                            {t("automations.waba.preview", { name: preview.templateName })}
+                          </Typography>}
                           <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
                             {preview.renderedBody}
                           </Typography>
