@@ -8,6 +8,12 @@ import {
 } from "./labSettingsForm";
 import type { LabConfig } from "../../api/lab";
 
+const eveningDefaults = {
+  eveningEnabled: false, eveningLisRegistryId: "", eveningLisUsername: "",
+  eveningLisPassword: "", eveningHasPassword: false, eveningSavedUsername: "", clearEveningCredentials: false,
+};
+const eveningInput = { eveningEnabled: false, eveningLisRegistryId: null, eveningLisUsername: "", eveningLisPassword: "", clearEveningCredentials: false };
+
 const config: LabConfig = {
   configured: true,
   lisOrganizationId: 2497,
@@ -28,6 +34,57 @@ const form = (over: Partial<LabSettingsForm> = {}): LabSettingsForm => ({
   ...over,
 });
 
+const shiftsForm = (): LabSettingsForm => labConfigToForm({
+  ...config,
+  branches: [{ branchId: 1, branchName: "Центр", lisRegistryId: 11, lisLaboratoryId: 7,
+    lisUsername: "day", hasPassword: true, eveningEnabled: true, eveningLisRegistryId: 22,
+    eveningLisUsername: "night", eveningHasPassword: true }],
+});
+
+describe("две смены", () => {
+  it("пустые поля паролей сохраняют обе учётные записи", () => {
+    const next = shiftsForm();
+    expect(findLabSettingsProblem(next)).toBeNull();
+    expect(next.branches[0].eveningLisPassword).toBe("");
+    expect(labFormToInput(next).branches[0]).toMatchObject({
+      eveningEnabled: true, eveningLisRegistryId: 22, eveningLisUsername: "night", eveningLisPassword: "",
+    });
+  });
+
+  it("смена вечернего логина требует нового пароля", () => {
+    const next = shiftsForm();
+    next.branches[0].eveningLisUsername = "another";
+    expect(findLabSettingsProblem(next)).toContain("пароль вечерней смены");
+    next.branches[0].eveningLisPassword = "replacement";
+    expect(findLabSettingsProblem(next)).toBeNull();
+    expect(labFormToInput(next).branches[0].lisPassword).toBe("");
+  });
+
+  it("общая учётка не заменяет дневную при двух сменах", () => {
+    const next = shiftsForm();
+    next.branches[0].clearCredentials = true;
+    expect(findLabSettingsProblem(next)).toContain("каждой смены");
+  });
+
+  it("вечерний регистратор обязателен и должен быть целым", () => {
+    const next = shiftsForm();
+    for (const value of ["", "0", "22.5", "-1", "9007199254740993"]) {
+      next.branches[0].eveningLisRegistryId = value;
+      expect(findLabSettingsProblem(next)).toContain("ID вечернего регистратора");
+    }
+  });
+
+  it("отключение сохраняет вечерние доступы, удаление задаётся явно", () => {
+    const next = shiftsForm();
+    next.branches[0].eveningEnabled = false;
+    expect(findLabSettingsProblem(next)).toBeNull();
+    expect(labFormToInput(next).branches[0]).toMatchObject({ eveningEnabled: false, eveningLisUsername: "night", clearEveningCredentials: false });
+    Object.assign(next.branches[0], { eveningLisUsername: "", eveningHasPassword: false, clearEveningCredentials: true });
+    expect(findLabSettingsProblem(next)).toBeNull();
+    expect(labFormToInput(next).branches[0].clearEveningCredentials).toBe(true);
+  });
+});
+
 describe("labConfigToForm", () => {
   it("числа становятся строками, пустая точка — пустыми полями", () => {
     expect(labConfigToForm(config)).toEqual({
@@ -38,8 +95,8 @@ describe("labConfigToForm", () => {
       lisPassword: "",
       hasPassword: true,
       branches: [
-        { branchId: 1, branchName: "Центр", lisRegistryId: "259269", lisLaboratoryId: "950463", lisUsername: "", lisPassword: "", hasPassword: false, savedUsername: "", clearCredentials: false },
-        { branchId: 2, branchName: "Филиал", lisRegistryId: "", lisLaboratoryId: "", lisUsername: "", lisPassword: "", hasPassword: false, savedUsername: "", clearCredentials: false },
+        { branchId: 1, branchName: "Центр", lisRegistryId: "259269", lisLaboratoryId: "950463", lisUsername: "", lisPassword: "", hasPassword: false, savedUsername: "", clearCredentials: false, ...eveningDefaults },
+        { branchId: 2, branchName: "Филиал", lisRegistryId: "", lisLaboratoryId: "", lisUsername: "", lisPassword: "", hasPassword: false, savedUsername: "", clearCredentials: false, ...eveningDefaults },
       ],
     });
   });
@@ -98,8 +155,8 @@ describe("labFormToInput", () => {
       lisUsername: "avicenna",
       lisPassword: "",
       branches: [
-        { branchId: 1, lisRegistryId: 259269, lisLaboratoryId: 950463, lisUsername: "", lisPassword: "", clearCredentials: false },
-        { branchId: 2, lisRegistryId: null, lisLaboratoryId: null, lisUsername: "", lisPassword: "", clearCredentials: false },
+        { branchId: 1, lisRegistryId: 259269, lisLaboratoryId: 950463, lisUsername: "", lisPassword: "", clearCredentials: false, ...eveningInput },
+        { branchId: 2, lisRegistryId: null, lisLaboratoryId: null, lisUsername: "", lisPassword: "", clearCredentials: false, ...eveningInput },
       ],
     });
   });

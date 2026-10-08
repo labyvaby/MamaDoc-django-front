@@ -270,16 +270,29 @@ const LabSettingsPage: React.FC = () => {
                   <Typography variant="subtitle2" fontWeight={600}>
                     {row.branchName}
                   </Typography>
+                  <Box>
+                    <FormControlLabel
+                      control={<Switch checked={row.eveningEnabled} disabled={busy}
+                        onChange={(e) => patchBranch(row.branchId, { eveningEnabled: e.target.checked })} />}
+                      label="Две смены: до 17:00 и с 17:00"
+                    />
+                    <FormHelperText>
+                      {row.eveningEnabled
+                        ? "Автоматически по времени Бишкека. Повторная отправка и печать используют смену исходного заказа."
+                        : "Одна учётная запись на весь день. Доступы второй смены сохраняются при отключении переключателя."}
+                    </FormHelperText>
+                  </Box>
                   <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                     <TextField
                       fullWidth
-                      label="Точка регистрации в ЛИС"
+                      label={row.eveningEnabled ? "ID регистратора до 17:00" : "ID регистратора в ЛИС"}
                       size="small"
                       value={row.lisRegistryId}
                       onChange={(e) => patchBranch(row.branchId, { lisRegistryId: e.target.value })}
                       disabled={busy}
                       inputMode="numeric"
                       placeholder="не задана"
+                      helperText="ID учётной записи регистратора в ЛИС, а не код пункта приёма"
                     />
                     <TextField
                       fullWidth
@@ -297,7 +310,7 @@ const LabSettingsPage: React.FC = () => {
                   <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                     <TextField
                       fullWidth
-                      label="Логин филиала в ЛИС"
+                      label={row.eveningEnabled ? "Логин до 17:00" : "Логин филиала в ЛИС"}
                       size="small"
                       value={row.lisUsername}
                       onChange={(e) => patchBranch(row.branchId, { lisUsername: e.target.value, clearCredentials: false })}
@@ -307,7 +320,7 @@ const LabSettingsPage: React.FC = () => {
                     />
                     <TextField
                       fullWidth
-                      label="Пароль филиала в ЛИС"
+                      label={row.eveningEnabled ? "Пароль до 17:00" : "Пароль филиала в ЛИС"}
                       size="small"
                       type="password"
                       value={row.lisPassword}
@@ -318,11 +331,11 @@ const LabSettingsPage: React.FC = () => {
                       helperText={row.hasPassword ? "Пустое поле сохраняет пароль; при смене логина введите его заново" : "Пароль, выданный для этого филиала"}
                     />
                   </Stack>
-                  {(row.lisUsername || row.hasPassword || row.lisPassword) && (
+                  {!row.eveningEnabled && (row.lisUsername || row.hasPassword || row.lisPassword) && (
                     <Box>
                       <Button
                         size="small"
-                        disabled={busy}
+                        disabled={busy || row.eveningEnabled}
                         onClick={() => patchBranch(row.branchId, {
                           lisUsername: "", lisPassword: "", hasPassword: false,
                           clearCredentials: true,
@@ -330,6 +343,34 @@ const LabSettingsPage: React.FC = () => {
                       >
                         Использовать общую учётную запись
                       </Button>
+                    </Box>
+                  )}
+                  {row.eveningEnabled && (
+                    <Stack spacing={2}>
+                      <Typography variant="subtitle2">Смена с 17:00</Typography>
+                      <TextField fullWidth size="small" label="ID регистратора с 17:00"
+                        value={row.eveningLisRegistryId} inputMode="numeric" disabled={busy}
+                        onChange={(e) => patchBranch(row.branchId, { eveningLisRegistryId: e.target.value })}
+                        helperText="ID регистратора вечерней учётной записи; лаборатория общая для обеих смен" />
+                      <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                        <TextField fullWidth size="small" label="Логин с 17:00" disabled={busy}
+                          value={row.eveningLisUsername} autoComplete="off"
+                          onChange={(e) => patchBranch(row.branchId, { eveningLisUsername: e.target.value, clearEveningCredentials: false })} />
+                        <TextField fullWidth size="small" label="Пароль с 17:00" type="password" disabled={busy}
+                          value={row.eveningLisPassword} autoComplete="new-password"
+                          onChange={(e) => patchBranch(row.branchId, { eveningLisPassword: e.target.value, clearEveningCredentials: false })}
+                          placeholder={row.eveningHasPassword ? "сохранён — оставьте пустым" : ""}
+                          helperText={row.eveningHasPassword ? "Пустое поле сохраняет пароль; при смене логина введите его заново" : "Пароль вечерней учётной записи"} />
+                      </Stack>
+                    </Stack>
+                  )}
+                  {!row.eveningEnabled && (row.eveningLisUsername || row.eveningHasPassword || row.eveningLisPassword) && (
+                    <Box>
+                      <Button size="small" disabled={busy} onClick={() => patchBranch(row.branchId, {
+                        eveningLisUsername: "", eveningLisPassword: "", eveningHasPassword: false,
+                        clearEveningCredentials: true,
+                      })}>Удалить доступы второй смены</Button>
+                      <FormHelperText>Старые заказы этой смены потребуют восстановления доступов для повтора или печати.</FormHelperText>
                     </Box>
                   )}
                 </Stack>

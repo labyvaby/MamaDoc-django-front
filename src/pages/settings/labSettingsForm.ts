@@ -17,6 +17,13 @@ export interface LabBranchRow {
   hasPassword: boolean;
   savedUsername: string;
   clearCredentials: boolean;
+  eveningEnabled: boolean;
+  eveningLisRegistryId: string;
+  eveningLisUsername: string;
+  eveningLisPassword: string;
+  eveningHasPassword: boolean;
+  eveningSavedUsername: string;
+  clearEveningCredentials: boolean;
 }
 
 export interface LabSettingsForm {
@@ -51,6 +58,13 @@ export function labConfigToForm(config: LabConfig): LabSettingsForm {
       hasPassword: row.hasPassword ?? false,
       savedUsername: row.lisUsername ?? "",
       clearCredentials: false,
+      eveningEnabled: row.eveningEnabled ?? false,
+      eveningLisRegistryId: numberOrEmpty(row.eveningLisRegistryId ?? null),
+      eveningLisUsername: row.eveningLisUsername ?? "",
+      eveningLisPassword: "",
+      eveningHasPassword: row.eveningHasPassword ?? false,
+      eveningSavedUsername: row.eveningLisUsername ?? "",
+      clearEveningCredentials: false,
     })),
   };
 }
@@ -60,7 +74,27 @@ function positiveInt(raw: string): number | null {
   const text = raw.trim();
   if (!/^\d+$/.test(text)) return null;
   const value = Number(text);
-  return value > 0 ? value : null;
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function eveningProblem(row: LabBranchRow, hasOwnAccount: boolean): string | null {
+  const hasEvening = !row.clearEveningCredentials && (row.eveningLisUsername.trim() !== "" || row.eveningHasPassword || row.eveningLisPassword !== "");
+  if (row.eveningEnabled && (!hasOwnAccount || !hasEvening)) {
+    return `${row.branchName}: для двух смен нужны отдельные логин и пароль каждой смены.`;
+  }
+  if (hasEvening) {
+    if (!row.eveningLisUsername.trim()) return `${row.branchName}: укажите логин вечерней смены.`;
+    if ((!row.eveningHasPassword || row.eveningLisUsername.trim() !== row.eveningSavedUsername) && !row.eveningLisPassword.trim()) {
+      return `${row.branchName}: укажите пароль вечерней смены.`;
+    }
+    if (row.lisRegistryId.trim() === "" || row.lisLaboratoryId.trim() === "") {
+      return `${row.branchName}: укажите регистратора и лабораторию для учётной записи смены.`;
+    }
+  }
+  if ((row.eveningEnabled || row.eveningLisRegistryId.trim() !== "") && positiveInt(row.eveningLisRegistryId) == null) {
+    return `${row.branchName}: ID вечернего регистратора — положительное целое число.`;
+  }
+  return null;
 }
 
 /**
@@ -87,6 +121,8 @@ export function findLabSettingsProblem(form: LabSettingsForm): string | null {
     const registryEmpty = row.lisRegistryId.trim() === "";
     const laboratoryEmpty = row.lisLaboratoryId.trim() === "";
     const hasOwnAccount = !row.clearCredentials && (row.lisUsername.trim() !== "" || row.hasPassword || row.lisPassword !== "");
+    const shiftProblem = eveningProblem(row, hasOwnAccount);
+    if (shiftProblem) return shiftProblem;
     if (hasOwnAccount) {
       if (!row.lisUsername.trim()) return `${row.branchName}: укажите логин филиала в ЛИС.`;
       if ((!row.hasPassword || row.lisUsername.trim() !== row.savedUsername) && !row.lisPassword.trim()) {
@@ -125,6 +161,11 @@ export function labFormToInput(form: LabSettingsForm): LabConfigInput {
       lisUsername: row.lisUsername.trim(),
       lisPassword: row.lisPassword,
       clearCredentials: row.clearCredentials,
+      eveningEnabled: row.eveningEnabled,
+      eveningLisRegistryId: positiveInt(row.eveningLisRegistryId),
+      eveningLisUsername: row.eveningLisUsername.trim(),
+      eveningLisPassword: row.eveningLisPassword,
+      clearEveningCredentials: row.clearEveningCredentials,
     })),
   };
 }

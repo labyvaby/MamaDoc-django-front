@@ -295,6 +295,10 @@ export interface LabBranchRegistry {
   lisLaboratoryId: number | null;
   lisUsername?: string;
   hasPassword?: boolean;
+  eveningEnabled?: boolean;
+  eveningLisRegistryId?: number | null;
+  eveningLisUsername?: string;
+  eveningHasPassword?: boolean;
 }
 
 export interface LabMirrorStats {
@@ -335,6 +339,11 @@ export interface LabBranchRegistryInput {
   lisUsername?: string;
   lisPassword?: string;
   clearCredentials?: boolean;
+  eveningEnabled?: boolean;
+  eveningLisRegistryId?: number | null;
+  eveningLisUsername?: string;
+  eveningLisPassword?: string;
+  clearEveningCredentials?: boolean;
 }
 
 export interface LabConfigInput {
