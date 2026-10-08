@@ -145,7 +145,7 @@ export const STOREFRONT_PRODUCTS: StorefrontProduct[] = [
     features: ["Заводим страховые и договоры за вас", "Справочник страховых и договоров", "Оплата приёма страховкой", "Страховые оплаты видны в кассе"],
   },
   {
-    id: "lab", title: "Лаборатория", modules: [], soon: true, category: "medicine", icon: "lab",
+    id: "lab", title: "Лаборатория", modules: ["lab"], category: "medicine", icon: "lab",
     price: 12000, priceNote: "+ 5 000 сом за каждую точку", verticals: ["clinic"],
     tagline: "Приём анализов в клинике и передача в лабораторию — из CRM",
     features: ["Регистрация анализов на приёме", "Передача заказа в ЛИС лаборатории"],
