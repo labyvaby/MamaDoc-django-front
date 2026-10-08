@@ -63,7 +63,7 @@ const HIDE_DELAY = 200;
 const BRIDGE = 8;
 
 /** Маленькая кнопка «скопировать» рядом со значением. */
-const CopyValue: React.FC<{ value: string; label: string }> = ({ value, label }) => {
+export const CopyValue: React.FC<{ value: string; label: string }> = ({ value, label }) => {
   const [done, setDone] = React.useState(false);
   React.useEffect(() => {
     if (!done) return undefined;

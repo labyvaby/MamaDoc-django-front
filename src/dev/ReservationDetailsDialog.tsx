@@ -110,6 +110,7 @@ import {
 import { formatHotelDateRange, initialsOf, nightsBetween } from "./mockDemoData";
 import { plural, StatusPill } from "./hotelUi";
 import { CheckInDocumentPanel, missingDocumentGuest } from "./CheckInDocumentPanel";
+import { ReservationExternalId } from "./ReservationExternalId";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 
 /** "cash" — единственный способ, для которого не уточняем конкретный безналичный канал. */
@@ -527,6 +528,10 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
           { label: "Гости", value: `${item.adults} взр.${item.children > 0 ? ` + ${item.children} дет.` : ""}` },
           { label: "Питание", value: HOTEL_BOARD_TYPE_LABELS[item.boardType] ?? item.boardType },
           { label: "Источник", value: HOTEL_BOOKING_SOURCE_LABELS[reservation.source] ?? reservation.source },
+          // Номер брони на Booking/Островке: гость называет его — по нему бронь ищется в шахматке.
+          ...(reservation.externalId?.trim() || canManageReservation
+            ? [{ label: "№ брони в канале", value: <ReservationExternalId reservation={reservation} canEdit={Boolean(canManageReservation) && !reservationClosed} /> }]
+            : []),
           // Время брони (ранний заезд, поздний выезд) или правило объекта; после заселения / выезда — факт.
           {
             label: `Заезд ${dayjs(item.checkIn).format("D MMM")}`,

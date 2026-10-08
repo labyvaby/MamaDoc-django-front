@@ -94,7 +94,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import { CustomDatePicker } from "../components/ui";
 import { useHotelProperty } from "./useHotelProperty";
-import { formatGuestMatchedBy } from "./hotelDisplay";
+import { formatGuestMatchedBy, HOTEL_BOOKING_SOURCE_LABELS } from "./hotelDisplay";
 import { hhmm, stayTimeView } from "./stayTimes";
 import { CountStepper, DisabledReason, DRAWER_WIDTH, DrawerBody, DrawerFooter, DrawerHeader, DrawerSection } from "./hotelUi";
 import { isDocumentFile, prepareDocumentFile, useDocumentScan } from "./useDocumentScan";
@@ -273,6 +273,8 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
 
   // Дополнительно
   const [bookingSource, setBookingSource] = React.useState("");
+  // Номер брони на Booking.com, Островке или у турагента — по нему бронь потом ищут.
+  const [externalId, setExternalId] = React.useState("");
   const [specialRequests, setSpecialRequests] = React.useState("");
   // Время заезда и выезда брони ("HH:MM"): пусто или как в правилах объекта — не отправляем,
   // на сервере null = «по правилам». Ранний заезд / поздний выезд — своё время.
@@ -352,6 +354,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
     cancelScan();
     clearScanNotice();
     setBookingSource("");
+    setExternalId("");
     setSpecialRequests("");
     setArrivalTime("");
     setDepartureTime("");
@@ -926,6 +929,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
       const payload: Parameters<typeof createReservation>[0] = {
         propertyId: property.id,
         source: bookingSource || "direct",
+        ...(externalId.trim() ? { externalId: externalId.trim() } : {}),
         guaranteeMethod: guaranteeMethod || undefined,
         ...(selectedClientId != null
           ? { customerId: selectedClientId }
@@ -1894,7 +1898,7 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                 </DrawerSection>
 
                 <DrawerSection label="Дополнительно · необязательно">
-                    <Stack direction="row" gap={2}>
+                    <Stack direction={{ xs: "column", md: "row" }} gap={2}>
                       <TextField
                         select
                         label="Источник брони"
@@ -1906,10 +1910,18 @@ export const CreateBookingButton: React.FC<CreateBookingButtonProps> = ({ hideTr
                         <MenuItem value="">Не указан</MenuItem>
                         {(catalogs?.bookingSources ?? []).map((c) => (
                           <MenuItem key={c.value} value={c.value}>
-                            {c.label}
+                            {HOTEL_BOOKING_SOURCE_LABELS[c.value] ?? c.label}
                           </MenuItem>
                         ))}
                       </TextField>
+                      <TextField
+                        label="№ брони в канале"
+                        value={externalId}
+                        onChange={(e) => setExternalId(e.target.value.slice(0, 128))}
+                        placeholder="Booking, Островок, агент"
+                        slotProps={{ input: { startAdornment: <FieldIcon icon={<ConfirmationNumberOutlined />} /> } }}
+                        sx={{ flex: 1 }}
+                      />
                     </Stack>
                     {/* Одно поле «Юрлицо»: справочник (скидка, договор, реквизиты), а
                         свободный текст — только если компании в справочнике нет. */}

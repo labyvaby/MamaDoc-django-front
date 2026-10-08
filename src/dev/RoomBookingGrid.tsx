@@ -1325,7 +1325,7 @@ export const RoomBookingGrid: React.FC = () => {
         size="small"
         value={filter.q}
         onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
-        placeholder="ФИО, телефон, № брони, комната"
+        placeholder="ФИО, телефон, № брони или канала, комната"
         slotProps={{
           input: {
             startAdornment: (
