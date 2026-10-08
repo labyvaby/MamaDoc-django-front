@@ -73,6 +73,9 @@ const Tile: React.FC<TileProps> = ({ label, value, tone, icon, active, onClick, 
       initial={reduceMotion ? false : { opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay: 0.08 * index, ease: [0.22, 1, 0.36, 1] }}
+      // Наведение ловит неподвижная обёртка (см. TicketCard): иначе плитка,
+      // поднявшись, уходила из-под курсора у нижнего края и дрожала.
+      className="support-tile"
       sx={dense ? { flexShrink: 0, scrollSnapAlign: "start" } : undefined}
     >
       <ButtonBase
@@ -96,10 +99,12 @@ const Tile: React.FC<TileProps> = ({ label, value, tone, icon, active, onClick, 
               ? `linear-gradient(135deg, ${c.soft}, ${c.softer})`
               : t.palette.background.paper,
             transition: "transform .18s ease, box-shadow .18s ease, border-color .18s ease",
-            "&:hover": {
-              transform: "translateY(-2px)",
-              borderColor: c.border,
-              boxShadow: `0 12px 28px ${alpha(c.main, t.palette.mode === "dark" ? 0.22 : 0.16)}`,
+            "@media (hover: hover)": {
+              ".support-tile:hover > &": {
+                transform: "translateY(-2px)",
+                borderColor: c.border,
+                boxShadow: `0 12px 28px ${alpha(c.main, t.palette.mode === "dark" ? 0.22 : 0.16)}`,
+              },
             },
             "&:active": { transform: "scale(0.98)" },
           };
@@ -233,6 +238,12 @@ const SupportPage: React.FC = () => {
   };
 
   const detailInPane = split && selectedId !== null;
+  // Деталь сбоку: шапка сворачивается, а прокрутка страницы выключается —
+  // если страница была прокручена, список прыгал. Сначала возвращаемся наверх.
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  React.useLayoutEffect(() => {
+    if (detailInPane) rootRef.current?.scrollTo({ top: 0 });
+  }, [detailInPane]);
   const showPlace = canViewAll;
 
   const tabs: SegmentedTab<Tab>[] = [
@@ -315,7 +326,11 @@ const SupportPage: React.FC = () => {
     selectedId !== null ? <TicketDetail key={selectedId} ticketId={selectedId} onClose={() => select(null)} /> : null;
 
   return (
-    <Box
+    <MotionBox
+      ref={rootRef}
+      // Страница сама прокручивается: без layoutScroll подвижный фон вкладок
+      // при переключении на прокрученной странице «перелетал» с неверного места.
+      layoutScroll
       sx={{
         height: "100%",
         display: "flex",
@@ -765,7 +780,7 @@ const SupportPage: React.FC = () => {
       >
         {detailPanel}
       </Drawer>
-    </Box>
+    </MotionBox>
   );
 };
 
