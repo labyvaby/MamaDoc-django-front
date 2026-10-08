@@ -854,6 +854,8 @@ export type WarehouseInventoryCount = {
     warehouseName: string;
     status: string;
     mode?: InventoryCountMode;
+    /** Витринная «сравнить с датой» (YYYY-MM-DD): учёт на конец этого дня. */
+    baselineDate?: string | null;
     comment: string;
     lineTotal: number;
     countedTotal: number;
@@ -877,6 +879,13 @@ export type WarehouseInventoryLine = {
     scannedByName: string | null;
     /** Текущий учётный остаток — только у открытой витринной инвентаризации. */
     onHand?: string | null;
+    /** Только витринная с датой сравнения: учёт на конец той даты. */
+    baseline?: string | null;
+    /**
+     * Что сдвинуло остаток с тех пор: тип движения → знаковое количество.
+     * baseline + сумма = учёт сейчас (у проведённой — на момент проведения).
+     */
+    sinceBaseline?: Record<string, string> | null;
 };
 
 export type WarehouseInventoryDetail = {
@@ -982,6 +991,8 @@ export function startWarehouseInventoryCount(data: {
     productIds?: number[];
     comment?: string;
     mode?: InventoryCountMode;
+    /** Только для showcase: прошлая дата, YYYY-MM-DD. */
+    baselineDate?: string;
     organizationId?: number;
 }): Promise<WarehouseInventoryDetail> {
     const { organizationId, ...body } = data;

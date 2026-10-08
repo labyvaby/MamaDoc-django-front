@@ -57,7 +57,18 @@ export type InventorySetupCardProps = {
     /** Как считаем: сканером по полкам или по списку учёта (витринная). */
     mode?: InventoryCountMode;
     onModeChange?: (mode: InventoryCountMode) => void;
+    /** Витринная: прошлая дата (YYYY-MM-DD) для сравнения учёта; "" — без сравнения. */
+    baselineDate?: string;
+    onBaselineDateChange?: (value: string) => void;
     disabled?: boolean;
+};
+
+/** Вчера в локальной дате, YYYY-MM-DD: сравнивать можно только с прошлым днём. */
+const yesterday = (): string => {
+    const day = new Date();
+    day.setDate(day.getDate() - 1);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return day.getFullYear() + "-" + pad(day.getMonth() + 1) + "-" + pad(day.getDate());
 };
 
 const MODE_OPTIONS: Array<{
@@ -104,8 +115,11 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
     activeBranchId = null,
     mode = "blind",
     onModeChange,
+    baselineDate = "",
+    onBaselineDateChange,
     disabled = false,
 }) => {
+    const maxBaseline = yesterday();
     const allSelected = categories.length > 0 && selected.length === categories.length;
     const isForeign = (warehouse: DjangoWarehouse) =>
         activeBranchId != null && warehouse.branchId !== activeBranchId;
@@ -173,6 +187,32 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
                                 </ButtonBase>
                             );
                         })}
+                    </Box>
+                )}
+
+                {mode === "showcase" && onBaselineDateChange && (
+                    <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, alignItems: "start" }}>
+                        <TextField
+                            type="date"
+                            label="Сравнить с датой"
+                            value={baselineDate}
+                            onChange={(event) => {
+                                const value = event.target.value;
+                                onBaselineDateChange(value && value > maxBaseline ? maxBaseline : value);
+                            }}
+                            disabled={disabled}
+                            InputLabelProps={{ shrink: true }}
+                            inputProps={{ max: maxBaseline }}
+                            helperText={baselineDate
+                                ? "По каждой позиции: сколько было на конец этого дня, что пришло и ушло с тех пор и сколько сейчас"
+                                : "Необязательно. Выберите прошлую дату — список покажет, что было тогда и что изменилось к сегодня"}
+                            fullWidth
+                        />
+                        {baselineDate && (
+                            <AppButton variant="text" size="small" onClick={() => onBaselineDateChange("")} disabled={disabled} sx={{ justifySelf: "start", mt: { sm: 1 } }}>
+                                Без сравнения
+                            </AppButton>
+                        )}
                     </Box>
                 )}
 
@@ -351,7 +391,9 @@ export const InventorySetupCard: React.FC<InventorySetupCardProps> = ({
                         <Box>
                             <Typography variant="body2">Только позиции с остатком на складе</Typography>
                             <Typography variant="caption" color="text.secondary">
-                                Товар без остатка всё равно можно пикнуть — он добавится в документ как излишек
+                                {mode === "showcase" && baselineDate
+                                    ? "При сравнении с датой берутся все позиции: распроданное с тех пор тоже попадёт в список"
+                                    : "Товар без остатка всё равно можно пикнуть — он добавится в документ как излишек"}
                             </Typography>
                         </Box>
                     )}

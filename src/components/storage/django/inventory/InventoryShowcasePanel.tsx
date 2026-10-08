@@ -21,6 +21,7 @@ import ClearOutlined from "@mui/icons-material/ClearOutlined";
 
 import { AppButton, AppCard } from "../../../ui";
 import {
+    MOVE_LABEL,
     positionsLabel,
     qty,
     resolveStatus,
@@ -34,6 +35,8 @@ type Filter = "all" | "wait" | "diff" | "ok";
 export type InventoryShowcasePanelProps = {
     rows: CountRow[];
     elapsed: string;
+    /** Дата сравнения (YYYY-MM-DD) — строки несут baseline и движения с неё. */
+    baselineDate?: string | null;
     /** «На месте»: факт = учёт в эту секунду (одна позиция или список). */
     onConfirm: (productIds: number[]) => void;
     /** Все ещё не проверенные — «на месте». */
@@ -50,6 +53,38 @@ const STATE_LABEL: Record<InventoryStatus, string> = {
     over: "Больше",
     wait: "Не проверено",
     unknown: "",
+};
+
+const dayLabel = (iso: string) => {
+    const [year, month, day] = iso.split("-");
+    return day + "." + month + "." + year;
+};
+
+const signed = (value: number) => (value > 0 ? "+" : "−") + qty(Math.abs(value));
+
+/** Остаток по учёту сейчас: на дату + всё, что сдвинуло его с тех пор. */
+const ledgerNow = (row: CountRow) =>
+    (row.baseline ?? 0) + Object.values(row.sinceBaseline ?? {}).reduce((sum, value) => sum + value, 0);
+
+/** «на 01.10: 9 · расход и продажи −2 · сейчас 7» — разбор одной строки. */
+const BaselineTrail: React.FC<{ row: CountRow; date: string }> = ({ row, date }) => {
+    const moves = Object.entries(row.sinceBaseline ?? {}).filter(([, value]) => value !== 0);
+    return (
+        <Typography variant="caption" component="div" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+            На {dayLabel(date)}: <b>{qty(row.baseline ?? 0)}</b>
+            {moves.length === 0
+                ? " · без движений"
+                : moves.map(([kind, value]) => (
+                    <React.Fragment key={kind}>
+                        {" · " + (MOVE_LABEL[kind] ?? kind) + " "}
+                        <Box component="span" sx={{ fontWeight: 700, color: value > 0 ? "success.main" : "error.main" }}>
+                            {signed(value)}
+                        </Box>
+                    </React.Fragment>
+                ))}
+            {" · сейчас "}<b>{qty(ledgerNow(row))} {row.unit}</b>
+        </Typography>
+    );
 };
 
 const matches = (row: CountRow, term: string) => {
@@ -118,10 +153,11 @@ const QuantityStepper: React.FC<{
 
 const ShowcaseRow: React.FC<{
     row: CountRow;
+    baselineDate?: string | null;
     disabled?: boolean;
     onConfirm: () => void;
     onSetCounted: (value: number) => void;
-}> = ({ row, disabled, onConfirm, onSetCounted }) => {
+}> = ({ row, baselineDate, disabled, onConfirm, onSetCounted }) => {
     const theme = useTheme();
     const status = resolveStatus(row.expected, row.counted);
     const tone = statusTone(theme, status);
@@ -155,6 +191,7 @@ const ShowcaseRow: React.FC<{
                 <Typography variant="caption" component="div" sx={{ display: { md: "none" }, color: "text.secondary" }}>
                     По учёту: <b>{qty(row.expected)} {row.unit}</b>
                 </Typography>
+                {baselineDate && row.baseline != null && <BaselineTrail row={row} date={baselineDate} />}
             </Box>
 
             <Box sx={{ gridArea: "ledger", display: { xs: "none", md: "block" }, textAlign: "right" }}>
@@ -227,6 +264,7 @@ const ShowcaseRow: React.FC<{
 export const InventoryShowcasePanel: React.FC<InventoryShowcasePanelProps> = ({
     rows,
     elapsed,
+    baselineDate = null,
     onConfirm,
     onConfirmRest,
     onSetCounted,
@@ -257,6 +295,20 @@ export const InventoryShowcasePanel: React.FC<InventoryShowcasePanelProps> = ({
         if (filter === "diff") return row.counted != null && status !== "ok";
         return true;
     });
+    // Итог сравнения по всему списку: было на дату → движения по типам → сейчас.
+    const comparison = React.useMemo(() => {
+        if (!baselineDate) return null;
+        let before = 0;
+        const moved = new Map<string, number>();
+        for (const row of rows) {
+            before += row.baseline ?? 0;
+            for (const [kind, value] of Object.entries(row.sinceBaseline ?? {})) {
+                moved.set(kind, (moved.get(kind) ?? 0) + value);
+            }
+        }
+        const now = before + [...moved.values()].reduce((sum, value) => sum + value, 0);
+        return { before, now, moved: [...moved.entries()].filter(([, value]) => value !== 0) };
+    }, [rows, baselineDate]);
     const checkedShare = rows.length ? ((stats.ok + stats.diff) / rows.length) * 100 : 0;
 
     const filters: Array<{ key: Filter; label: string; count: number }> = [
@@ -281,6 +333,29 @@ export const InventoryShowcasePanel: React.FC<InventoryShowcasePanelProps> = ({
                     </Stack>
                     <LinearProgress variant="determinate" value={checkedShare} sx={{ height: 6, borderRadius: 3 }} />
                 </Box>
+
+                {comparison && baselineDate && (
+                    <Box sx={(t) => ({ p: 1.5, borderRadius: 2, border: `1px solid ${t.palette.divider}`, bgcolor: t.palette.action.hover })}>
+                        <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+                            Сравнение с {dayLabel(baselineDate)}: было {qty(comparison.before)} → сейчас {qty(comparison.now)} по учёту
+                        </Typography>
+                        <Stack direction="row" useFlexGap flexWrap="wrap" columnGap={2} rowGap={0.5}>
+                            {comparison.moved.length === 0 ? (
+                                <Typography variant="caption" color="text.secondary">С тех пор движений не было</Typography>
+                            ) : comparison.moved.map(([kind, value]) => (
+                                <Typography key={kind} variant="caption" color="text.secondary">
+                                    {MOVE_LABEL[kind] ?? kind}{" "}
+                                    <Box component="span" sx={{ fontWeight: 700, color: value > 0 ? "success.main" : "error.main" }}>
+                                        {signed(value)}
+                                    </Box>
+                                </Typography>
+                            ))}
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
+                            Проверьте витрину: расхождение с нынешним учётом проведётся при закрытии.
+                        </Typography>
+                    </Box>
+                )}
 
                 <Stack direction={{ xs: "column", md: "row" }} spacing={1.25} alignItems={{ md: "center" }}>
                     <TextField
@@ -344,6 +419,7 @@ export const InventoryShowcasePanel: React.FC<InventoryShowcasePanelProps> = ({
                         <ShowcaseRow
                             key={row.productId}
                             row={row}
+                            baselineDate={baselineDate}
                             disabled={disabled}
                             onConfirm={() => onConfirm([row.productId])}
                             onSetCounted={(value) => onSetCounted(row.productId, value)}

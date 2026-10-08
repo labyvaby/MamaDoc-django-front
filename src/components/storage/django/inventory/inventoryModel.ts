@@ -110,6 +110,24 @@ export type CountRow = {
     expected: number;
     /** null — позицию ещё не пикали; 0 — пикали и обнулили вручную. */
     counted: number | null;
+    /** Витринная с датой сравнения: учёт на конец той даты. */
+    baseline?: number | null;
+    /** Движения с той даты: тип → знаковое количество. */
+    sinceBaseline?: Record<string, number> | null;
+};
+
+/** Как назвать тип движения в разборе «было → стало». */
+export const MOVE_LABEL: Record<string, string> = {
+    receipt: "приход",
+    consumption: "расход и продажи",
+    sale_return: "возвраты покупателей",
+    transfer_in: "перемещено к нам",
+    transfer_out: "перемещено от нас",
+    write_off: "списано",
+    return_to_supplier: "возврат поставщику",
+    inventory_surplus: "излишки инвентаризаций",
+    inventory_shortage: "недостачи инвентаризаций",
+    adjustment: "корректировки",
 };
 
 /** Пробитый штрихкод, которого нет в базе. */

@@ -101,6 +101,12 @@ const buildRows = (
                         ? toNumber(line.onHand)
                         : stockOf(line.productId),
                 counted: line.counted == null || line.counted === "" ? null : toNumber(line.counted),
+                baseline: line.baseline == null ? null : toNumber(line.baseline),
+                sinceBaseline: line.sinceBaseline
+                    ? Object.fromEntries(
+                        Object.entries(line.sinceBaseline).map(([kind, value]) => [kind, toNumber(value)]),
+                    )
+                    : null,
             } satisfies CountRow;
         })
         .sort((a, b) => a.name.localeCompare(b.name, "ru"));
@@ -158,6 +164,9 @@ const DjangoInventoryPage: React.FC = () => {
     const [selectedCategories, setSelectedCategories] = React.useState<string[]>([]);
     const [onlyWithStock, setOnlyWithStock] = React.useState(true);
     const [mode, setMode] = React.useState<InventoryCountMode>("blind");
+    /** Витринная «сравнить с датой»: пусто — без сравнения. */
+    const [baselineDate, setBaselineDate] = React.useState("");
+    const comparing = mode === "showcase" && baselineDate !== "";
     const [loading, setLoading] = React.useState(true);
     const [busy, setBusy] = React.useState(false);
     const [compareFirst, setCompareFirst] = React.useState<number | "">("");
@@ -318,7 +327,9 @@ const DjangoInventoryPage: React.FC = () => {
 
     // Фильтр «только с остатком» бесполезен, если на складе не лежит ничего из
     // выбранных категорий: документ вышел бы пустым.
-    const filterByStock = onlyWithStock && withStockCount > 0;
+    // При сравнении с датой нужен и товар, который с тех пор распродан:
+    // сегодня его остаток ноль, но именно его разбор и интересен.
+    const filterByStock = onlyWithStock && withStockCount > 0 && !comparing;
 
     const scopeProducts = React.useMemo(
         () => (filterByStock
@@ -425,6 +436,7 @@ const DjangoInventoryPage: React.FC = () => {
                 warehouseId,
                 productIds: scopeProducts.map((product) => product.id),
                 mode,
+                baselineDate: comparing ? baselineDate : undefined,
                 organizationId: orgId ?? undefined,
             });
             resetSession();
@@ -936,11 +948,13 @@ const DjangoInventoryPage: React.FC = () => {
                         scopeTotal={categoryProducts.length}
                         onlyWithStock={filterByStock}
                         onToggleOnlyWithStock={() => setOnlyWithStock((current) => !current)}
-                        stockFilterAvailable={withStockCount > 0}
+                        stockFilterAvailable={withStockCount > 0 && !comparing}
                         scopeSum={scopeSum}
                         responsibleName={activeEmployee?.fullName ?? "—"}
                         mode={mode}
                         onModeChange={setMode}
+                        baselineDate={baselineDate}
+                        onBaselineDateChange={setBaselineDate}
                         disabled={busy || !canManage}
                     />
                 )}
@@ -982,6 +996,7 @@ const DjangoInventoryPage: React.FC = () => {
                     <InventoryShowcasePanel
                         rows={rows}
                         elapsed={elapsed}
+                        baselineDate={countDocument?.document.baselineDate ?? null}
                         onConfirm={(productIds) => void handleShowcaseConfirm(productIds)}
                         onConfirmRest={() => void handleShowcaseConfirmRest()}
                         onSetCounted={handleShowcaseCounted}
