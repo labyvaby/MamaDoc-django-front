@@ -33,7 +33,11 @@ export const TicketCard: React.FC<TicketCardProps> = React.memo(({ ticket, selec
   const place = [ticket.organizationName, ticket.branchName].filter(Boolean).join(" · ");
   return (
     <MotionBox
-      layout={reduceMotion ? false : "position"}
+      // Без layout-анимации позиции: при открытии обращения сетка меняет число
+      // колонок одновременно со сворачиванием шапки, и карточки «прыгали».
+      // Наведение ловит неподвижная обёртка: поднимается только карточка внутри,
+      // иначе у нижнего края она уезжала из-под курсора и дрожала.
+      className="support-card"
       initial={reduceMotion ? false : { opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: Math.min(index * 0.035, 0.35), ease: [0.22, 1, 0.36, 1] }}
@@ -72,10 +76,14 @@ export const TicketCard: React.FC<TicketCardProps> = React.memo(({ ticket, selec
               bgcolor: c.main,
               opacity: selected || ticket.unread ? 1 : 0.55,
             },
-            "&:hover": {
-              transform: "translateY(-2px)",
-              borderColor: selected ? t.palette.primary.main : c.border,
-              boxShadow: `0 10px 26px ${alpha(c.main, t.palette.mode === "dark" ? 0.2 : 0.14)}`,
+            // Только там, где есть настоящее наведение: на телефоне «hover»
+            // залипает после касания и карточка оставалась приподнятой.
+            "@media (hover: hover)": {
+              ".support-card:hover > &": {
+                transform: "translateY(-2px)",
+                borderColor: selected ? t.palette.primary.main : c.border,
+                boxShadow: `0 10px 26px ${alpha(c.main, t.palette.mode === "dark" ? 0.2 : 0.14)}`,
+              },
             },
             "&:active": { transform: "translateY(0) scale(0.995)" },
             "&:focus-visible": { outline: `2px solid ${t.palette.primary.main}`, outlineOffset: 2 },

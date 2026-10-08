@@ -33,8 +33,11 @@ export function SegmentedTabs<K extends string = string>({
   layoutId,
 }: SegmentedTabsProps<K>) {
   return (
-    <Box
+    <MotionBox
       role="tablist"
+      // Ряд прокручивается вбок на узком экране: без layoutScroll подвижный фон
+      // считал координаты без учёта прокрутки и при переключении прыгал.
+      layoutScroll
       sx={{
         display: "flex",
         gap: 0.5,
@@ -119,7 +122,7 @@ export function SegmentedTabs<K extends string = string>({
           </Box>
         );
       })}
-    </Box>
+    </MotionBox>
   );
 }
 
