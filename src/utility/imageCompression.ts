@@ -52,9 +52,94 @@ function withExtension(name: string, ext: string): string {
   return `${base}.${ext}`;
 }
 
+function fileExtension(name: string): string {
+  return name.split(".").pop()?.toLowerCase() ?? "";
+}
+
 function hasSupportedExtension(name: string): boolean {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  return PASS_THROUGH_EXTENSIONS.includes(ext);
+  return PASS_THROUGH_EXTENSIONS.includes(fileExtension(name));
+}
+
+/**
+ * Что лежит в файле на самом деле, по сигнатуре.
+ *
+ * `mpo` — JPEG с несколькими кадрами (APP2-сегмент «MPF»): так iPhone сохраняет
+ * HDR-снимки с gain map и портреты с картой глубины, и такой же «jpg» Safari
+ * отдаёт, когда переводит HEIC при выборе фото. Бэк проверяет содержимое jpg и
+ * на нём отвечает 400 «Содержимое файла не соответствует расширению» (прод,
+ * 08.10.2026), поэтому как есть его отправлять нельзя — только перекодировать.
+ */
+export type SniffedImageFormat = "jpeg" | "mpo" | "png" | "webp" | "heif" | "unknown";
+
+/** Сколько байт читать для сигнатуры: APP-сегменты JPEG (EXIF ≤ 64 КБ) идут до кадра. */
+const SNIFF_BYTES = 256 * 1024;
+
+const ascii = (bytes: Uint8Array, from: number, length: number): string =>
+  String.fromCharCode(...bytes.subarray(from, from + length));
+
+export function sniffImageFormat(bytes: Uint8Array): SniffedImageFormat {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return jpegHasMpf(bytes) ? "mpo" : "jpeg";
+  }
+  if (bytes.length >= 8 && ascii(bytes, 1, 3) === "PNG" && bytes[0] === 0x89) return "png";
+  if (bytes.length >= 12 && ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 4) === "WEBP") return "webp";
+  if (bytes.length >= 12 && ascii(bytes, 4, 4) === "ftyp") {
+    const brand = ascii(bytes, 8, 4);
+    if (/^(heic|heix|heim|heis|hevc|hevx|mif1|msf1|avif)$/.test(brand)) return "heif";
+  }
+  return "unknown";
+}
+
+/** Идём по маркерам JPEG до начала кадра (SOS) и ищем APP2 с «MPF\0». */
+function jpegHasMpf(bytes: Uint8Array): boolean {
+  let pos = 2;
+  while (pos + 4 <= bytes.length) {
+    if (bytes[pos] !== 0xff) return false;
+    const marker = bytes[pos + 1];
+    // Заполняющие 0xFF между сегментами допустимы.
+    if (marker === 0xff) {
+      pos += 1;
+      continue;
+    }
+    if (marker === 0xda || marker === 0xd9) return false;
+    const length = (bytes[pos + 2] << 8) | bytes[pos + 3];
+    if (marker === 0xe2 && ascii(bytes, pos + 4, 4) === "MPF\0") return true;
+    pos += 2 + length;
+  }
+  return false;
+}
+
+async function readImageFormat(file: Blob): Promise<SniffedImageFormat> {
+  try {
+    return sniffImageFormat(new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer()));
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Содержимое совпадает с расширением и бэк примет файл без перекодирования. */
+function contentMatchesExtension(format: SniffedImageFormat, name: string): boolean {
+  const ext = fileExtension(name);
+  if (ext === "jpg" || ext === "jpeg") return format === "jpeg";
+  if (ext === "png") return format === "png";
+  if (ext === "webp") return format === "webp";
+  if (ext === "heic" || ext === "heif") return format === "heif";
+  return false;
+}
+
+/**
+ * Исходник, который не удалось перекодировать: отправляем, только если бэк его
+ * примет. HEIC под именем «.jpeg» переименовываем в .heic — его бэк конвертирует
+ * сам, а с чужим расширением отклонил бы.
+ */
+async function originalForBackend(file: File): Promise<File | null> {
+  if (!canSendOriginalToBackend(file)) return null;
+  const format = await readImageFormat(file);
+  if (contentMatchesExtension(format, file.name)) return file;
+  if (format === "heif") {
+    return new File([file], withExtension(file.name, "heic"), { type: "image/heic" });
+  }
+  return null;
 }
 
 /**
@@ -89,8 +174,13 @@ export async function prepareImageForUpload(
 ): Promise<File | null> {
   const maxBytes = options.maxBytes ?? UPLOAD_MAX_BYTES;
 
-  // Уже лёгкий файл в поддерживаемом формате трогать незачем.
-  if (file.size <= maxBytes && hasSupportedExtension(file.name)) {
+  // Уже лёгкий файл в поддерживаемом формате трогать незачем — если внутри
+  // действительно то, что обещает расширение (см. SniffedImageFormat).
+  if (
+    file.size <= maxBytes &&
+    hasSupportedExtension(file.name) &&
+    contentMatchesExtension(await readImageFormat(file), file.name)
+  ) {
     return file;
   }
 
@@ -115,7 +205,7 @@ export async function prepareImageForUpload(
     // Браузер не декодировал снимок (HEIC/HEIF вне Safari и т.п.). Раньше здесь
     // загрузка обрывалась совсем; теперь, если бэк такой формат принимает —
     // отправляем исходник как есть, конвертацию сделает сервер.
-    return canSendOriginalToBackend(file) ? file : null;
+    return originalForBackend(file);
   }
 
   // Логотипы и прочая графика с прозрачностью: сначала пробуем ужать в png
@@ -129,14 +219,14 @@ export async function prepareImageForUpload(
 
   for (const step of steps) {
     const blob = await encodeImage(bitmap, step.maxWidth, "image/jpeg", step.quality);
-    if (!blob) return canSendOriginalToBackend(file) ? file : null;
+    if (!blob) return originalForBackend(file);
     if (blob.size <= maxBytes) {
       return new File([blob], withExtension(file.name, "jpg"), { type: "image/jpeg" });
     }
   }
   // Сжать до лимита не удалось — но если исходник и так в пределах серверного
   // потолка (25 МБ) и допустимого формата, пусть уходит он: бэк примет.
-  return canSendOriginalToBackend(file) ? file : null;
+  return originalForBackend(file);
 }
 
 /** Файл → готовый к отрисовке <img> (data-URL переживает HEIC в Safari). */
