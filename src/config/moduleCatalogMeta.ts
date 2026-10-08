@@ -10,4 +10,5 @@ export const MODULE_SETTINGS_ROUTE: Record<string, string> = {
   announcements: "/settings/announcements",
   promotions: "/settings/promotions",
   procurement: "/settings/procurement",
+  lab: "/settings/lab",
 };
