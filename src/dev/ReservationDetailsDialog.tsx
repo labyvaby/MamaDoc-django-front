@@ -24,6 +24,7 @@
  */
 import React from "react";
 import EditOutlined from "@mui/icons-material/EditOutlined";
+import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 import { useSnackbar } from "notistack";
 import { ReservationEditPanel } from "./ReservationEditPanel";
@@ -111,6 +112,7 @@ import { formatHotelDateRange, initialsOf, nightsBetween } from "./mockDemoData"
 import { plural, StatusPill } from "./hotelUi";
 import { CheckInDocumentPanel, missingDocumentGuest } from "./CheckInDocumentPanel";
 import { ReservationExternalId } from "./ReservationExternalId";
+import { LateCheckoutDialog } from "./LateCheckoutDialog";
 import { subtleBg, subtleBorder } from "../theme/uiHelpers";
 
 /** "cash" — единственный способ, для которого не уточняем конкретный безналичный канал. */
@@ -185,6 +187,7 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
   // его текст и выход «Изменить даты». Кнопка «Заселить» до даты заезда и так неактивна,
   // но ответ возможен: карточка открыта со вчера, второй администратор, старая вкладка.
   const [checkInRefused, setCheckInRefused] = React.useState<string | null>(null);
+  const [lateCheckoutOpen, setLateCheckoutOpen] = React.useState(false);
   // Паспорт при брони необязателен, а заселить без него нельзя — сначала панель документа.
   const [checkInNeedsDocument, setCheckInNeedsDocument] = React.useState(false);
   const [documentSaved, setDocumentSaved] = React.useState(false);
@@ -548,13 +551,21 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
           {
             label: `Выезд ${dayjs(item.checkOut).format("D MMM")}`,
             value: (
-              <ReservationStayTime
-                kind="departure"
-                reservation={reservation}
-                ruleTime={property?.checkOutTime}
-                actualAt={item.checkedOutAt}
-                canEdit={Boolean(canManageReservation) && item.stayStatus !== "checked_out" && CANCELLABLE_STATUSES.has(reservation.status)}
-              />
+              <Stack alignItems="flex-end" gap={0.25}>
+                <ReservationStayTime
+                  kind="departure"
+                  reservation={reservation}
+                  ruleTime={property?.checkOutTime}
+                  actualAt={item.checkedOutAt}
+                  canEdit={Boolean(canManageReservation) && item.stayStatus !== "checked_out" && CANCELLABLE_STATUSES.has(reservation.status)}
+                />
+                {/* Поздний выезд: время плюс начисление по правилу отеля (до +5 ч — 50% ночи, позже — ночь). */}
+                {canManageReservation && item.stayStatus !== "checked_out" && CANCELLABLE_STATUSES.has(reservation.status) && "expectedDepartureTime" in reservation && (
+                  <Button size="small" startIcon={<ScheduleOutlined sx={{ fontSize: 16 }} />} onClick={() => setLateCheckoutOpen(true)} sx={{ py: 0, minHeight: 0 }}>
+                    Поздний выезд
+                  </Button>
+                )}
+              </Stack>
             ),
           },
           ...(reservation.guaranteeMethod
@@ -1458,6 +1469,16 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
               {reservation.createdByName ? ` · ${reservation.createdByName}` : ""}
             </Typography>
           </DialogContent>
+          {lateCheckoutOpen && item && (
+            <LateCheckoutDialog
+              open
+              onClose={() => setLateCheckoutOpen(false)}
+              reservation={reservation}
+              item={item}
+              ruleTime={property?.checkOutTime ?? "12:00"}
+              canCharge={Boolean(canManagePayments)}
+            />
+          )}
         </>
       )}
     </Dialog>
