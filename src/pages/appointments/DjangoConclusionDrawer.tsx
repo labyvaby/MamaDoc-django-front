@@ -2801,14 +2801,21 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
     ) : null;
   // Пока AI думает — рамки полей, которые он читает, мерцают.
   useAiFieldMarks(formColumnRef.current, ai.loadingKeys, "data-ai-loading");
+  // Иконкой, как лист: шапка в одну строку, и подпись «Прошлые заключения»
+  // вылезала из кнопки и сжимала меню документа до «С…». Включённая — заливкой.
   const historyToggleNode = canViewPatientHistory && historyPatientId != null ? (
-    <Button size="small" startIcon={<HistoryOutlined />} disableElevation
-      variant={patientHistoryOpen ? "contained" : "outlined"}
-      aria-pressed={patientHistoryOpen}
-      onClick={() => setPatientHistoryOpen((previous) => !previous)}
-      sx={{ alignSelf: "flex-start", whiteSpace: "nowrap" }}>
-      {t("conclusion.patientHistory.trigger")}
-    </Button>
+    <Tooltip title={t("conclusion.patientHistory.trigger")}>
+      <IconButton
+        size="small"
+        color={patientHistoryOpen ? "primary" : "default"}
+        aria-pressed={patientHistoryOpen}
+        aria-label={t("conclusion.patientHistory.trigger")}
+        onClick={() => setPatientHistoryOpen((previous) => !previous)}
+        sx={patientHistoryOpen ? { bgcolor: "action.selected" } : undefined}
+      >
+        <HistoryOutlined fontSize="small" />
+      </IconButton>
+    </Tooltip>
   ) : null;
 
   const content = (
@@ -2901,7 +2908,6 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
               width: isMobile ? "100%" : "auto",
             }}
           >
-            {historyToggleNode}
             {!showHistoryTab && <>
             <ConclusionDocumentMenu
               forms={selectableForms}
@@ -2936,6 +2942,7 @@ ${t("conclusion.frequentDiagnosesHint", { count: dx.count })}`,
                 onClick={handleAiRequest}
               />
             )}
+            {historyToggleNode}
             {!showHistoryTab && sheetToggleNode}
             <IconButton onClick={saving ? undefined : onClose} size="small">
               <CloseOutlined />
