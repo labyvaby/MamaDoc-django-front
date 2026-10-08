@@ -12,6 +12,11 @@ export interface LabBranchRow {
   /** Строки полей: пустая — точка не задана. */
   lisRegistryId: string;
   lisLaboratoryId: string;
+  lisUsername: string;
+  lisPassword: string;
+  hasPassword: boolean;
+  savedUsername: string;
+  clearCredentials: boolean;
 }
 
 export interface LabSettingsForm {
@@ -41,6 +46,11 @@ export function labConfigToForm(config: LabConfig): LabSettingsForm {
       branchName: row.branchName,
       lisRegistryId: numberOrEmpty(row.lisRegistryId),
       lisLaboratoryId: numberOrEmpty(row.lisLaboratoryId),
+      lisUsername: row.lisUsername ?? "",
+      lisPassword: "",
+      hasPassword: row.hasPassword ?? false,
+      savedUsername: row.lisUsername ?? "",
+      clearCredentials: false,
     })),
   };
 }
@@ -62,13 +72,12 @@ export function findLabSettingsProblem(form: LabSettingsForm): string | null {
   if (positiveInt(form.lisOrganizationId) == null) {
     return "Код организации в ЛИС — положительное число.";
   }
-  if (form.lisUsername.trim() === "") {
-    return "Укажите логин, который выдала лаборатория.";
+  const sharedUsername = form.lisUsername.trim();
+  const sharedPassword = form.hasPassword || form.lisPassword.trim() !== "";
+  if (!sharedUsername && sharedPassword) {
+    return "Укажите логин общей учётной записи ЛИС.";
   }
-  // Пароль обязателен только пока он не сохранён: форма его не
-  // показывает, и требовать ввод заново при правке соседнего поля значит
-  // заставлять искать бумажку с паролем ради галочки «плата за пробирки».
-  if (!form.hasPassword && form.lisPassword === "") {
+  if (sharedUsername && !sharedPassword) {
     return "Укажите пароль от учётной записи ЛИС.";
   }
   if (positiveInt(form.lisDoctorId) == null) {
@@ -77,12 +86,25 @@ export function findLabSettingsProblem(form: LabSettingsForm): string | null {
   for (const row of form.branches) {
     const registryEmpty = row.lisRegistryId.trim() === "";
     const laboratoryEmpty = row.lisLaboratoryId.trim() === "";
+    const hasOwnAccount = !row.clearCredentials && (row.lisUsername.trim() !== "" || row.hasPassword || row.lisPassword !== "");
+    if (hasOwnAccount) {
+      if (!row.lisUsername.trim()) return `${row.branchName}: укажите логин филиала в ЛИС.`;
+      if ((!row.hasPassword || row.lisUsername.trim() !== row.savedUsername) && !row.lisPassword.trim()) {
+        return `${row.branchName}: укажите пароль филиала в ЛИС.`;
+      }
+      if (registryEmpty && laboratoryEmpty) {
+        return `${row.branchName}: укажите точку регистрации и лабораторию для учётной записи филиала.`;
+      }
+    }
     if (registryEmpty && laboratoryEmpty) continue;
     if (registryEmpty !== laboratoryEmpty) {
       return `${row.branchName}: укажите и точку регистрации, и лабораторию — либо оставьте оба поля пустыми.`;
     }
     if (positiveInt(row.lisRegistryId) == null || positiveInt(row.lisLaboratoryId) == null) {
       return `${row.branchName}: идентификаторы точки и лаборатории — положительные числа.`;
+    }
+    if (!hasOwnAccount && !sharedUsername) {
+      return `${row.branchName}: укажите логин и пароль филиала или общую учётную запись ЛИС.`;
     }
   }
   return null;
@@ -100,6 +122,9 @@ export function labFormToInput(form: LabSettingsForm): LabConfigInput {
       branchId: row.branchId,
       lisRegistryId: positiveInt(row.lisRegistryId),
       lisLaboratoryId: positiveInt(row.lisLaboratoryId),
+      lisUsername: row.lisUsername.trim(),
+      lisPassword: row.lisPassword,
+      clearCredentials: row.clearCredentials,
     })),
   };
 }

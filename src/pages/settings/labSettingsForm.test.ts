@@ -38,8 +38,8 @@ describe("labConfigToForm", () => {
       lisPassword: "",
       hasPassword: true,
       branches: [
-        { branchId: 1, branchName: "Центр", lisRegistryId: "259269", lisLaboratoryId: "950463" },
-        { branchId: 2, branchName: "Филиал", lisRegistryId: "", lisLaboratoryId: "" },
+        { branchId: 1, branchName: "Центр", lisRegistryId: "259269", lisLaboratoryId: "950463", lisUsername: "", lisPassword: "", hasPassword: false, savedUsername: "", clearCredentials: false },
+        { branchId: 2, branchName: "Филиал", lisRegistryId: "", lisLaboratoryId: "", lisUsername: "", lisPassword: "", hasPassword: false, savedUsername: "", clearCredentials: false },
       ],
     });
   });
@@ -98,9 +98,55 @@ describe("labFormToInput", () => {
       lisUsername: "avicenna",
       lisPassword: "",
       branches: [
-        { branchId: 1, lisRegistryId: 259269, lisLaboratoryId: 950463 },
-        { branchId: 2, lisRegistryId: null, lisLaboratoryId: null },
+        { branchId: 1, lisRegistryId: 259269, lisLaboratoryId: 950463, lisUsername: "", lisPassword: "", clearCredentials: false },
+        { branchId: 2, lisRegistryId: null, lisLaboratoryId: null, lisUsername: "", lisPassword: "", clearCredentials: false },
       ],
     });
+  });
+});
+
+describe("доступы филиалов", () => {
+  const ownAccount = (): LabSettingsForm => {
+    const next = form({ lisUsername: "", lisPassword: "", hasPassword: false });
+    next.branches[0] = {
+      ...next.branches[0], lisUsername: "branch", lisPassword: "secret",
+    };
+    return next;
+  };
+
+  it("общий логин не нужен, если у подключённых филиалов свои доступы", () => {
+    expect(findLabSettingsProblem(ownAccount())).toBeNull();
+  });
+
+  it("сохранённый пароль филиала не возвращается в форму", () => {
+    const next = labConfigToForm({ ...config, branches: [{ ...config.branches[0], lisUsername: "branch", hasPassword: true }] });
+    expect(next.branches[0]).toMatchObject({ lisUsername: "branch", hasPassword: true, lisPassword: "", savedUsername: "branch" });
+  });
+
+  it("новой учётной записи филиала нужен пароль", () => {
+    const next = ownAccount();
+    next.branches[0].lisPassword = "";
+    expect(findLabSettingsProblem(next)).toContain("Центр: укажите пароль");
+  });
+
+  it("смена логина требует пароль заново", () => {
+    const next = ownAccount();
+    next.branches[0] = { ...next.branches[0], hasPassword: true, savedUsername: "old", lisPassword: "" };
+    expect(findLabSettingsProblem(next)).toContain("пароль");
+    next.branches[0].savedUsername = "branch";
+    expect(findLabSettingsProblem(next)).toBeNull();
+  });
+
+  it("подключённый филиал без доступов не получает учётку соседнего", () => {
+    const next = ownAccount();
+    next.branches[1] = { ...next.branches[1], lisRegistryId: "12", lisLaboratoryId: "14" };
+    expect(findLabSettingsProblem(next)).toContain("Филиал: укажите логин и пароль");
+  });
+
+  it("отдельные доступы передаются внутри своего филиала", () => {
+    const next = ownAccount();
+    expect(labFormToInput(next).branches[0]).toMatchObject({ branchId: 1, lisUsername: "branch", lisPassword: "secret", clearCredentials: false });
+    next.branches[0] = { ...next.branches[0], lisUsername: "", lisPassword: "", clearCredentials: true };
+    expect(labFormToInput(next).branches[0].clearCredentials).toBe(true);
   });
 });
