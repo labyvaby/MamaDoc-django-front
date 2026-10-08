@@ -205,6 +205,15 @@ export const djangoQueryKeys = {
     officeIp: ["django", "attendance", "office-ip"] as const,
   },
 
+  /** Табель (/api/v2/attendance/timesheet/…). */
+  timesheet: {
+    all: ["django", "timesheet"] as const,
+    grid: (organizationId: number | null | undefined, params: Record<string, unknown>) =>
+      ["django", "timesheet", "grid", organizationId ?? null, params] as const,
+    my: (organizationId: number | null | undefined, month: string) =>
+      ["django", "timesheet", "my", organizationId ?? null, month] as const,
+  },
+
   organization: {
     branches: ["django", "organization", "branches"] as const,
   },

@@ -50,6 +50,8 @@ export const PREVIEW_SECTIONS: PreviewSection[] = [
   { key: "warehouses", permissions: asList(PAGE_PERMISSIONS.warehouses) },
   { key: "pos", permissions: asList(PAGE_PERMISSIONS.pos) },
   { key: "skud", permissions: asList(PAGE_PERMISSIONS.attendance) },
+  { key: "timesheet", permissions: asList(PAGE_PERMISSIONS.timesheet) },
+  { key: "myTimesheet", permissions: asList(PAGE_PERMISSIONS.myTimesheet) },
   { key: "cashbox", permissions: asList(PAGE_PERMISSIONS.cashbox) },
   { key: "pnl", permissions: asList(PAGE_PERMISSIONS.pnl) },
   { key: "payroll", permissions: asList(PAGE_PERMISSIONS.payroll) },

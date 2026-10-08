@@ -65,6 +65,8 @@ import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import MenuOutlined from "@mui/icons-material/MenuOutlined";
 import AccessTimeOutlined from "@mui/icons-material/AccessTimeOutlined";
+import TableChartOutlined from "@mui/icons-material/TableChartOutlined";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
 import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import NotificationsOutlined from "@mui/icons-material/NotificationsOutlined";
@@ -786,6 +788,9 @@ const SidebarSecondary: React.FC = () => {
     lab: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.lab)),
     schedule: !isRetail && (superSeesAll || can(PAGE_PERMISSIONS.schedule)),
     skud: superSeesAll || can(PAGE_PERMISSIONS.attendance),
+    // Табель: вся сетка — timesheet.view; свой — view_own и карточка сотрудника.
+    timesheet: superSeesAll || can(PAGE_PERMISSIONS.timesheet),
+    myTimesheet: can(PAGE_PERMISSIONS.myTimesheet) && activeEmployee != null,
     cleaning: moduleGate("cleaning"),
     tasks: can(PAGE_PERMISSIONS.tasks),
     // Лист ожидания и воронка ждут бэкенда на проде — гейт по правам их не
@@ -1007,7 +1012,7 @@ const SidebarSecondary: React.FC = () => {
 
   // Группа видна, если в ней есть хотя бы один доступный пункт.
   const groupVisible: Record<Exclude<NavGroup, "all">, boolean> = {
-    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.cleaning || can_.tasks || can_.deals || can_.realestate || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
+    "my-work": can_.registratura || can_.bookings || can_.waitlist || can_.doctorRoom || can_.nurseRoom || can_.lab || can_.schedule || can_.skud || can_.timesheet || can_.myTimesheet || can_.cleaning || can_.tasks || can_.deals || can_.realestate || can_.expenses || can_.knowledge || can_.achievements || can_.pos,
     "org": can_.employees || can_.patients || can_.allAppointments || can_.allProcedures || can_.services || can_.documents,
     "storage": can_.products || can_.vaccinations || can_.sales || can_.storage || can_.procurement,
     "management": can_.salaryReports || can_.reports || can_.cashbox || can_.certificates || can_.pnl || can_.load || can_.doctorProfit || can_.notifications || can_.settings,
@@ -1198,6 +1203,16 @@ const SidebarSecondary: React.FC = () => {
         {/* СКУД */}
         {show("my-work") && can_.skud && (
           <SidebarSkudItem collapsed={siderCollapsed} />
+        )}
+
+        {/* Табель */}
+        {show("my-work") && can_.timesheet && (
+          <SidebarMenuItem to="/timesheet" icon={<TableChartOutlined />} label="Табель" collapsed={siderCollapsed} />
+        )}
+
+        {/* Мой табель */}
+        {show("my-work") && can_.myTimesheet && (
+          <SidebarMenuItem to="/my-timesheet" icon={<EventAvailableOutlined />} label="Мой табель" collapsed={siderCollapsed} />
         )}
 
         {/* Уборка (Django-mode only, пока на моках) */}

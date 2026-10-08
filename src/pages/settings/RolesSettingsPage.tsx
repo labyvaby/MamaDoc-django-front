@@ -71,7 +71,7 @@ const CATEGORY_KEYS = [
   "deals", "documents", "ecommerce", "knowledge", "loyalty", "medical",
   "messaging", "notifications", "odoctor", "offerings", "payroll", "pos",
   "printforms", "procurement", "profigram", "programs", "promotions", "retail",
-  "reviews", "targets", "tasks", "tenancy", "vaccinations",
+  "reviews", "targets", "tasks", "tenancy", "timesheet", "vaccinations",
 ] as const;
 
 // Тариф и состав модулей — платформа, а не настройка роли организации.
