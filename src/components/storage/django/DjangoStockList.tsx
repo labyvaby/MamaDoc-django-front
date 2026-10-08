@@ -28,6 +28,8 @@ import { ListLoadingSkeleton, ListEmptyState, SelectionMark, selectionHintHoverS
 import { useLongPress } from "../../../hooks/useLongPress";
 import { toggleSelection } from "../../../utility/bulkSelection";
 import { hapticTap } from "../../../utility/haptics";
+import type { GroupableItem } from "../../../utility/productGroups";
+import { GroupSelectButton } from "../GroupSelectButton";
 
 type StockStatusFilter = "all" | "in" | "out";
 
@@ -50,6 +52,11 @@ interface DjangoStockListProps {
   selectionDisabled?: boolean;
   /** Содержимое шапки в режиме выбора: счётчик, «Действия», «Снять». */
   selectionBar?: React.ReactNode;
+  /**
+   * Свойства товаров по productId: у позиции склада нет бренда и сезона,
+   * без них выбор группой предлагает только категории.
+   */
+  productAttributes?: ReadonlyMap<number, GroupableItem["attributes"]>;
 }
 
 export const DjangoStockList: React.FC<DjangoStockListProps> = ({
@@ -64,6 +71,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
   onCheckedChange,
   selectionDisabled = false,
   selectionBar,
+  productAttributes,
 }) => {
   const [statusFilter, setStatusFilter] = React.useState<StockStatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
@@ -116,6 +124,32 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
   const allVisibleChecked = visibleIds.length > 0 && visibleChecked === visibleIds.length;
 
   const headerHeightRef = React.useRef(0);
+
+  const groupItems = React.useMemo<GroupableItem[]>(
+    () =>
+      displayed.map((i) => ({
+        id: i.productId,
+        category: i.productCategory,
+        attributes: productAttributes?.get(i.productId),
+      })),
+    [displayed, productAttributes],
+  );
+  const setGroupChecked = (next: Set<number>) => {
+    anchorIdRef.current = null;
+    onCheckedChange?.(next);
+  };
+  // Тот же ключ в шапке и в панели выбора: окно групп не закрывается,
+  // когда первый выбор меняет шапку.
+  const groupButton = selectable && checkedIds && (
+    <GroupSelectButton
+      key="group-select"
+      items={groupItems}
+      checkedIds={checkedIds}
+      onCheckedChange={setGroupChecked}
+      disabled={loading || selectionDisabled}
+      layoutId="stock-group-select"
+    />
+  );
 
   const toggle = (productId: number, shift: boolean) => {
     if (!checkedIds || !onCheckedChange) return;
@@ -192,6 +226,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
               />
             </span>
           </Tooltip>
+          {groupButton}
           {selectionBar}
         </Stack>
       ) : (
@@ -201,10 +236,10 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
         }}
         direction="row"
         alignItems="center"
-        justifyContent="space-between"
+        gap={0.5}
         sx={{ p: 1.5, borderBottom: 1, borderColor: "divider" }}
       >
-        <Stack spacing={0.5}>
+        <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
             Склад ({filterActive ? `${displayed.length} из ${stock.length}` : stock.length})
           </Typography>
@@ -219,6 +254,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
             </Typography>
           )}
         </Stack>
+        {groupButton}
         <Tooltip title="Фильтр">
           <IconButton
             size="small"

@@ -469,6 +469,12 @@ const DjangoWarehousesPage: React.FC = () => {
         return { total: stock.length, out, value };
     }, [stock, productPrices]);
 
+    // Бренд и сезон позиции склада — из карточек каталога (для выбора группой).
+    const productAttributes = React.useMemo(
+        () => new Map(catalogProducts.map((p) => [p.id, p.attributes])),
+        [catalogProducts],
+    );
+
     // Filter
     const filteredStock = React.useMemo(() => {
         if (!searchQuery) return stock;
@@ -855,6 +861,7 @@ const DjangoWarehousesPage: React.FC = () => {
                             onCheckedChange={setCheckedIds}
                             selectionDisabled={bulkBusy}
                             selectionBar={selectionBar}
+                            productAttributes={productAttributes}
                         />
                     </Grid2>
 
