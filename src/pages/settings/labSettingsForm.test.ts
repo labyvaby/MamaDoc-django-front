@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  findLabAccountProblem,
+  labAccountsFormToInput,
   findLabSettingsProblem,
   labConfigToForm,
   labFormToInput,
@@ -39,6 +41,51 @@ const shiftsForm = (): LabSettingsForm => labConfigToForm({
   branches: [{ branchId: 1, branchName: "Центр", lisRegistryId: 11, lisLaboratoryId: 7,
     lisUsername: "day", hasPassword: true, eveningEnabled: true, eveningLisRegistryId: 22,
     eveningLisUsername: "night", eveningHasPassword: true }],
+});
+
+describe("автоматическое подключение по доступам", () => {
+  const fresh = () => labConfigToForm({ ...config, configured: false,
+    lisOrganizationId: null, lisDoctorId: null, lisUsername: "", hasPassword: false,
+    branches: [{ branchId: 1, branchName: "Центр", lisRegistryId: null, lisLaboratoryId: null }],
+  });
+
+  it("логина и пароля достаточно без идентификаторов", () => {
+    const next = fresh();
+    Object.assign(next.branches[0], { lisUsername: "day", lisPassword: "secret" });
+    expect(findLabAccountProblem(next)).toBeNull();
+    const input = labAccountsFormToInput(next);
+    expect(input).not.toHaveProperty("lisOrganizationId");
+    expect(input).not.toHaveProperty("lisDoctorId");
+    expect(input.branches[0]).not.toHaveProperty("lisRegistryId");
+    expect(input.branches[0]).not.toHaveProperty("lisLaboratoryId");
+    expect(input.branches[0]).not.toHaveProperty("eveningLisRegistryId");
+  });
+
+  it("две смены требуют обе пары, но не ID", () => {
+    const next = fresh();
+    Object.assign(next.branches[0], { lisUsername: "day", lisPassword: "secret", eveningEnabled: true });
+    expect(findLabAccountProblem(next)).toContain("двух смен");
+    Object.assign(next.branches[0], { eveningLisUsername: "night", eveningLisPassword: "secret" });
+    expect(findLabAccountProblem(next)).toBeNull();
+  });
+
+  it("пустые поля сохраняют пароли, смена логина требует нового", () => {
+    const next = shiftsForm();
+    expect(findLabAccountProblem(next)).toBeNull();
+    next.branches[0].eveningLisUsername = "new-night";
+    expect(findLabAccountProblem(next)).toContain("пароль вечерней");
+  });
+
+  it("пустая новая конфигурация не отправляется", () => {
+    expect(findLabAccountProblem(fresh())).toContain("хотя бы одного филиала");
+  });
+
+  it("выключенная смена сохраняется и не мешает настройке дня", () => {
+    const next = shiftsForm();
+    next.branches[0].eveningEnabled = false;
+    expect(findLabAccountProblem(next)).toBeNull();
+    expect(labAccountsFormToInput(next).branches[0].eveningLisUsername).toBe("night");
+  });
 });
 
 describe("две смены", () => {

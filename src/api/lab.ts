@@ -364,6 +364,17 @@ export function saveLabConfig(body: LabConfigInput): Promise<LabConfig> {
   return apiRequest<LabConfig>("/lab/settings/config/", { method: "PUT", body });
 }
 
+export interface LabAccountConfigInput {
+  chargeInstruments: boolean;
+  lisUsername: string;
+  lisPassword: string;
+  branches: Array<Omit<LabBranchRegistryInput, "lisRegistryId" | "lisLaboratoryId" | "eveningLisRegistryId">>;
+}
+
+export function connectLabAccounts(body: LabAccountConfigInput): Promise<LabConfig> {
+  return apiRequest<LabConfig>("/lab/settings/config/", { method: "POST", body });
+}
+
 /**
  * Поставить обновление зеркала каталога в очередь.
  *
