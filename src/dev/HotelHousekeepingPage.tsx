@@ -58,6 +58,7 @@ import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import BuildOutlined from "@mui/icons-material/BuildOutlined";
 import Menu from "@mui/material/Menu";
 import { EmptyState, FilterChip, HotelPage, HotelPageHeader, plural, StatusPill, Surface, useHotelTableSx } from "./hotelUi";
+import { HousekeepingDepartures } from "./HousekeepingDepartures";
 import dayjs from "dayjs";
 import { Navigate } from "react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -469,6 +470,8 @@ export const HotelHousekeepingPage: React.FC = () => {
           label={<Typography variant="body2">Только мои</Typography>}
         />
       </Stack>
+
+      {property && <HousekeepingDepartures propertyId={property.id} mine={mineOnly} />}
 
       {staleTasks.length > 0 && (
         <Surface sx={{ py: 1.5, display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>

@@ -132,7 +132,7 @@ export const HOTEL_BOOKING_SOURCE_LABELS: Record<string, string> = {
   // direct — бронь, которую завёл администратор в CRM (так шлёт форма без выбранного источника), не сайт.
   direct: "Прямая",
   phone: "Звонок",
-  walk_in: "Без брони",
+  walk_in: "От стойки",
   website: "Сайт отеля",
   ota: "Booking.com / OTA",
   agent: "Турагент",
@@ -163,7 +163,7 @@ export const HOTEL_BOOKING_SOURCE_SHORT: Record<string, string> = {
   direct: "Прямая",
   website: "Сайт",
   phone: "Звонок",
-  walk_in: "С улицы",
+  walk_in: "От стойки",
   ota: "OTA",
   agent: "Агент",
   corporate: "Корп.",

@@ -569,7 +569,7 @@ export const BOOKING_SOURCE_LABELS: Record<BookingSource, string> = {
   phone: "Звонок",
   ota: "Booking.com / OTA",
   agent: "Турагент",
-  walkin: "Без брони (walk-in)",
+  walkin: "От стойки (walk-in)",
 };
 
 export const VISIT_PURPOSE_LABELS: Record<VisitPurpose, string> = {

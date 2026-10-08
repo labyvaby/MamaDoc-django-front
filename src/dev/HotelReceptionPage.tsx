@@ -479,9 +479,9 @@ const TodayTab: React.FC<{ propertyId: number; onOpen: (id: number) => void }> =
   const act = async (reservation: HotelReservation, kind: "in" | "out") => {
     const item = reservation.items[0];
     if (!item) return;
-    // Паспорт при брони необязателен — без него заселяют из карточки, там же его и вносят.
+    // Паспорта нет — карточка брони: там его вносят или заселяют без него («Заселить без паспорта»).
     if (kind === "in" && missingDocumentGuest(item)) {
-      enqueueSnackbar("Нет паспорта гостя — внесите его в карточке брони", { variant: "info" });
+      enqueueSnackbar("Нет паспорта гостя — внесите его в карточке брони или заселите без него", { variant: "info" });
       onOpen(reservation.id);
       return;
     }

@@ -1,7 +1,9 @@
 /**
- * Паспорт при заселении. При брони он необязателен (гость бронирует по
- * телефону), а заселить без документа нельзя: карточка брони показывает эту
- * панель — тип и номер документа плюс согласие гостя на обработку данных.
+ * Паспорт при заселении. Он необязателен и при брони, и при заселении: местные
+ * часто показывают паспорт в Тундуке или фото в телефоне (заказчик, 08.10).
+ * Карточка брони показывает эту панель перед заселением как напоминание — тип и
+ * номер документа плюс согласие гостя; «Заселить без паспорта» заселяет без
+ * номера (сервер документ не требует), его можно вписать позже.
  *
  * Сохраняется правкой одного гостя (PATCH …/guests/{guestId}/): остальные
  * гости и фото документов не трогаются. Старый сервер такого адреса не знает
@@ -27,7 +29,7 @@ import { GuestConsentField } from "./GuestConsent";
 import { useConsentTemplate } from "./hotelConsent";
 import { useHotelProperty } from "./useHotelProperty";
 
-/** Нет номера документа у основного гостя позиции — заселять нельзя. null — документ не виден (нет права), решает сервер. */
+/** Нет номера документа у основного гостя позиции — перед заселением напомнить. null — документ не виден (нет права). */
 export function missingDocumentGuest(item: HotelReservationItem) {
   const guest = item.guests.find((g) => g.isPrimary) ?? item.guests[0];
   if (!guest || guest.document === null) return null;
@@ -39,7 +41,9 @@ export const CheckInDocumentPanel: React.FC<{
   item: HotelReservationItem;
   onSaved: () => void;
   onCancel: () => void;
-}> = ({ reservation, item, onSaved, onCancel }) => {
+  /** «Заселить без паспорта» — номер впишут позже. */
+  onSkip?: () => void;
+}> = ({ reservation, item, onSaved, onCancel, onSkip }) => {
   const theme = useTheme();
   const { property } = useHotelProperty();
   const consentTemplate = useConsentTemplate(property?.id);
@@ -111,7 +115,8 @@ export const CheckInDocumentPanel: React.FC<{
         <Typography fontWeight={700}>Паспорт для заселения</Typography>
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        У гостя «{guest.fullName}» нет документа: при брони он необязателен, но без него не заселить.
+        У гостя «{guest.fullName}» нет номера документа. Внесите его сейчас или заселите без него — например, если паспорт показали в
+        Тундуке или на фото в телефоне. Номер можно вписать позже в карточке гостя.
       </Typography>
       <Stack gap={1.5}>
         <ToggleButtonGroup size="small" exclusive value={guestType} onChange={(_, v) => v && setGuestType(v)}>
@@ -134,10 +139,15 @@ export const CheckInDocumentPanel: React.FC<{
           </Typography>
         )}
         {error && <Alert severity="error">{error}</Alert>}
-        <Stack direction="row" gap={1} justifyContent="flex-end">
+        <Stack direction="row" gap={1} justifyContent="flex-end" flexWrap="wrap">
           <Button color="inherit" onClick={onCancel} disabled={saving}>
             Отмена
           </Button>
+          {onSkip && (
+            <Button variant="outlined" onClick={onSkip} disabled={saving}>
+              Заселить без паспорта
+            </Button>
+          )}
           <Button variant="contained" disableElevation onClick={() => void save()} disabled={saving}>
             {saving ? "Сохранение…" : "Сохранить паспорт"}
           </Button>

@@ -2691,6 +2691,43 @@ export function listHousekeepingTasks(
   return apiRequest<HotelHousekeepingTask[]>(`/v2/hotel/housekeeping-tasks/${qs}`, { signal });
 }
 
+/** Номер, который освобождается в день: без имени гостя и денег — горничной нужны номер и час. */
+export interface HotelHousekeepingDeparture {
+  reservationItemId: number;
+  roomId: number;
+  roomNumber: string;
+  floor: string;
+  /** "HH:MM": поздний выезд брони или правило объекта; после выезда — фактическое время. */
+  departureTime: string;
+  isLate: boolean;
+  stayStatus: "expected" | "checked_in" | "checked_out";
+  checkedOutAt: string | null;
+  /** Горничная этажа по графику дня. */
+  housekeeperId: number | null;
+  housekeeperName: string;
+}
+
+export interface HotelHousekeepingDepartures {
+  propertyId: number;
+  date: string;
+  /** Выезд по правилам объекта, "HH:MM". */
+  checkOutTime: string;
+  rooms: HotelHousekeepingDeparture[];
+}
+
+/**
+ * GET housekeeping-departures/ — номера на выезд за день (право
+ * hotel.housekeeping.view: у горничной нет доступа к броням). mine — этажи
+ * вошедшей горничной по графику. Бэкенд: ветка seitek/hotel-housekeeping-departures.
+ */
+export function getHousekeepingDepartures(
+  params: { propertyId: number; date?: string; mine?: boolean },
+  signal?: AbortSignal,
+): Promise<HotelHousekeepingDepartures> {
+  const qs = buildQuery({ propertyId: params.propertyId, date: params.date, mine: params.mine ? "true" : undefined });
+  return apiRequest<HotelHousekeepingDepartures>(`/v2/hotel/housekeeping-departures/${qs}`, { signal });
+}
+
 /**
  * Постранично (limit ≤ 500): ответ { count, results }, закрытые — свежие сверху.
  * Старый сервер limit не знает и отдаёт массив — оборачиваем, чтобы экран не ломался.
