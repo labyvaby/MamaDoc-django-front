@@ -132,6 +132,9 @@ export const djangoQueryKeys = {
   },
 
   notifications: {
+    templates: (organizationId: number, page?: number, search?: string) => page === undefined
+      ? ["django", "notifications", "templates", organizationId] as const
+      : ["django", "notifications", "templates", organizationId, page, search ?? ""] as const,
       settings: (organizationId: number | null | undefined, branchId?: number | null) =>
         ["django", "notifications", "settings", organizationId ?? null, branchId ?? null] as const,
     history: (filters: Record<string, unknown>) =>

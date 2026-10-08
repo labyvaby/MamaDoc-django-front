@@ -134,6 +134,7 @@ const DjangoNotificationSettingsPage: React.FC = () => {
           channel: r.channel,
           body: r.body,
           offsetMinutes: r.offsetMinutes,
+          whatsappTemplateId: r.whatsappTemplateId,
         })),
       }),
     onSuccess: (data) => {
@@ -289,6 +290,19 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                           />
                         </Stack>
 
+                        {isSuper && rule.channel === "whatsapp" && <TextField
+                          select fullWidth size="small"
+                          label={t("whatsappTemplates.ruleTemplate")}
+                          value={rule.whatsappTemplateId ?? ""}
+                          onChange={(event) => updateRule(index, { whatsappTemplateId: event.target.value ? Number(event.target.value) : null })}
+                          helperText={t("whatsappTemplates.ruleTemplateHint")}
+                        >
+                          <MenuItem value="">{t("whatsappTemplates.legacyTemplate")}</MenuItem>
+                          {rule.whatsappTemplateId && !(draft.whatsappTemplates ?? []).some((row) => row.id === rule.whatsappTemplateId) &&
+                            <MenuItem value={rule.whatsappTemplateId} disabled>{t("whatsappTemplates.unavailableTemplate")}</MenuItem>}
+                          {(draft.whatsappTemplates ?? []).filter((row) => row.notificationType === rule.notificationType).map((row) =>
+                            <MenuItem key={row.id} value={row.id}>{row.title}</MenuItem>)}
+                        </TextField>}
                         <TextField
                           fullWidth
                           multiline
@@ -299,7 +313,9 @@ const DjangoNotificationSettingsPage: React.FC = () => {
                           // положить эту строку в JSON, i18next попытается интерполировать
                           // patient_name/appointment_date как свои переменные.
                           placeholder="Здравствуйте, {{patient_name}}! Вы записаны на {{appointment_date}}."
-                          value={rule.body}
+                          value={rule.channel === "whatsapp" && rule.whatsappTemplateId
+                            ? (draft.whatsappTemplates ?? []).find((row) => row.id === rule.whatsappTemplateId)?.body ?? ""
+                            : rule.body}
                           onChange={(e) => updateRule(index, { body: e.target.value })}
                           disabled={rule.channel === "whatsapp"}
                           helperText={rule.channel === "whatsapp"

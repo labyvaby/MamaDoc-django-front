@@ -39,6 +39,7 @@ import { usePageTitle } from "../../../hooks/usePageTitle";
 import { usePermissions } from "../../../hooks/usePermissions";
 import { useT } from "../../../i18n/VerticalProvider";
 import { SettingsLayout } from "../SettingsLayout";
+import { WhatsAppTemplatesSection } from "./WhatsAppTemplatesSection";
 
 type FormState = {
   enabled: boolean;
@@ -114,6 +115,7 @@ const NotificationGatewaySettingsPage: React.FC = () => {
           channel: rule.channel,
           body: rule.body,
           offsetMinutes: rule.offsetMinutes,
+          whatsappTemplateId: rule.whatsappTemplateId,
         })),
         credentials: {
           ravenClientId: form.ravenClientId,
@@ -196,6 +198,7 @@ const NotificationGatewaySettingsPage: React.FC = () => {
         ) : (
           <>
             <Alert severity="info">{t("notificationGateway.info")}</Alert>
+            {isSuper && organizationId && <WhatsAppTemplatesSection key={organizationId} organizationId={organizationId} />}
 
             <Card variant="outlined">
               <CardHeader

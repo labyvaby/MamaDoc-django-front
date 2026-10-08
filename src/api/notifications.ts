@@ -7,6 +7,7 @@ export interface NotificationRule {
   channel: string;
   body: string;
   offsetMinutes: number;
+  whatsappTemplateId?: number | null;
 }
 
 export interface NotificationSettings {
@@ -17,6 +18,7 @@ export interface NotificationSettings {
   variables: string[];
   rules: NotificationRule[];
   credentials: MessagingCredentials;
+  whatsappTemplates?: { id: number; title: string; notificationType: string; body: string }[];
 }
 
 export interface MessagingCredentials {
@@ -38,6 +40,7 @@ export interface NotificationRuleInput {
   channel: string;
   body: string;
   offsetMinutes: number;
+  whatsappTemplateId?: number | null;
 }
 
 export interface NotificationSettingsInput {
@@ -140,4 +143,76 @@ export function getNotificationHistory(
     `/notifications/history/${qs ? `?${qs}` : ""}`,
     { signal },
   );
+}
+
+export interface NotificationTemplatePreset {
+  id: number;
+  code: string;
+  title: string;
+  body: string;
+  notificationType: string;
+  language: string;
+}
+
+export interface WhatsAppTemplate {
+  id: number;
+  organizationId: number;
+  name: string;
+  title: string;
+  body: string;
+  notificationType: string;
+  language: string;
+  category: string;
+  variableOrder: string[];
+  status: string;
+  metaTemplateId: string;
+  ravenTemplateCode: string;
+  rejectionReason: string;
+  syncedAt: string | null;
+  ready: boolean;
+}
+
+export interface WhatsAppTemplateLibrary {
+  organizationId: number;
+  presets: NotificationTemplatePreset[];
+  templates: WhatsAppTemplate[];
+  variableExamples: Record<string, string>;
+  canSubmit: boolean;
+  unavailableReason: string;
+  presetCount: number;
+  templateCount: number;
+  page: number;
+}
+
+export interface WhatsAppTemplateInput {
+  organizationId: number;
+  name: string;
+  title: string;
+  body: string;
+  notificationType: string;
+  language: string;
+  presetId?: number | null;
+}
+
+export function getWhatsAppTemplateLibrary(organizationId: number, signal?: AbortSignal, page = 1, search = "") {
+  const query = new URLSearchParams({ organizationId: String(organizationId), page: String(page), search });
+  return apiRequest<WhatsAppTemplateLibrary>(`/notifications/templates/?${query}`, { signal });
+}
+
+export function saveWhatsAppTemplate(input: WhatsAppTemplateInput, id?: number) {
+  return apiRequest<WhatsAppTemplate>(id ? `/notifications/templates/${id}/` : "/notifications/templates/", {
+    method: id ? "PATCH" : "POST", body: input,
+  });
+}
+
+export function createNotificationTemplatePreset(input: Omit<NotificationTemplatePreset, "id">) {
+  return apiRequest<NotificationTemplatePreset>("/notifications/template-presets/", { method: "POST", body: input });
+}
+
+export function submitWhatsAppTemplate(id: number, organizationId: number) {
+  return apiRequest<WhatsAppTemplate>(`/notifications/templates/${id}/submit/`, { method: "POST", body: { organizationId } });
+}
+
+export function syncWhatsAppTemplate(id: number, organizationId: number) {
+  return apiRequest<WhatsAppTemplate>(`/notifications/templates/${id}/sync/`, { method: "POST", body: { organizationId } });
 }
