@@ -112,8 +112,13 @@ const CellView = React.memo(function CellView({
     fill = codeFill(theme, code.color);
     border = alpha(code.color, theme.palette.mode === "dark" ? 0.45 : 0.32);
     ink = codeInk(theme, code.color);
-    letter = code.letter;
-    sub = hours;
+    if (code.key === "presence" && hours) {
+      // Как в бумажном табеле: явка читается часами, буква «Я» живёт в легенде.
+      letter = hours;
+    } else {
+      letter = code.letter;
+      sub = hours;
+    }
   } else if (cell.state === "missing") {
     pattern = `repeating-linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.24)} 0 3px, transparent 3px 7px)`;
     border = alpha(theme.palette.error.main, 0.45);

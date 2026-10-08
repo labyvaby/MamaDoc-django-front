@@ -333,7 +333,9 @@ const MyTimesheetPage: React.FC = () => {
                             }}
                           >
                             {code ? (
-                              `${code.letter}${cell.hours ? ` ${compactHours(cell.hours)}` : ""}`
+                              code.key === "presence" && cell.hours
+                                ? compactHours(cell.hours)
+                                : `${code.letter}${cell.hours ? ` ${compactHours(cell.hours)}` : ""}`
                             ) : requested ? (
                               <HourglassTopRounded sx={{ fontSize: { xs: 12, md: 14 }, display: "block" }} />
                             ) : missing ? (
