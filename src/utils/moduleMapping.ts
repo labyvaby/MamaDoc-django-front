@@ -17,7 +17,8 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   payroll: 'payroll',
   attendance: 'attendance',
   // Табель — страница модуля СКУД (см. rbac/module_mapping.py).
-  timesheet: 'attendance',
+  // Табель — отдельный модуль, включается организации платформенным админом.
+  timesheet: 'timesheet',
   schedule: 'schedule',
   reports: 'reports',
   organization: 'organization',
