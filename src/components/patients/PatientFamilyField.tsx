@@ -1,13 +1,15 @@
 import React from "react";
 import {
   Autocomplete,
-  Box,
   Button,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
+  Stack,
   TextField,
+  Tooltip,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import {
@@ -17,6 +19,7 @@ import {
 } from "../../api/patients";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import { capitalizeFullName } from "../../utility/name";
+import { FieldLabel } from "../ui";
 
 type Props = {
   value: DjangoFamily | null;
@@ -69,27 +72,45 @@ const PatientFamilyField: React.FC<Props> = ({ value, onChange, branchId, disabl
   };
 
   return (
-    <Box>
-      <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 0.5 }}>
-        <Button size="small" startIcon={<AddOutlined />} onClick={() => setDialogOpen(true)} disabled={disabled} sx={{ textTransform: "none" }}>
-          Создать семью
-        </Button>
-      </Box>
-      <Autocomplete
-        options={options}
-        value={value}
-        loading={loading}
-        onOpen={() => void load()}
-        onInputChange={(_, input) => { if (input.length >= 2) void load(input); }}
-        onChange={(_, next) => onChange(next)}
-        getOptionLabel={(option) => option.name}
-        isOptionEqualToValue={(option, selected) => option.id === selected.id}
-        renderInput={(params) => (
-          <TextField {...params} label="Семья" placeholder="Выберите семью" disabled={disabled} size="small" />
-        )}
-        disabled={disabled}
-        noOptionsText="Семьи не найдены"
-      />
+    <Stack spacing={0.5}>
+      <FieldLabel>Семья</FieldLabel>
+      <Stack direction="row" gap={1}>
+        <Autocomplete
+          sx={{ flex: 1, minWidth: 0 }}
+          options={options}
+          value={value}
+          loading={loading}
+          onOpen={() => void load()}
+          onInputChange={(_, input) => { if (input.length >= 2) void load(input); }}
+          onChange={(_, next) => onChange(next)}
+          getOptionLabel={(option) => option.name}
+          isOptionEqualToValue={(option, selected) => option.id === selected.id}
+          renderInput={(params) => (
+            <TextField {...params} placeholder="Выберите семью" disabled={disabled} size="small" />
+          )}
+          disabled={disabled}
+          noOptionsText="Семьи не найдены"
+        />
+        <Tooltip title="Создать семью">
+          <span>
+            <IconButton
+              onClick={() => setDialogOpen(true)}
+              disabled={disabled}
+              aria-label="Создать семью"
+              sx={(theme) => ({
+                width: theme.appLayout.controls.inputHeight,
+                height: theme.appLayout.controls.inputHeight,
+                border: 1,
+                borderColor: "divider",
+                borderRadius: 1,
+                color: "primary.onSurface",
+              })}
+            >
+              <AddOutlined fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Stack>
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>Новая семья</DialogTitle>
         <DialogContent>
@@ -111,7 +132,7 @@ const PatientFamilyField: React.FC<Props> = ({ value, onChange, branchId, disabl
           <Button variant="contained" onClick={() => void handleCreate()}>Создать</Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </Stack>
   );
 };
 

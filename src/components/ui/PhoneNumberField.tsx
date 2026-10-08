@@ -2,6 +2,7 @@ import React from "react";
 import { InputAdornment, Stack, TextField, Typography } from "@mui/material";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import { PhoneCountryCodeSelect } from "./PhoneCountryCodeSelect";
+import FieldLabel from "./FieldLabel";
 import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import {
   formatPhoneLocalDisplay,
@@ -19,6 +20,8 @@ export interface PhoneNumberFieldProps {
   disabled?: boolean;
   helperText?: React.ReactNode;
   onEnter?: (event: React.KeyboardEvent) => void;
+  /** Компактная подпись (FieldLabel) — для плотных форм. */
+  dense?: boolean;
 }
 
 /** Standard phone input shared by patient and client forms. */
@@ -31,14 +34,19 @@ export default function PhoneNumberField({
   disabled = false,
   helperText,
   onEnter,
+  dense = false,
 }: PhoneNumberFieldProps) {
   const input = usePhoneLocalInput(countryCode, phone, onPhoneChange, onCountryCodeChange);
 
   return (
     <Stack spacing={0.5}>
-      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-        {label}
-      </Typography>
+      {dense ? (
+        <FieldLabel>{label}</FieldLabel>
+      ) : (
+        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+          {label}
+        </Typography>
+      )}
       <TextField
         value={formatPhoneLocalDisplay(countryCode, phone)}
         inputRef={input.inputRef}

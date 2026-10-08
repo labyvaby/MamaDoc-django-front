@@ -1,52 +1,43 @@
 import React from "react";
-import { parseKgPin } from "../../utils/kgPin";
-import { INN_ABSENT_REASON_OPTIONS } from "../../pages/vaccinations/meta";
 import type { InnAbsentReason } from "../../api/patients";
 import {
   Alert,
   Box,
   Button,
-  Checkbox,
   CircularProgress,
-  Collapse,
   Divider,
   Drawer,
-  FormControlLabel,
   IconButton,
   InputAdornment,
-  MenuItem,
+  Link,
   Stack,
-  Switch,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
-import DeleteOutline from "@mui/icons-material/DeleteOutline";
-import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
-import NumbersOutlined from "@mui/icons-material/NumbersOutlined";
 import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
-import BoyOutlined from "@mui/icons-material/BoyOutlined";
-import GirlOutlined from "@mui/icons-material/GirlOutlined";
 import RestoreOutlined from "@mui/icons-material/RestoreOutlined";
 import { motion } from "framer-motion";
 import { useNotification } from "@refinedev/core";
-import { CustomDatePicker, PhoneCountryCodeSelect, cascadeContainer, cascadeItem } from "../ui";
+import {
+  CustomDatePicker,
+  FieldLabel,
+  FormSectionTitle,
+  PhoneNumberField,
+  cascadeContainer,
+  cascadeItem,
+} from "../ui";
 import dayjs from "dayjs";
 import { formatPatientAge } from "../../utility/age";
 import { capitalizeFullName } from "../../utility/name";
 import {
   composePhone,
   parsePhone,
-  formatPhoneLocalDisplay,
   DEFAULT_PHONE_COUNTRY_CODE,
   getPhoneLocalMaxLength,
-  handlePhonePaste,
   type PhoneCountryCode,
 } from "../../utility/phone";
-import { usePhoneLocalInput } from "../../hooks/usePhoneLocalInput";
 import { useCan } from "../../hooks/useCan";
 import { useFormValidation } from "../../hooks/useFormValidation";
 import {
@@ -61,6 +52,9 @@ import PatientFamilyField from "./PatientFamilyField";
 import type { DjangoFamily } from "../../api/patients";
 import { parseBackendError } from "../../api/appointments";
 import PatientPhotoUploader from "./PatientPhotoUploader";
+import PatientGenderPills from "./PatientGenderPills";
+import PatientInnField from "./PatientInnField";
+import PatientBlacklistField from "./PatientBlacklistField";
 import AddressAutocomplete from "./AddressAutocomplete";
 import { useT } from "../../i18n/VerticalProvider";
 import { readFormDraft, writeFormDraft, clearFormDraft } from "../../utility/formDraft";
@@ -139,13 +133,6 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   const [phone, setPhone] = React.useState("");
   const [phoneCountryCode, setPhoneCountryCode] =
     React.useState<PhoneCountryCode>(DEFAULT_PHONE_COUNTRY_CODE);
-  // Правка в середине номера не должна выбрасывать курсор в конец.
-  const phoneInput = usePhoneLocalInput(
-    phoneCountryCode,
-    phone,
-    setPhone,
-    setPhoneCountryCode,
-  );
   const [birth, setBirth] = React.useState("");
   const [gender, setGender] = React.useState<PatientGender>("unknown");
   const [address, setAddress] = React.useState("");
@@ -154,8 +141,6 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
   const [innAbsentReason, setInnAbsentReason] = React.useState<InnAbsentReason | "">("");
   /** «Приезжий» — графа формы 5. */
   const [isVisitor, setIsVisitor] = React.useState(false);
-  /** Расхождение ИНН с полом / датой рождения или ошибка разбора. */
-  const [innHint, setInnHint] = React.useState<string | null>(null);
   const [family, setFamily] = React.useState<DjangoFamily | null>(null);
   const [isBlacklisted, setIsBlacklisted] = React.useState(false);
   const [blacklistReason, setBlacklistReason] = React.useState("");
@@ -208,7 +193,6 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
     setInn(next.inn);
     setInnAbsentReason(patient.innAbsentReason ?? "");
     setIsVisitor(patient.isVisitor ?? false);
-    setInnHint(null);
     setFamily(next.family);
     setIsBlacklisted(next.isBlacklisted);
     setBlacklistReason(next.blacklistReason);
@@ -419,186 +403,156 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             "&::-webkit-scrollbar": { display: "none" },
           }}
         >
-          <MotionStack spacing={3} variants={cascadeContainer} initial="hidden" animate="show">
+          <MotionStack spacing={2} variants={cascadeContainer} initial="hidden" animate="show">
             {error && (
               <Alert severity="error" onClose={() => setError(null)}>
                 {error}
               </Alert>
             )}
 
-            {/* ── Фото ── */}
+            {/* ── Фото + ФИО ── */}
             <MotionBox variants={cascadeItem}>
-              <Stack spacing={1} alignItems="center">
+              <Stack direction="row" gap={2} alignItems="flex-start">
                 <PatientPhotoUploader
                   photoFile={photoFile}
                   photoPreview={photoPreview}
                   onPickPhoto={handlePickPhoto}
                   inputId="edit-patient-photo"
                   disabled={busy}
+                  size={56}
+                  showCaption={false}
                 />
-                {showDeletePhotoBtn && (
-                  <Button
-                    variant="text"
-                    color="error"
+                <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
+                  <FieldLabel>{t("form.fullName")}</FieldLabel>
+                  <TextField
+                    value={fio}
+                    onChange={(e) => setFio(e.target.value)}
+                    onBlur={() => setFio(capitalizeFullName(fio))}
+                    onKeyDown={submitOnEnter}
+                    fullWidth
                     size="small"
-                    startIcon={<DeleteOutline />}
-                    onClick={handleRemovePhoto}
-                  >
-                    {t("editDrawer.photoDelete")}
-                  </Button>
-                )}
-              </Stack>
-            </MotionBox>
-
-            {/* ── ФИО ── */}
-            <MotionBox variants={cascadeItem}>
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  {t("form.fullName")}
-                </Typography>
-                <TextField
-                  value={fio}
-                  onChange={(e) => setFio(e.target.value)}
-                  onBlur={() => setFio(capitalizeFullName(fio))}
-                  onKeyDown={submitOnEnter}
-                  fullWidth
-                  size="small"
-                  autoFocus
-                  placeholder={t("form.errors.fullNameRequired")}
-                  disabled={busy}
-                  {...v.field("fio")}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <PersonOutlineOutlined fontSize="small" color="disabled" />
-                      </InputAdornment>
-                    ),
-                    endAdornment: fio.trim() ? (
-                      <InputAdornment position="end">
-                        <CheckCircleOutlined fontSize="small" color="success" />
-                      </InputAdornment>
-                    ) : undefined,
-                  }}
-                />
+                    autoFocus
+                    placeholder={t("form.errors.fullNameRequired")}
+                    disabled={busy}
+                    {...v.field("fio")}
+                    InputProps={{
+                      endAdornment: fio.trim() ? (
+                        <InputAdornment position="end">
+                          <CheckCircleOutlined fontSize="small" color="success" />
+                        </InputAdornment>
+                      ) : undefined,
+                    }}
+                  />
+                  <Stack direction="row" gap={1.5}>
+                    <Link
+                      component="label"
+                      htmlFor="edit-patient-photo"
+                      variant="caption"
+                      underline="hover"
+                      color="text.secondary"
+                      sx={{ cursor: busy ? "default" : "pointer", fontWeight: 600 }}
+                    >
+                      {photoPreview ? t("form.photoChange") : t("form.photoAdd")}
+                    </Link>
+                    {showDeletePhotoBtn && (
+                      <Link
+                        component="button"
+                        type="button"
+                        variant="caption"
+                        underline="hover"
+                        color="error"
+                        onClick={handleRemovePhoto}
+                        disabled={busy}
+                        sx={{ fontWeight: 600 }}
+                      >
+                        {t("editDrawer.photoDelete")}
+                      </Link>
+                    )}
+                  </Stack>
+                </Stack>
               </Stack>
             </MotionBox>
 
             {/* ── Телефон ── */}
             <MotionBox variants={cascadeItem}>
-              <Stack spacing={0.5}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  {t("form.phone")}
-                </Typography>
-                <TextField
-                  value={formatPhoneLocalDisplay(phoneCountryCode, phone)}
-                  inputRef={phoneInput.inputRef}
-                  onChange={phoneInput.onChange}
-                  onPaste={(e) =>
-                    handlePhonePaste(e, phoneCountryCode, (code, local) => {
-                      setPhoneCountryCode(code);
-                      setPhone(local);
-                    })
-                  }
-                  onKeyDown={(e) => {
-                    phoneInput.onKeyDown(e);
-                    submitOnEnter(e);
-                  }}
-                  fullWidth
-                  size="small"
-                  disabled={busy}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start" sx={{ mr: 1, ml: "-14px" }}>
-                        <PhoneCountryCodeSelect
-                          value={phoneCountryCode}
-                          onChange={(code) => setPhoneCountryCode(code)}
-                        />
-                      </InputAdornment>
-                    ),
-                    endAdornment:
-                      phone.length === getPhoneLocalMaxLength(phoneCountryCode) ? (
-                        <InputAdornment position="end">
-                          <CheckCircleOutlined fontSize="small" color="success" />
-                        </InputAdornment>
-                      ) : undefined,
-                  }}
-                  inputProps={{
-                    inputMode: "tel",
-                    pattern: "[0-9]*",
-                  }}
-                  placeholder={
-                    getPhoneLocalMaxLength(phoneCountryCode) === 10
-                      ? "XXX XXX XXXX"
-                      : "XXX XXX XXX"
-                  }
-                />
-              </Stack>
+              <PhoneNumberField
+                dense
+                label={t("form.phone")}
+                countryCode={phoneCountryCode}
+                phone={phone}
+                onCountryCodeChange={setPhoneCountryCode}
+                onPhoneChange={setPhone}
+                disabled={busy}
+                onEnter={submitOnEnter}
+              />
             </MotionBox>
 
             {/* ── О пациенте ── */}
             <MotionBox variants={cascadeItem}>
               <Stack spacing={1.5}>
-                <Divider />
-                <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
-                  {t("form.sectionAbout")}
-                </Typography>
+                <FormSectionTitle>{t("form.sectionAbout")}</FormSectionTitle>
 
-                <Stack spacing={0.5}>
-                  <Stack direction="row" alignItems="baseline" flexWrap="wrap" justifyContent="space-between" gap={0.5}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                {/* ИНН выше пола и даты рождения: он сам их заполняет. */}
+                <PatientInnField
+                  inn={inn}
+                  onInnChange={setInn}
+                  innAbsentReason={innAbsentReason}
+                  onInnAbsentReasonChange={setInnAbsentReason}
+                  isVisitor={isVisitor}
+                  onVisitorChange={setIsVisitor}
+                  gender={gender}
+                  onGenderChange={setGender}
+                  birth={birth}
+                  onBirthChange={setBirth}
+                  disabled={busy}
+                  onEnter={submitOnEnter}
+                />
+
+                <Stack direction="row" flexWrap="wrap" gap={1.5} alignItems="flex-end">
+                  <Stack spacing={0.5} sx={{ flex: "1 1 170px", minWidth: 0 }}>
+                    <FieldLabel
+                      end={
+                        formatPatientAge(birth) ? (
+                          <Typography variant="caption" color="primary" sx={{ fontWeight: 600 }}>
+                            {formatPatientAge(birth)}
+                          </Typography>
+                        ) : undefined
+                      }
+                    >
                       {t("form.birthDate")}
-                    </Typography>
-                    {formatPatientAge(birth) && (
-                      <Typography variant="caption" color="primary" sx={{ fontWeight: 600 }}>
-                        {formatPatientAge(birth)}
-                      </Typography>
-                    )}
+                    </FieldLabel>
+                    <CustomDatePicker
+                      value={birth ? dayjs(birth) : null}
+                      onChange={(val) => setBirth(val ? val.format("YYYY-MM-DD") : "")}
+                      slotProps={{
+                        textField: {
+                          fullWidth: true,
+                          size: "small",
+                          InputLabelProps: { shrink: true },
+                          placeholder: t("form.birthDatePlaceholder"),
+                          disabled: busy,
+                          // Enter сохраняет, как в остальных полях. Если год введен коротко,
+                          // первое нажатие уйдет на дописывание века (см. CustomDatePicker).
+                          onKeyDown: submitOnEnter,
+                          // Инпут пикера не наследует minHeight из MuiInputBase и
+                          // выходит на 3px ниже — рядом с пилюлями пола это видно.
+                          sx: (theme) => ({
+                            "& .MuiPickersInputBase-root": {
+                              minHeight: theme.appLayout.controls.inputHeight,
+                            },
+                          }),
+                        },
+                      }}
+                    />
                   </Stack>
-                  <CustomDatePicker
-                    value={birth ? dayjs(birth) : null}
-                    onChange={(val) => setBirth(val ? val.format("YYYY-MM-DD") : "")}
-                    slotProps={{
-                      textField: {
-                        fullWidth: true,
-                        size: "small",
-                        InputLabelProps: { shrink: true },
-                        placeholder: t("form.birthDatePlaceholder"),
-                        disabled: busy,
-                        // Enter сохраняет, как в остальных полях. Если год введен коротко,
-                        // первое нажатие уйдет на дописывание века (см. CustomDatePicker).
-                        onKeyDown: submitOnEnter,
-                      },
-                    }}
-                  />
+                  <Stack spacing={0.5}>
+                    <FieldLabel>{t("form.gender")}</FieldLabel>
+                    <PatientGenderPills value={gender} onChange={setGender} disabled={busy} />
+                  </Stack>
                 </Stack>
 
                 <Stack spacing={0.5}>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                    {t("form.gender")}
-                  </Typography>
-                  <ToggleButtonGroup
-                    value={gender === "unknown" ? null : gender}
-                    exclusive
-                    onChange={(_, val) => setGender((val as PatientGender) ?? "unknown")}
-                    disabled={busy}
-                    fullWidth
-                    size="small"
-                  >
-                    <ToggleButton value="male" sx={{ gap: 0.5 }}>
-                      <BoyOutlined fontSize="small" />
-                      {t("form.genderMale")}
-                    </ToggleButton>
-                    <ToggleButton value="female" sx={{ gap: 0.5 }}>
-                      <GirlOutlined fontSize="small" />
-                      {t("form.genderFemale")}
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                </Stack>
-
-                <Stack spacing={0.5}>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                    {t("form.address")}
-                  </Typography>
+                  <FieldLabel>{t("form.address")}</FieldLabel>
                   <AddressAutocomplete
                     value={address}
                     onChange={setAddress}
@@ -611,87 +565,7 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
             {/* ── Дополнительно ── */}
             <MotionBox variants={cascadeItem}>
               <Stack spacing={1.5}>
-                <Divider />
-                <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary" }}>
-                  {t("form.sectionExtra")}
-                </Typography>
-
-                <Stack spacing={0.5}>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                    {t("form.inn")}
-                  </Typography>
-                  <TextField
-                    value={inn}
-                    onChange={(e) => {
-                      const v = e.target.value.replace(/[^0-9]/g, "").slice(0, 14);
-                      setInn(v);
-                      setInnHint(null);
-                      if (v.length < 14) return;
-                      // ИНН КР: пол и дата рождения — прямо в номере.
-                      const pin = parseKgPin(v);
-                      if (!pin.ok) {
-                        setInnHint(pin.error);
-                        return;
-                      }
-                      setInnAbsentReason("");
-                      if (gender === "unknown") setGender(pin.gender);
-                      else if (gender !== pin.gender) setInnHint("Пол не совпадает с ИНН");
-                      if (!birth) setBirth(pin.birthDate);
-                      else if (birth !== pin.birthDate) setInnHint("Дата рождения не совпадает с ИНН");
-                    }}
-                    onKeyDown={submitOnEnter}
-                    fullWidth
-                    size="small"
-                    placeholder="000000000000"
-                    disabled={busy}
-                    inputProps={{ inputMode: "numeric" }}
-                    error={Boolean(innHint)}
-                    helperText={innHint ?? `${inn.length}/14 · пол и дата рождения заполнятся сами`}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <NumbersOutlined fontSize="small" color="disabled" />
-                        </InputAdornment>
-                      ),
-                      endAdornment: inn.length === 14 ? (
-                        <InputAdornment position="end">
-                          <CheckCircleOutlined fontSize="small" color="success" />
-                        </InputAdornment>
-                      ) : undefined,
-                    }}
-                  />
-                  {!inn && (
-                    <TextField
-                      select
-                      size="small"
-                      fullWidth
-                      label="Почему нет ИНН"
-                      value={innAbsentReason}
-                      onChange={(e) => setInnAbsentReason(e.target.value as InnAbsentReason | "")}
-                      disabled={busy}
-                    >
-                      <MenuItem value="">
-                        <em>Не указано</em>
-                      </MenuItem>
-                      {INN_ABSENT_REASON_OPTIONS.map((o) => (
-                        <MenuItem key={o.value} value={o.value}>
-                          {o.label}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={isVisitor}
-                        onChange={(e) => setIsVisitor(e.target.checked)}
-                        disabled={busy}
-                      />
-                    }
-                    label="Приезжий (не с обслуживаемой территории)"
-                  />
-                </Stack>
+                <FormSectionTitle>{t("form.sectionExtra")}</FormSectionTitle>
 
                 <PatientFamilyField
                   value={family}
@@ -699,54 +573,24 @@ const DjangoEditPatientDrawer: React.FC<Props> = ({
                   branchId={patient?.branch?.id}
                   disabled={busy}
                 />
+
+                {/* ── Чёрный список (role-gated) ── */}
+                {canManageBlacklist && (
+                  <PatientBlacklistField
+                    checked={isBlacklisted}
+                    onCheckedChange={(next) => {
+                      setIsBlacklisted(next);
+                      if (!next) setBlacklistReason("");
+                    }}
+                    reason={blacklistReason}
+                    onReasonChange={setBlacklistReason}
+                    placeholder={t("editDrawer.blacklistReasonPlaceholder")}
+                    disabled={busy}
+                    reasonFieldProps={v.field("blacklistReason")}
+                  />
+                )}
               </Stack>
             </MotionBox>
-
-            {/* ── Чёрный список (role-gated) ── */}
-            {canManageBlacklist && (
-              <MotionBox variants={cascadeItem}>
-                <Stack spacing={1}>
-                  <Divider />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={isBlacklisted}
-                        onChange={(e) => {
-                          setIsBlacklisted(e.target.checked);
-                          if (!e.target.checked) setBlacklistReason("");
-                        }}
-                        disabled={busy}
-                        color="error"
-                      />
-                    }
-                    label={
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          fontWeight: 600,
-                          color: isBlacklisted ? "error.main" : "text.primary",
-                        }}
-                      >
-                        {t("form.blacklisted")}
-                      </Typography>
-                    }
-                  />
-                  <Collapse in={isBlacklisted}>
-                    <TextField
-                      value={blacklistReason}
-                      onChange={(e) => setBlacklistReason(e.target.value)}
-                      fullWidth
-                      multiline
-                      minRows={2}
-                      placeholder={t("editDrawer.blacklistReasonPlaceholder")}
-                      disabled={busy}
-                      required={isBlacklisted}
-                      {...v.field("blacklistReason")}
-                    />
-                  </Collapse>
-                </Stack>
-              </MotionBox>
-            )}
           </MotionStack>
         </Box>
 

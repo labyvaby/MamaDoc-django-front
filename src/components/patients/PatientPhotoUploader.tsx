@@ -17,16 +17,25 @@ export type PatientPhotoUploaderProps = {
   inputId?: string;
   onPickPhoto: (file: File | null) => void;
   disabled?: boolean;
+  /** Диаметр аватара; в плотной форме — 56 рядом с полем ФИО. */
+  size?: number;
+  /** Подпись «Добавить/Изменить фото» под аватаром. */
+  showCaption?: boolean;
 };
 
-const AVATAR_SIZE = 88;
+const DEFAULT_SIZE = 88;
 
 const PatientPhotoUploader: React.FC<PatientPhotoUploaderProps> = ({
   photoPreview,
   inputId = "add-patient-file-input",
   onPickPhoto,
   disabled,
+  size = DEFAULT_SIZE,
+  showCaption = true,
 }) => {
+  // Бейдж камеры масштабируется с аватаром, но не мельче 22px — иначе в него
+  // не попасть пальцем.
+  const badge = Math.max(22, Math.round(size * 0.32));
   const [hover, setHover] = React.useState(false);
 
   const openPicker = () => {
@@ -43,8 +52,9 @@ const PatientPhotoUploader: React.FC<PatientPhotoUploaderProps> = ({
         onClick={openPicker}
         sx={(t) => ({
           position: "relative",
-          width: AVATAR_SIZE,
-          height: AVATAR_SIZE,
+          width: size,
+          height: size,
+          flexShrink: 0,
           borderRadius: "50%",
           cursor: disabled ? "default" : "pointer",
           border: 1,
@@ -53,7 +63,7 @@ const PatientPhotoUploader: React.FC<PatientPhotoUploaderProps> = ({
           opacity: disabled ? 0.6 : 1,
         })}
       >
-        <UserAvatar src={photoPreview} size={AVATAR_SIZE} sx={{ position: "absolute", inset: 0 }} />
+        <UserAvatar src={photoPreview} size={size} sx={{ position: "absolute", inset: 0 }} />
 
         {photoPreview && (
           <Box
@@ -79,8 +89,8 @@ const PatientPhotoUploader: React.FC<PatientPhotoUploaderProps> = ({
             position: "absolute",
             right: -2,
             bottom: -2,
-            width: 28,
-            height: 28,
+            width: badge,
+            height: badge,
             borderRadius: "50%",
             display: "flex",
             alignItems: "center",
@@ -91,7 +101,7 @@ const PatientPhotoUploader: React.FC<PatientPhotoUploaderProps> = ({
             borderColor: "background.paper",
           }}
         >
-          <PhotoCameraOutlined sx={{ fontSize: 14 }} />
+          <PhotoCameraOutlined sx={{ fontSize: Math.round(badge / 2) }} />
         </Box>
 
         <input
@@ -107,14 +117,16 @@ const PatientPhotoUploader: React.FC<PatientPhotoUploaderProps> = ({
         />
       </Box>
 
-      <Typography
-        variant="body2"
-        color="text.secondary"
-        onClick={openPicker}
-        sx={{ cursor: disabled ? "default" : "pointer" }}
-      >
-        {photoPreview ? "Изменить фото" : "Добавить фото"}
-      </Typography>
+      {showCaption && (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          onClick={openPicker}
+          sx={{ cursor: disabled ? "default" : "pointer" }}
+        >
+          {photoPreview ? "Изменить фото" : "Добавить фото"}
+        </Typography>
+      )}
     </Stack>
   );
 };
