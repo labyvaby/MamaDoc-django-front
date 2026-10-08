@@ -10,11 +10,6 @@ import {
   Snackbar,
   Stack,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from "@mui/material";
@@ -181,7 +176,7 @@ const LabSettingsPage: React.FC = () => {
 
         {form && (
           <>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
                 label="Код организации в ЛИС"
                 size="small"
@@ -204,7 +199,14 @@ const LabSettingsPage: React.FC = () => {
               />
             </Stack>
 
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <Box>
+              <Typography variant="subtitle2">Общая учётная запись ЛИС</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Используется филиалами без отдельных доступов. Если у каждого филиала
+                своя учётная запись, эти поля можно оставить пустыми.
+              </Typography>
+            </Box>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
                 label="Логин в ЛИС"
                 size="small"
@@ -212,7 +214,7 @@ const LabSettingsPage: React.FC = () => {
                 onChange={(e) => patch({ lisUsername: e.target.value })}
                 disabled={busy}
                 autoComplete="off"
-                helperText="Учётная запись, выданная лабораторией этой клинике"
+                helperText="Общий логин клиники, если он выдан"
                 sx={{ maxWidth: 320 }}
               />
               <TextField
@@ -254,61 +256,90 @@ const LabSettingsPage: React.FC = () => {
 
             <Box>
               <Typography variant="subtitle2" fontWeight={600}>
-                Точки регистрации по филиалам
+                Подключение филиалов
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Пара «точка регистрации + лаборатория» из ЛИС. Пустые поля — филиал
-                анализы не принимает.
+                Для каждого филиала укажите точку регистрации, лабораторию и его
+                логин с паролем. Пустые идентификаторы — филиал анализы не принимает.
               </Typography>
             </Box>
 
-            <Table size="small" sx={{ maxWidth: 760 }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Филиал</TableCell>
-                  <TableCell>Точка регистрации (registry_id)</TableCell>
-                  <TableCell>Лаборатория (laboratory_id)</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {form.branches.map((row) => (
-                  <TableRow key={row.branchId}>
-                    <TableCell sx={{ fontWeight: 600 }}>{row.branchName}</TableCell>
-                    <TableCell>
-                      <TextField
+            <Stack spacing={3} divider={<Divider />} sx={{ maxWidth: 760 }}>
+              {form.branches.map((row) => (
+                <Stack key={row.branchId} spacing={2}>
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    {row.branchName}
+                  </Typography>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                    <TextField
+                      fullWidth
+                      label="Точка регистрации в ЛИС"
+                      size="small"
+                      value={row.lisRegistryId}
+                      onChange={(e) => patchBranch(row.branchId, { lisRegistryId: e.target.value })}
+                      disabled={busy}
+                      inputMode="numeric"
+                      placeholder="не задана"
+                    />
+                    <TextField
+                      fullWidth
+                      label="Лаборатория в ЛИС"
+                      size="small"
+                      value={row.lisLaboratoryId}
+                      onChange={(e) =>
+                        patchBranch(row.branchId, { lisLaboratoryId: e.target.value })
+                      }
+                      disabled={busy}
+                      inputMode="numeric"
+                      placeholder="не задана"
+                    />
+                  </Stack>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                    <TextField
+                      fullWidth
+                      label="Логин филиала в ЛИС"
+                      size="small"
+                      value={row.lisUsername}
+                      onChange={(e) => patchBranch(row.branchId, { lisUsername: e.target.value, clearCredentials: false })}
+                      disabled={busy}
+                      autoComplete="off"
+                      helperText={row.lisUsername ? "Учётная запись этого филиала" : "Без отдельных доступов используется общая учётная запись"}
+                    />
+                    <TextField
+                      fullWidth
+                      label="Пароль филиала в ЛИС"
+                      size="small"
+                      type="password"
+                      value={row.lisPassword}
+                      onChange={(e) => patchBranch(row.branchId, { lisPassword: e.target.value, clearCredentials: false })}
+                      disabled={busy}
+                      autoComplete="new-password"
+                      placeholder={row.hasPassword ? "сохранён — оставьте пустым" : ""}
+                      helperText={row.hasPassword ? "Пустое поле сохраняет пароль; при смене логина введите его заново" : "Пароль, выданный для этого филиала"}
+                    />
+                  </Stack>
+                  {(row.lisUsername || row.hasPassword || row.lisPassword) && (
+                    <Box>
+                      <Button
                         size="small"
-                        value={row.lisRegistryId}
-                        onChange={(e) => patchBranch(row.branchId, { lisRegistryId: e.target.value })}
                         disabled={busy}
-                        inputMode="numeric"
-                        placeholder="не задана"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        value={row.lisLaboratoryId}
-                        onChange={(e) =>
-                          patchBranch(row.branchId, { lisLaboratoryId: e.target.value })
-                        }
-                        disabled={busy}
-                        inputMode="numeric"
-                        placeholder="не задана"
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {form.branches.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={3}>
-                      <Typography variant="body2" color="text.secondary">
-                        Активных филиалов нет — сначала заведите филиал.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                        onClick={() => patchBranch(row.branchId, {
+                          lisUsername: "", lisPassword: "", hasPassword: false,
+                          clearCredentials: true,
+                        })}
+                      >
+                        Использовать общую учётную запись
+                      </Button>
+                    </Box>
+                  )}
+                </Stack>
+              ))}
+              {form.branches.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  Активных филиалов нет — сначала заведите филиал.
+                </Typography>
+              )}
+            </Stack>
 
             {problem && <Alert severity="warning">{problem}</Alert>}
             {saveError && <Alert severity="error">{saveError}</Alert>}
