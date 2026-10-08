@@ -17,6 +17,7 @@ import SellOutlined from "@mui/icons-material/SellOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
 import NumbersOutlined from "@mui/icons-material/NumbersOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import EditCalendarOutlined from "@mui/icons-material/EditCalendarOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 import dayjs from "dayjs";
@@ -30,6 +31,7 @@ import { FormField } from "./formField";
 import { FieldIcon } from "./FieldIcon";
 import { fieldError, type FieldRules } from "./formRules";
 import { formatHotelDate } from "./mockDemoData";
+import { ServiceByDaysDialog } from "./ServiceByDaysDialog";
 
 const RULES = {
   quantity: { kind: "decimal", required: true, min: 0.001, max: 100_000, maxDecimals: 3 },
@@ -84,6 +86,8 @@ export const ReservationChargesSection: React.FC<{
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [voidingId, setVoidingId] = React.useState<number | null>(null);
+  // «По дням» — окно как «Услуга в номере» в Exely; число — услуга, с которой открыть.
+  const [byDays, setByDays] = React.useState<{ serviceId?: number } | null>(null);
 
   // Другая бронь — форма с нуля.
   React.useEffect(() => {
@@ -186,9 +190,18 @@ export const ReservationChargesSection: React.FC<{
           Услуги
         </Typography>
         {canManage && !formOpen && !billLocked && (
-          <Button size="small" startIcon={<AddOutlined fontSize="small" />} onClick={openForm}>
-            Добавить услугу
-          </Button>
+          <Stack direction="row" gap={0.5}>
+            {!closed && services.length > 0 && (
+              <Tooltip title="Завтрак и другие услуги по дням проживания — включить день, цена и количество">
+                <Button size="small" startIcon={<EditCalendarOutlined fontSize="small" />} onClick={() => setByDays({})}>
+                  По дням
+                </Button>
+              </Tooltip>
+            )}
+            <Button size="small" startIcon={<AddOutlined fontSize="small" />} onClick={openForm}>
+              Добавить услугу
+            </Button>
+          </Stack>
         )}
       </Stack>
 
@@ -234,6 +247,19 @@ export const ReservationChargesSection: React.FC<{
                 <Typography sx={{ fontWeight: 700, fontVariantNumeric: "tabular-nums", flexShrink: 0, textDecoration: voided ? "line-through" : "none" }}>
                   {money(c.totalAmount)}
                 </Typography>
+                {canManage && !voided && !billLocked && !closed && c.serviceId != null && c.kind !== "penalty" && services.some((s) => s.id === c.serviceId) && (
+                  <Tooltip title="Изменить по дням">
+                    <Button
+                      size="small"
+                      color="inherit"
+                      onClick={() => setByDays({ serviceId: c.serviceId ?? undefined })}
+                      aria-label={`Изменить по дням: ${c.name}`}
+                      sx={{ minWidth: 0, px: 0.75 }}
+                    >
+                      <EditCalendarOutlined fontSize="small" />
+                    </Button>
+                  </Tooltip>
+                )}
                 {canManage && !voided && !billLocked && (
                   <Tooltip title="Отменить услугу">
                     <span>
@@ -368,6 +394,17 @@ export const ReservationChargesSection: React.FC<{
           </Stack>
         </Stack>
       </Collapse>
+      {byDays && (
+        <ServiceByDaysDialog
+          open
+          onClose={() => setByDays(null)}
+          reservation={reservation}
+          services={services}
+          charges={charges.filter((c) => !c.voidedAt)}
+          initialServiceId={byDays.serviceId}
+          onChanged={refresh}
+        />
+      )}
     </Box>
   );
 };
