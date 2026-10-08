@@ -145,6 +145,39 @@ import { RoomDetailsDialog } from "./RoomDetailsDialog";
 import { ReservationDetailsDialog } from "./ReservationDetailsDialog";
 import { RoomBookingHoverCard, type BarHoverHandle } from "./RoomBookingHoverCard";
 import { useStayBalances, type StayBalance, type StayDetails } from "./useStayBalances";
+import { BookingMoveDialog, type BookingMoveTarget } from "./BookingMoveDialog";
+import { moveConflict, shiftDate } from "./bookingMove";
+import { useSnackbar } from "notistack";
+
+/** Перенос брони перетаскиванием полосы: что тянем и куда сейчас указывает курсор. */
+interface BarDrag {
+  item: HotelCalendarItem;
+  /** Индекс строки в ROWS, откуда тянули. */
+  fromRow: number;
+  /** Дата под курсором при нажатии — сдвиг считается от неё (индексы dates едут при подгрузке слева). */
+  grabDate: string;
+  startX: number;
+  startY: number;
+  /** Сдвинули дальше порога — это перетаскивание, а не клик. */
+  moved: boolean;
+  targetRow: number;
+  /** Сдвиг в днях; у заселённого гостя всегда 0 — дату заезда ему не меняют. */
+  offset: number;
+}
+
+/** Ячейка сетки под точкой: у фоновых ячеек data-r (строка ROWS) и data-d (индекс в dates); полоса брони их не заслоняет. */
+const gridCellAt = (x: number, y: number): { row: number; col: number } | null => {
+  for (const el of document.elementsFromPoint(x, y)) {
+    const { r, d } = (el as HTMLElement).dataset ?? {};
+    if (r != null && d != null) return { row: Number(r), col: Number(d) };
+  }
+  return null;
+};
+
+/** Сдвиг мыши, после которого нажатие на полосе — уже перетаскивание. */
+const BAR_DRAG_THRESHOLD_PX = 6;
+/** Бронь, которую ещё можно двигать: живая, гость не выехал. */
+const MOVABLE_STATUSES = new Set(["draft", "hold", "confirmed"]);
 
 /**
  * Даты подгружаются кусками по CHUNK_DAYS дней (лимит бэка на один запрос
@@ -491,6 +524,10 @@ export const RoomBookingGrid: React.FC = () => {
   const queryClient = useQueryClient();
   // Ссылка «Номера» в пустом состоянии — только тем, у кого есть право на эту страницу.
   const canManageRooms = useCan(PAGE_PERMISSIONS.hotelRooms);
+  // Перетаскивание брони: до заезда — право на брони, заселённого — на заселение (переселение).
+  const canManageReservations = useCan("hotel.reservations.manage");
+  const canMoveStays = useCan("hotel.stays.manage");
+  const { enqueueSnackbar } = useSnackbar();
   const calendarQuery = useInfiniteQuery({
     queryKey: ["hotel", "calendar", property?.id, windowStartStr],
     queryFn: ({ pageParam, signal }) => {
@@ -712,6 +749,11 @@ export const RoomBookingGrid: React.FC = () => {
     startIdx: number;
     endIdx: number;
   } | null>(null);
+  // Перенос брони перетаскиванием полосы (как в Exely) — см. startBarDrag ниже.
+  const [barDrag, setBarDrag] = React.useState<BarDrag | null>(null);
+  // Отпускание после перетаскивания над той же полосой даёт click — карточку тогда не открываем.
+  const suppressBarClickRef = React.useRef(false);
+  const [moveTarget, setMoveTarget] = React.useState<BookingMoveTarget | null>(null);
 
   // Индексы выделения — позиции в dates. Новые куски во время протяжки не
   // запрашиваем, но запрос, уже ушедший до её начала, может вернуться посреди
@@ -1004,6 +1046,112 @@ export const RoomBookingGrid: React.FC = () => {
       const endIdx = clampSelectionEnd(free, cur.startIdx, hoverIdx);
       return endIdx === cur.endIdx ? cur : { ...cur, endIdx };
     });
+
+  // ── Перенос брони перетаскиванием (заказчик: «как в Exely») ─────────────────
+  // Нажатие на полосе мышью и сдвиг дальше порога — перетаскивание: «призрак»
+  // идёт по ячейкам (строка — номер, столбец — день), отпускание над свободным
+  // местом открывает подтверждение (BookingMoveDialog). Без сдвига — обычный
+  // клик, карточка брони. Только мышь: на сенсорном экране жест — прокрутка.
+  // Заселённого гостя можно только переселить: по горизонтали он не едет.
+  const canDragItem = (it: HotelCalendarItem) =>
+    MOVABLE_STATUSES.has(it.reservationStatus) &&
+    (it.stayStatus === "expected" ? canManageReservations : it.stayStatus === "checked_in" ? canMoveStays : false);
+
+  const startBarDrag = (e: React.PointerEvent, it: HotelCalendarItem, fromRow: number) => {
+    if (e.pointerType !== "mouse" || e.button !== 0 || !canDragItem(it)) return;
+    const cell = gridCellAt(e.clientX, e.clientY);
+    if (!cell || !dates[cell.col]) return;
+    setBarDrag({
+      item: it,
+      fromRow,
+      grabDate: dates[cell.col].format("YYYY-MM-DD"),
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      targetRow: fromRow,
+      offset: 0,
+    });
+  };
+
+  /** Куда сейчас ляжет бронь и свободно ли там: null — не на строку номера. */
+  const dropTarget = (drag: BarDrag) => {
+    const row = ROWS[drag.targetRow];
+    if (!row || row.kind !== "room") return null;
+    const checkIn = shiftDate(drag.item.checkIn, drag.offset);
+    const checkOut = shiftDate(drag.item.checkOut, drag.offset);
+    const conflict = moveConflict(
+      { checkIn, checkOut },
+      itemsByRoomId.get(row.room.id) ?? [],
+      blocksByRoomId.get(row.room.id) ?? [],
+      drag.item.itemId,
+    );
+    return { room: row.room, checkIn, checkOut, conflict, same: row.room.id === drag.item.roomId && drag.offset === 0 };
+  };
+
+  React.useLayoutEffect(() => {
+    if (!barDrag) return;
+    const onMove = (e: PointerEvent) => {
+      if (!barDrag.moved && Math.hypot(e.clientX - barDrag.startX, e.clientY - barDrag.startY) < BAR_DRAG_THRESHOLD_PX) return;
+      if (!barDrag.moved) hoverRef.current?.hide();
+      // У края — прокрутка на день или строку, чтобы дотянуть за пределы видимого.
+      if (scrollEl) {
+        const box = scrollEl.getBoundingClientRect();
+        const edge = 32;
+        if (e.clientX > box.right - edge) scrollEl.scrollLeft += dayColWidth;
+        else if (e.clientX < box.left + ROOM_COL_WIDTH + edge) scrollEl.scrollLeft -= dayColWidth;
+        if (e.clientY > box.bottom - edge) scrollEl.scrollTop += M.row;
+        else if (e.clientY < box.top + M.month + M.dayHeader + edge) scrollEl.scrollTop -= M.row;
+      }
+      const cell = gridCellAt(e.clientX, e.clientY);
+      const checkedIn = barDrag.item.stayStatus === "checked_in";
+      setBarDrag((cur) => {
+        if (!cur) return cur;
+        if (!cell || !dates[cell.col]) return cur.moved ? cur : { ...cur, moved: true };
+        const offset = checkedIn ? 0 : dates[cell.col].diff(dayjs(cur.grabDate), "day");
+        return cur.moved && cur.targetRow === cell.row && cur.offset === offset ? cur : { ...cur, moved: true, targetRow: cell.row, offset };
+      });
+    };
+    const onUp = () => {
+      const drag = barDrag;
+      setBarDrag(null);
+      if (!drag.moved) return;
+      suppressBarClickRef.current = true;
+      window.setTimeout(() => {
+        suppressBarClickRef.current = false;
+      }, 0);
+      const target = dropTarget(drag);
+      if (!target || target.same) return;
+      if (target.conflict) {
+        enqueueSnackbar(target.conflict === "block" ? `№${target.room.number} снят с продажи на эти даты` : `№${target.room.number} занят на эти даты`, {
+          variant: "warning",
+        });
+        return;
+      }
+      setMoveTarget({
+        item: drag.item,
+        fromRoomNumber: drag.item.roomId != null ? (calendar?.rooms.find((r) => r.id === drag.item.roomId)?.number ?? null) : null,
+        toRoom: { id: target.room.id, number: target.room.number, roomTypeId: target.room.roomTypeId },
+        newCheckIn: target.checkIn,
+        newCheckOut: target.checkOut,
+      });
+    };
+    const cancel = () => setBarDrag(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cancel();
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("blur", cancel);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("blur", cancel);
+    };
+    // dropTarget и прочее — из того же рендера, что и barDrag: перерегистрация на каждый шаг.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barDrag, dates, scrollEl, dayColWidth, M]);
 
   // Подсказка в тулбаре, пока идёт выделение: номер, период и число ночей.
   const dragHint = (() => {
@@ -1474,8 +1622,13 @@ export const RoomBookingGrid: React.FC = () => {
       colorMode === "source"
         ? (status === "arrived" ? 0.26 : status === "completed" ? 0.1 : 0.17) * (dark ? 1.6 : 1)
         : barFillAlpha(status, dark);
-    const hover = (el: HTMLElement) =>
+    const hover = (el: HTMLElement) => {
+      // Пока тянут другую бронь, карточки при наведении не мешают.
+      if (barDrag) return;
       hoverRef.current?.show(el, { item: it, roomNumber, roomTypeName: roomTypeName(it.roomTypeId), balance: bal, checkInTime, checkOutTime });
+    };
+    const draggable = canDragItem(it);
+    const dragging = barDrag?.moved === true && barDrag.item.itemId === it.itemId;
     return (
       <Box
         key={it.itemId}
@@ -1483,9 +1636,12 @@ export const RoomBookingGrid: React.FC = () => {
         component="button"
         type="button"
         onClick={() => {
+          if (suppressBarClickRef.current) return;
           hoverRef.current?.hide();
           dialogsRef.current?.openReservation(it.reservationId, it.itemId);
         }}
+        onPointerDown={(e: React.PointerEvent) => startBarDrag(e, it, gridRow - 3)}
+        title={draggable ? "Клик — карточка брони, зажмите и перетащите — на другую дату или номер" : undefined}
         onMouseEnter={(e: React.MouseEvent<HTMLElement>) => hover(e.currentTarget)}
         onMouseLeave={() => hoverRef.current?.hide()}
         onFocus={(e: React.FocusEvent<HTMLElement>) => hover(e.currentTarget)}
@@ -1508,7 +1664,7 @@ export const RoomBookingGrid: React.FC = () => {
           justifyContent: labelMode === "name" ? "flex-start" : "center",
           overflow: "hidden",
           font: "inherit",
-          cursor: "pointer",
+          cursor: barDrag?.moved ? "grabbing" : draggable ? "grab" : "pointer",
           transition: "box-shadow .12s, opacity .15s",
           "&:hover": {
             borderLeftColor: isDraft ? undefined : color,
@@ -1517,6 +1673,8 @@ export const RoomBookingGrid: React.FC = () => {
           },
           // Поиск: найденное — в кольце, остальное приглушено, но кликается.
           ...(filterActive ? (matchedIds.has(it.itemId) ? { boxShadow: `0 0 0 2px ${theme.palette.primary.main}` } : { opacity: 0.22 }) : {}),
+          // Тянем эту бронь — на старом месте бледный след, сама она — «призрак» (ниже).
+          ...(dragging ? { opacity: 0.3 } : {}),
         }}
       >
         {showIcon && <StatusIcon sx={{ fontSize: 14, color: iconColor, flexShrink: 0 }} />}
@@ -1592,8 +1750,8 @@ export const RoomBookingGrid: React.FC = () => {
                   display: "grid",
                   gridTemplateColumns: `${ROOM_COL_WIDTH}px repeat(${dates.length}, ${dayColWidth}px)`,
                   width: ROOM_COL_WIDTH + dates.length * dayColWidth,
-                  // Пока тянем период, браузер не должен выделять текст под курсором.
-                  userSelect: dragSel ? "none" : undefined,
+                  // Пока тянем период или бронь, браузер не должен выделять текст под курсором.
+                  userSelect: dragSel || barDrag ? "none" : undefined,
                   // Фоновые ячейки сетки — классами, а не sx на каждой ячейке.
                   "& .rbg-c": {
                     height: M.row,
@@ -1952,8 +2110,9 @@ export const RoomBookingGrid: React.FC = () => {
                           const inSelection = selection != null && i >= selection[0] && i <= selection[1];
                           const tone = inSelection ? " rbg-s" : i === todayIdx ? " rbg-t" : info.weekend ? " rbg-w" : "";
                           const style = { gridRow, gridColumn: i + 2 };
+                          // data-r / data-d — строка и день под курсором при перетаскивании брони (gridCellAt).
                           if (!freeMask[i]) {
-                            cells.push(<div key={info.str} className={`rbg-c${tone}`} style={style} />);
+                            cells.push(<div key={info.str} className={`rbg-c${tone}`} style={style} data-r={rowIdx} data-d={i} />);
                             continue;
                           }
                           const cellKey = `${rowIdx}:${i}`;
@@ -1963,6 +2122,8 @@ export const RoomBookingGrid: React.FC = () => {
                               type="button"
                               className={`rbg-c rbg-f${tone}`}
                               style={style}
+                              data-r={rowIdx}
+                              data-d={i}
                               data-cell={cellKey}
                               tabIndex={cellKey === entryCell ? 0 : -1}
                               aria-label={`Быстрая бронь: номер ${room.number}, ${info.label}`}
@@ -1992,6 +2153,49 @@ export const RoomBookingGrid: React.FC = () => {
                   const roomNumber = row.kind === "room" ? row.room.number : null;
                   return items.map((it) => renderBar(it, rowIdx + 3, roomNumber));
                 })}
+
+                {/* «Призрак» переносимой брони: куда она ляжет; красный — место занято. */}
+                {barDrag?.moved &&
+                  (() => {
+                    const target = dropTarget(barDrag);
+                    const newIn = shiftDate(barDrag.item.checkIn, barDrag.offset);
+                    const newOut = shiftDate(barDrag.item.checkOut, barDrag.offset);
+                    const startCol = Math.max(0, dayjs(newIn).diff(gridStart, "day"));
+                    const endCol = Math.min(dates.length, dayjs(newOut).diff(gridStart, "day"));
+                    if (endCol <= startCol) return null;
+                    const ok = target != null && !target.conflict;
+                    const tone = ok ? theme.palette.primary.main : theme.palette.error.main;
+                    const text = !target
+                      ? "сюда нельзя"
+                      : target.conflict
+                        ? "занято"
+                        : `№${target.room.number} · ${formatHotelDateRange(newIn, newOut)}`;
+                    return (
+                      <Box
+                        aria-hidden
+                        sx={{
+                          gridRow: barDrag.targetRow + 3,
+                          gridColumn: `${startCol + 2} / ${endCol + 2}`,
+                          alignSelf: "center",
+                          height: M.bar,
+                          mx: "3px",
+                          px: 0.75,
+                          zIndex: 2,
+                          borderRadius: M.radius,
+                          border: `2px dashed ${tone}`,
+                          bgcolor: alpha(tone, 0.16),
+                          pointerEvents: "none",
+                          display: "flex",
+                          alignItems: "center",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Typography variant="caption" noWrap sx={{ color: tone, fontWeight: 700, fontSize: M.barFont }}>
+                          {barDrag.item.customerName || `№${barDrag.item.reservationNumber}`} · {text}
+                        </Typography>
+                      </Box>
+                    );
+                  })()}
 
                 {/* Снятые с продажи ночи — серая штриховка на всю ячейку; клик открывает
                     карточку номера, где блок можно снять («Вернуть в продажу»). */}
@@ -2257,6 +2461,7 @@ export const RoomBookingGrid: React.FC = () => {
       </BoardShell>
 
       <GridDialogs ref={dialogsRef} roomTypes={roomTypes} />
+      {moveTarget && <BookingMoveDialog target={moveTarget} roomTypeName={roomTypeName} onClose={() => setMoveTarget(null)} />}
       <RoomBookingHoverCard ref={hoverRef} />
     </Box>
   );
