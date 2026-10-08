@@ -339,9 +339,11 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
     }
   };
 
-  const handleCheckIn = async (force = false) => {
+  // skipDocument — «Заселить без паспорта» в панели документа. Повтор с force идёт
+  // после ответа сервера на заселение, то есть документ уже решён — не спрашиваем снова.
+  const handleCheckIn = async (force = false, skipDocument = false) => {
     if (!reservation || !item) return;
-    if (missingDocumentGuest(item)) {
+    if (!force && !skipDocument && missingDocumentGuest(item)) {
       setCheckInNeedsDocument(true);
       return;
     }
@@ -1046,6 +1048,10 @@ export const ReservationDetailsDialog: React.FC<ReservationDetailsDialogProps> =
                     reservation={reservation}
                     item={item}
                     onCancel={() => setCheckInNeedsDocument(false)}
+                    onSkip={() => {
+                      setCheckInNeedsDocument(false);
+                      void handleCheckIn(false, true);
+                    }}
                     onSaved={() => {
                       setCheckInNeedsDocument(false);
                       setDocumentSaved(true);
