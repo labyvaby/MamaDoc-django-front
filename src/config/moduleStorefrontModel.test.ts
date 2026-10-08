@@ -61,8 +61,10 @@ describe("buildStorefront", () => {
   });
 
   it("never turns a catalog module into a second product with a taken id", () => {
-    // Модуль «lab» уже есть на стенде test, а товар «lab» — «Скоро».
-    expect(build([mod("lab")]).items.filter((i) => i.product.id === "lab")).toHaveLength(1);
+    const lab = build([mod("lab")]).items.filter((i) => i.product.id === "lab");
+    expect(lab).toHaveLength(1);
+    expect(lab[0]).toMatchObject({ status: "available", requestModules: ["lab"] });
+    expect(item(build([mod("lab", true)]), "lab")!.status).toBe("connected");
   });
 
   it("shows a product only when all its modules are in the organization's catalog", () => {
@@ -136,7 +138,7 @@ describe("buildStorefront", () => {
   it("counts connected and available products, leaving upcoming ones out, and lists present categories", () => {
     const view = build([mod("chatwoot", true), mod("deals"), mod("payroll")]);
     expect([view.connectedCount, view.availableCount]).toEqual([1, 2]);
-    expect(view.categories.map((c) => c.id)).toEqual(["clients", "communication", "team", "medicine"]);
+    expect(view.categories.map((c) => c.id)).toEqual(["clients", "communication", "team"]);
   });
 });
 
@@ -207,14 +209,14 @@ describe("inactive products", () => {
 
 describe("upcoming products", () => {
   it("stay out of «Доступно» even once requested", () => {
-    expect(build([], "clinic", [request("lab", [])]).availableCount).toBe(0);
+    expect(build([], "clinic", [request("ai_analyst", [])]).availableCount).toBe(0);
   });
 
   it("are shown as soon, and a request marks them requested", () => {
-    expect(item(build([]), "lab")!.status).toBe("soon");
-    expect(item(build([], "clinic", [request("lab", [])]), "lab")!.status).toBe("requested");
-    expect(itemTarget(item(build([]), "lab")!)).toEqual({
-      productId: "lab", title: "Лаборатория", modules: [], extraRequirementNames: [], kind: "soon",
+    expect(item(build([]), "ai_analyst")!.status).toBe("soon");
+    expect(item(build([], "clinic", [request("ai_analyst", [])]), "ai_analyst")!.status).toBe("requested");
+    expect(itemTarget(item(build([]), "ai_analyst")!)).toEqual({
+      productId: "ai_analyst", title: "ИИ-аналитик", modules: [], extraRequirementNames: [], kind: "soon",
     });
   });
 });
@@ -306,7 +308,7 @@ describe("request targets", () => {
 describe("shelfOrder", () => {
   it("shows what can be connected first, then requested, then upcoming, then connected", () => {
     const view = build([mod("chatwoot", true), mod("deals"), mod("waitlist")], "clinic", [request("waitlist", ["waitlist"])]);
-    expect(shelfOrder(view.items).map((i) => i.product.id)).toEqual(["deals", "waitlist", "ai_analyst", "lab", "chats"]);
+    expect(shelfOrder(view.items).map((i) => i.product.id)).toEqual(["deals", "waitlist", "ai_analyst", "chats"]);
   });
 });
 

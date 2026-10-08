@@ -10,11 +10,6 @@ import {
   Snackbar,
   Stack,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   TextField,
   Typography,
 } from "@mui/material";
@@ -181,7 +176,7 @@ const LabSettingsPage: React.FC = () => {
 
         {form && (
           <>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
                 label="Код организации в ЛИС"
                 size="small"
@@ -204,7 +199,14 @@ const LabSettingsPage: React.FC = () => {
               />
             </Stack>
 
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <Box>
+              <Typography variant="subtitle2">Общая учётная запись ЛИС</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Используется филиалами без отдельных доступов. Если у каждого филиала
+                своя учётная запись, эти поля можно оставить пустыми.
+              </Typography>
+            </Box>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField
                 label="Логин в ЛИС"
                 size="small"
@@ -212,7 +214,7 @@ const LabSettingsPage: React.FC = () => {
                 onChange={(e) => patch({ lisUsername: e.target.value })}
                 disabled={busy}
                 autoComplete="off"
-                helperText="Учётная запись, выданная лабораторией этой клинике"
+                helperText="Общий логин клиники, если он выдан"
                 sx={{ maxWidth: 320 }}
               />
               <TextField
@@ -254,61 +256,131 @@ const LabSettingsPage: React.FC = () => {
 
             <Box>
               <Typography variant="subtitle2" fontWeight={600}>
-                Точки регистрации по филиалам
+                Подключение филиалов
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Пара «точка регистрации + лаборатория» из ЛИС. Пустые поля — филиал
-                анализы не принимает.
+                Для каждого филиала укажите точку регистрации, лабораторию и его
+                логин с паролем. Пустые идентификаторы — филиал анализы не принимает.
               </Typography>
             </Box>
 
-            <Table size="small" sx={{ maxWidth: 760 }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Филиал</TableCell>
-                  <TableCell>Точка регистрации (registry_id)</TableCell>
-                  <TableCell>Лаборатория (laboratory_id)</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {form.branches.map((row) => (
-                  <TableRow key={row.branchId}>
-                    <TableCell sx={{ fontWeight: 600 }}>{row.branchName}</TableCell>
-                    <TableCell>
-                      <TextField
+            <Stack spacing={3} divider={<Divider />} sx={{ maxWidth: 760 }}>
+              {form.branches.map((row) => (
+                <Stack key={row.branchId} spacing={2}>
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    {row.branchName}
+                  </Typography>
+                  <Box>
+                    <FormControlLabel
+                      control={<Switch checked={row.eveningEnabled} disabled={busy}
+                        onChange={(e) => patchBranch(row.branchId, { eveningEnabled: e.target.checked })} />}
+                      label="Две смены: до 17:00 и с 17:00"
+                    />
+                    <FormHelperText>
+                      {row.eveningEnabled
+                        ? "Автоматически по времени Бишкека. Повторная отправка и печать используют смену исходного заказа."
+                        : "Одна учётная запись на весь день. Доступы второй смены сохраняются при отключении переключателя."}
+                    </FormHelperText>
+                  </Box>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                    <TextField
+                      fullWidth
+                      label={row.eveningEnabled ? "ID регистратора до 17:00" : "ID регистратора в ЛИС"}
+                      size="small"
+                      value={row.lisRegistryId}
+                      onChange={(e) => patchBranch(row.branchId, { lisRegistryId: e.target.value })}
+                      disabled={busy}
+                      inputMode="numeric"
+                      placeholder="не задана"
+                      helperText="ID учётной записи регистратора в ЛИС, а не код пункта приёма"
+                    />
+                    <TextField
+                      fullWidth
+                      label="Лаборатория в ЛИС"
+                      size="small"
+                      value={row.lisLaboratoryId}
+                      onChange={(e) =>
+                        patchBranch(row.branchId, { lisLaboratoryId: e.target.value })
+                      }
+                      disabled={busy}
+                      inputMode="numeric"
+                      placeholder="не задана"
+                    />
+                  </Stack>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                    <TextField
+                      fullWidth
+                      label={row.eveningEnabled ? "Логин до 17:00" : "Логин филиала в ЛИС"}
+                      size="small"
+                      value={row.lisUsername}
+                      onChange={(e) => patchBranch(row.branchId, { lisUsername: e.target.value, clearCredentials: false })}
+                      disabled={busy}
+                      autoComplete="off"
+                      helperText={row.lisUsername ? "Учётная запись этого филиала" : "Без отдельных доступов используется общая учётная запись"}
+                    />
+                    <TextField
+                      fullWidth
+                      label={row.eveningEnabled ? "Пароль до 17:00" : "Пароль филиала в ЛИС"}
+                      size="small"
+                      type="password"
+                      value={row.lisPassword}
+                      onChange={(e) => patchBranch(row.branchId, { lisPassword: e.target.value, clearCredentials: false })}
+                      disabled={busy}
+                      autoComplete="new-password"
+                      placeholder={row.hasPassword ? "сохранён — оставьте пустым" : ""}
+                      helperText={row.hasPassword ? "Пустое поле сохраняет пароль; при смене логина введите его заново" : "Пароль, выданный для этого филиала"}
+                    />
+                  </Stack>
+                  {!row.eveningEnabled && (row.lisUsername || row.hasPassword || row.lisPassword) && (
+                    <Box>
+                      <Button
                         size="small"
-                        value={row.lisRegistryId}
-                        onChange={(e) => patchBranch(row.branchId, { lisRegistryId: e.target.value })}
-                        disabled={busy}
-                        inputMode="numeric"
-                        placeholder="не задана"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        value={row.lisLaboratoryId}
-                        onChange={(e) =>
-                          patchBranch(row.branchId, { lisLaboratoryId: e.target.value })
-                        }
-                        disabled={busy}
-                        inputMode="numeric"
-                        placeholder="не задана"
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {form.branches.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={3}>
-                      <Typography variant="body2" color="text.secondary">
-                        Активных филиалов нет — сначала заведите филиал.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                        disabled={busy || row.eveningEnabled}
+                        onClick={() => patchBranch(row.branchId, {
+                          lisUsername: "", lisPassword: "", hasPassword: false,
+                          clearCredentials: true,
+                        })}
+                      >
+                        Использовать общую учётную запись
+                      </Button>
+                    </Box>
+                  )}
+                  {row.eveningEnabled && (
+                    <Stack spacing={2}>
+                      <Typography variant="subtitle2">Смена с 17:00</Typography>
+                      <TextField fullWidth size="small" label="ID регистратора с 17:00"
+                        value={row.eveningLisRegistryId} inputMode="numeric" disabled={busy}
+                        onChange={(e) => patchBranch(row.branchId, { eveningLisRegistryId: e.target.value })}
+                        helperText="ID регистратора вечерней учётной записи; лаборатория общая для обеих смен" />
+                      <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                        <TextField fullWidth size="small" label="Логин с 17:00" disabled={busy}
+                          value={row.eveningLisUsername} autoComplete="off"
+                          onChange={(e) => patchBranch(row.branchId, { eveningLisUsername: e.target.value, clearEveningCredentials: false })} />
+                        <TextField fullWidth size="small" label="Пароль с 17:00" type="password" disabled={busy}
+                          value={row.eveningLisPassword} autoComplete="new-password"
+                          onChange={(e) => patchBranch(row.branchId, { eveningLisPassword: e.target.value, clearEveningCredentials: false })}
+                          placeholder={row.eveningHasPassword ? "сохранён — оставьте пустым" : ""}
+                          helperText={row.eveningHasPassword ? "Пустое поле сохраняет пароль; при смене логина введите его заново" : "Пароль вечерней учётной записи"} />
+                      </Stack>
+                    </Stack>
+                  )}
+                  {!row.eveningEnabled && (row.eveningLisUsername || row.eveningHasPassword || row.eveningLisPassword) && (
+                    <Box>
+                      <Button size="small" disabled={busy} onClick={() => patchBranch(row.branchId, {
+                        eveningLisUsername: "", eveningLisPassword: "", eveningHasPassword: false,
+                        clearEveningCredentials: true,
+                      })}>Удалить доступы второй смены</Button>
+                      <FormHelperText>Старые заказы этой смены потребуют восстановления доступов для повтора или печати.</FormHelperText>
+                    </Box>
+                  )}
+                </Stack>
+              ))}
+              {form.branches.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  Активных филиалов нет — сначала заведите филиал.
+                </Typography>
+              )}
+            </Stack>
 
             {problem && <Alert severity="warning">{problem}</Alert>}
             {saveError && <Alert severity="error">{saveError}</Alert>}
