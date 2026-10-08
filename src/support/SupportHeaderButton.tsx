@@ -4,6 +4,7 @@ import BugReportOutlined from "@mui/icons-material/BugReportOutlined";
 
 import { subtleBg } from "../theme/uiHelpers";
 import { useSupportReport } from "./SupportReportProvider";
+import { useSupportAccess } from "./useSupport";
 
 /**
  * Кнопка-жук в шапке: «Сообщить о проблеме» с любой страницы.
@@ -14,6 +15,9 @@ import { useSupportReport } from "./SupportReportProvider";
  */
 export const SupportHeaderButton: React.FC = () => {
   const { openReport, preparing } = useSupportReport();
+  const { canCreate } = useSupportAccess();
+  // Нет support.create или модуль выключен — кнопки нет.
+  if (!canCreate) return null;
   return (
     <Tooltip title="Сообщить о проблеме">
       <span>

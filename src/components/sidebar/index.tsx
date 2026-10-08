@@ -32,7 +32,7 @@ import { useT } from "../../i18n/VerticalProvider";
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import PaidOutlined from "@mui/icons-material/PaidOutlined";
 import SupportAgentOutlined from "@mui/icons-material/SupportAgentOutlined";
-import { useSupportBadge } from "../../support/useSupport";
+import { useSupportAccess, useSupportBadge } from "../../support/useSupport";
 import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";
 import PhoneInTalkOutlined from "@mui/icons-material/PhoneInTalkOutlined";
@@ -1415,7 +1415,10 @@ const SidebarSecondary: React.FC = () => {
 
 /** Пункт «Поддержка» с бейджем: число новых ответов (разработчику — ещё и очередь). */
 const SupportMenuEntry: React.FC<{ collapsed?: boolean }> = ({ collapsed }) => {
+  const { canView } = useSupportAccess();
   const badge = useSupportBadge();
+  // Модуль выключен у организации или у роли нет support.view — пункта нет.
+  if (!canView) return null;
   return (
     <SidebarMenuItem
       to="/support"

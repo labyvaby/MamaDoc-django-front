@@ -303,6 +303,11 @@ export const STOREFRONT_INCLUDED: StorefrontIncluded[] = [
     id: "achievements", title: "Мои достижения", icon: "trophy", tone: "amber", module: "achievements", hiddenWhenOff: true,
     tagline: "Бейджи сотрудников и клиники",
   },
+  {
+    id: "support", title: "Поддержка", icon: "chats", tone: "violet", module: "support",
+    tagline: "Ошибки, идеи и вопросы разработчикам — со снимком экрана, ответ приходит в CRM",
+    parts: ["Сообщить о проблеме", "Предложить идею", "Мои обращения"],
+  },
 ];
 
 /** Ядро платформы: в каталог не попадает, но и на продажу не выставляется. */

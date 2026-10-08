@@ -13,6 +13,7 @@ import {
 } from "../pwa/staleBuildRecovery";
 import { createSupportTicket } from "../api/support";
 import { buildAutoDescription } from "../support/autoDescription";
+import { IfCanReport } from "../support/RequireSupportAccess";
 import {
   collectDiagnostics,
   getActionsForDescription,
@@ -170,6 +171,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </Button>
             </Box>
 
+            <IfCanReport>
             <Box sx={{ mt: 3 }}>
               {this.state.report === "sent" ? (
                 <Box
@@ -212,6 +214,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 </>
               )}
             </Box>
+            </IfCanReport>
           </Paper>
         </Box>
       </Container>

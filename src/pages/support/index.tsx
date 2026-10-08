@@ -42,7 +42,7 @@ import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSupportReport } from "../../support/SupportReportProvider";
 import { CATEGORY_LABEL, CATEGORY_TONE, STATUS_LABEL, toneColors, type SupportTone } from "../../support/meta";
-import { useSupportSummary } from "../../support/useSupport";
+import { useSupportAccess, useSupportSummary } from "../../support/useSupport";
 import { AnimatedNumber, CATEGORY_ICON } from "../../support/ui";
 import { LoadMore, TicketCard, TicketListSkeleton, TicketsEmpty } from "./TicketList";
 import TicketDetail from "./TicketDetail";
@@ -61,16 +61,19 @@ interface TileProps {
   active?: boolean;
   onClick: () => void;
   index: number;
+  /** Телефон: плитка в одну строку для ленты с прокруткой вбок. */
+  dense?: boolean;
 }
 
 /** Плитка-счётчик: число «набегает», по нажатию включает соответствующий фильтр. */
-const Tile: React.FC<TileProps> = ({ label, value, tone, icon, active, onClick, index }) => {
+const Tile: React.FC<TileProps> = ({ label, value, tone, icon, active, onClick, index, dense }) => {
   const reduceMotion = useReducedMotion();
   return (
     <MotionBox
       initial={reduceMotion ? false : { opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay: 0.08 * index, ease: [0.22, 1, 0.36, 1] }}
+      sx={dense ? { flexShrink: 0, scrollSnapAlign: "start" } : undefined}
     >
       <ButtonBase
         onClick={onClick}
@@ -82,10 +85,12 @@ const Tile: React.FC<TileProps> = ({ label, value, tone, icon, active, onClick, 
             display: "flex",
             alignItems: "center",
             justifyContent: "flex-start",
-            gap: 1.5,
-            p: 1.5,
-            borderRadius: "16px",
+            gap: dense ? 1 : 1.5,
+            p: dense ? 1 : 1.5,
+            pr: dense ? 1.5 : 1.5,
+            borderRadius: dense ? "14px" : "16px",
             textAlign: "left",
+            whiteSpace: dense ? "nowrap" : undefined,
             border: `1px solid ${active ? c.main : t.palette.divider}`,
             background: active
               ? `linear-gradient(135deg, ${c.soft}, ${c.softer})`
@@ -104,10 +109,11 @@ const Tile: React.FC<TileProps> = ({ label, value, tone, icon, active, onClick, 
           sx={(t) => {
             const c = toneColors(t, tone);
             return {
-              width: 44,
-              height: 44,
+              width: dense ? 32 : 44,
+              height: dense ? 32 : 44,
               flexShrink: 0,
               borderRadius: "30%",
+              "& svg": dense ? { fontSize: 18 } : undefined,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -118,8 +124,11 @@ const Tile: React.FC<TileProps> = ({ label, value, tone, icon, active, onClick, 
         >
           {icon}
         </Box>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+        <Box sx={dense ? { minWidth: 0, display: "flex", alignItems: "baseline", gap: 0.75 } : { minWidth: 0 }}>
+          <Typography
+            variant={dense ? "subtitle1" : "h5"}
+            sx={{ fontWeight: 800, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}
+          >
             <AnimatedNumber value={value} />
           </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.25 }}>
@@ -139,6 +148,7 @@ const SupportPage: React.FC = () => {
   const split = useMediaQuery(theme.breakpoints.up("lg"));
   const phone = useMediaQuery(theme.breakpoints.down("md"));
   const { openReport, preparing } = useSupportReport();
+  const { canCreate } = useSupportAccess();
   const [params, setParams] = useSearchParams();
 
   const summaryQuery = useSupportSummary();
@@ -322,6 +332,32 @@ const SupportPage: React.FC = () => {
       <Box sx={{ width: "100%", maxWidth: 1760, mx: "auto", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {/* ── Верх: приветствие и плитки (сворачиваются, когда открыта деталь) ── */}
         <Collapse in={!detailInPane} timeout={reduceMotion ? 0 : 320} unmountOnExit={false}>
+          {/* Телефон: заголовок уже в шапке — вместо баннера одна строка действий. */}
+          {phone && canCreate && (
+            <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 1, mb: 1.5 }}>
+              <Button
+                variant="contained"
+                disabled={preparing}
+                data-support-trigger=""
+                onClick={() => void openReport({ category: "bug" })}
+                startIcon={<CATEGORY_ICON.bug />}
+                sx={{ textTransform: "none", fontWeight: 700, borderRadius: "12px", minHeight: 44, whiteSpace: "nowrap" }}
+              >
+                Сообщить о проблеме
+              </Button>
+              <Button
+                variant="outlined"
+                disabled={preparing}
+                data-support-trigger=""
+                onClick={() => void openReport({ category: "idea" })}
+                startIcon={<CATEGORY_ICON.idea />}
+                sx={{ textTransform: "none", fontWeight: 600, borderRadius: "12px", minHeight: 44, bgcolor: "background.paper" }}
+              >
+                Идея
+              </Button>
+            </Box>
+          )}
+          {!phone && (
           <Box
             sx={{
               position: "relative",
@@ -394,7 +430,8 @@ const SupportPage: React.FC = () => {
                   </Typography>
                 </Box>
               </Stack>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ flexShrink: 0 }}>
+              {canCreate && (
+              <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
                 <Button
                   variant="contained"
                   size="large"
@@ -424,38 +461,54 @@ const SupportPage: React.FC = () => {
                   Предложить идею
                 </Button>
               </Stack>
+              )}
             </Stack>
           </Box>
+          )}
 
           <Box
-            sx={{
-              display: "grid",
-              gap: 1.5,
-              mb: 2,
-              gridTemplateColumns: {
-                xs: "repeat(2, minmax(0, 1fr))",
-                md: `repeat(${Math.min(tiles.length, 4)}, minmax(0, 1fr))`,
-              },
-            }}
+            sx={
+              phone
+                ? {
+                    // Лента в одну строку: четыре плитки 2×2 съедали полэкрана.
+                    display: "flex",
+                    gap: 1,
+                    mb: 1.5,
+                    mx: -0.5,
+                    px: 0.5,
+                    overflowX: "auto",
+                    scrollSnapType: "x proximity",
+                    scrollbarWidth: "none",
+                    "&::-webkit-scrollbar": { display: "none" },
+                  }
+                : {
+                    display: "grid",
+                    gap: 1.5,
+                    mb: 2,
+                    gridTemplateColumns: `repeat(${Math.min(tiles.length, 4)}, minmax(0, 1fr))`,
+                  }
+            }
           >
             {tiles.map((tile, index) => (
-              <Tile key={tile.label} {...tile} index={index} />
+              <Tile key={tile.label} {...tile} index={index} dense={phone} />
             ))}
           </Box>
         </Collapse>
 
         {/* ── Фильтры ─────────────────────────────────────────────────── */}
         <Stack spacing={1.25} sx={{ mb: 1.5 }}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} alignItems={{ xs: "stretch", sm: "center" }}>
-            <Box sx={{ minWidth: 0, maxWidth: "100%", overflowX: "auto" }}>
+          {/* md, а не sm: sm в этой теме — 360 px, и на телефоне вкладки
+              делили строку с поиском и обрезались. */}
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.25} alignItems={{ xs: "stretch", md: "center" }}>
+            <Box sx={{ minWidth: 0, maxWidth: "100%", overflowX: "auto", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
               <SegmentedTabs tabs={tabs} value={statusOverride ? "all" : tab} onChange={pickTab} layoutId="support-tabs" />
             </Box>
             <TextField
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск по тексту или номеру (SUP-12)"
+              placeholder={phone ? "Поиск или номер SUP-12" : "Поиск по тексту или номеру (SUP-12)"}
               size="small"
-              sx={{ flex: 1, minWidth: { sm: 220 }, maxWidth: { sm: 420 }, "& .MuiOutlinedInput-root": { borderRadius: "12px" } }}
+              sx={{ flex: 1, minWidth: { md: 220 }, maxWidth: { md: 420 }, "& .MuiOutlinedInput-root": { borderRadius: "12px" } }}
               slotProps={{
                 input: {
                   startAdornment: (
@@ -475,7 +528,26 @@ const SupportPage: React.FC = () => {
             />
           </Stack>
 
-          <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap flexWrap="wrap">
+          <Stack
+            direction="row"
+            spacing={0.75}
+            alignItems="center"
+            useFlexGap
+            flexWrap={phone ? "nowrap" : "wrap"}
+            sx={
+              phone
+                ? {
+                    // Телефон: чипы лентой, иначе они занимали три строки над списком.
+                    overflowX: "auto",
+                    mx: -0.5,
+                    px: 0.5,
+                    scrollbarWidth: "none",
+                    "&::-webkit-scrollbar": { display: "none" },
+                    "& > *": { flexShrink: 0 },
+                  }
+                : undefined
+            }
+          >
             {CATEGORIES.map((item) => {
               const selected = category === item;
               const Icon = CATEGORY_ICON[item];
@@ -621,7 +693,11 @@ const SupportPage: React.FC = () => {
                 </Button>
               </Box>
             ) : tickets.length === 0 ? (
-              <TicketsEmpty filtered={hasFilters || tab !== "open"} onReport={() => void openReport({ category: "bug" })} onReset={() => { resetFilters(); setTab("all"); }} />
+              <TicketsEmpty
+                filtered={hasFilters || tab !== "open"}
+                onReport={canCreate ? () => void openReport({ category: "bug" }) : undefined}
+                onReset={() => { resetFilters(); setTab("all"); }}
+              />
             ) : (
               <>
                 <Box
