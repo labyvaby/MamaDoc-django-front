@@ -172,7 +172,8 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
           блок (обновить, «Установить пароль», аватар) помещается в треть —
           заголовок ровно по центру шапки; когда шире — сдвигается, но не
           наезжает и при нехватке места режется многоточием. На телефоне —
-          прежнее абсолютное центрирование. */}
+          гибкая середина между группами: абсолютное центрирование по экрану
+          загоняло длинный заголовок («Поддержка») под кнопки справа. */}
       <Toolbar
         sx={{
           minHeight: { xs: 56, sm: 64 },
@@ -214,12 +215,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
 
         {/* Центр: Заголовок страницы */}
         <Box sx={{
-          position: { xs: "absolute", md: "static" },
-          left: { xs: "50%", md: "auto" },
-          transform: { xs: "translateX(-50%)", md: "none" },
-          // Центр по экрану, а справа три круглые кнопки (~132 px): без
-          // симметричного запаса длинный заголовок («Поддержка») заезжал под них.
-          maxWidth: { xs: "calc(100% - 264px)", md: "none" },
+          flex: { xs: 1, md: "initial" },
           minWidth: 0,
           display: "flex",
           justifyContent: "center",
@@ -230,7 +226,7 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
             variant="subtitle1"
             sx={{
               fontWeight: 700,
-              fontSize: { xs: "1.125rem", md: "1.5rem" },
+              fontSize: { xs: "1.25rem", md: "1.5rem" },
               color: "text.primary",
               minWidth: 0,
               whiteSpace: "nowrap",
@@ -243,9 +239,6 @@ export const Header: React.FC<RefineThemedLayoutHeaderProps> = ({
             {title}
           </Typography>
         </Box>
-
-        {/* Распорка только для flex-режима (xs/sm); в сетке колонки заданы явно. */}
-        <Box sx={{ flex: 1, display: { xs: "block", md: "none" } }} />
 
         {/* Правая часть: Refresh + Avatar */}
         <Stack
