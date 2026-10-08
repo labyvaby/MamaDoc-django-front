@@ -274,7 +274,7 @@ const compactMoney = (v: number) => Math.round(v).toLocaleString("ru-RU");
 const SOURCE_LEGEND: [string, string][] = [
   ["direct", "Сайт"],
   ["phone", "Звонок"],
-  ["walk_in", "С улицы"],
+  ["walk_in", "От стойки"],
   ["ota", "OTA"],
   ["agent", "Агент"],
   ["corporate", "Корп. клиент"],
