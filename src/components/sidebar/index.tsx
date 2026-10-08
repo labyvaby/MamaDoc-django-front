@@ -31,7 +31,6 @@ import { useT } from "../../i18n/VerticalProvider";
 
 import HomeOutlined from "@mui/icons-material/HomeOutlined";
 import PaidOutlined from "@mui/icons-material/PaidOutlined";
-import SupportAgentOutlined from "@mui/icons-material/SupportAgentOutlined";
 import { useSupportAccess, useSupportBadge } from "../../support/useSupport";
 import ApartmentOutlined from "@mui/icons-material/ApartmentOutlined";
 import SearchOutlined from "@mui/icons-material/SearchOutlined";

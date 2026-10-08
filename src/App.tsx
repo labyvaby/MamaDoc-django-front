@@ -1276,17 +1276,27 @@ function App() {
                                 </RequirePermission>
                               }
                             />
-                            {/* Поддержка — модуль `support` + право support.view;
-                                разработчик платформы проходит всегда. Что видно
-                                сверх своих обращений, решает бэкенд. */}
+                            {/* Поддержка — модуль `support` + право support.view.
+                                Запасной путь — RequireSupportAccess: разработчик
+                                платформы проходит и там, где модуль выключен.
+                                Что видно сверх своих обращений, решает бэкенд. */}
                             <Route
                               path="support"
                               element={
-                                <RequireSupportAccess>
+                                <RequirePermission
+                                  permission={PAGE_PERMISSIONS.support}
+                                  fallback={
+                                    <RequireSupportAccess>
+                                      <Suspense fallback={<LinearProgress />}>
+                                        <SupportPage />
+                                      </Suspense>
+                                    </RequireSupportAccess>
+                                  }
+                                >
                                   <Suspense fallback={<LinearProgress />}>
                                     <SupportPage />
                                   </Suspense>
-                                </RequireSupportAccess>
+                                </RequirePermission>
                               }
                             />
                             {/* Лист ожидания — вместе с флагом
