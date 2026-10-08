@@ -49,6 +49,7 @@ import { formatHours, longDate, markableCodes, toNumber } from "./model";
 const SOURCE_LABEL: Record<string, string> = {
   manual: "Ручная отметка",
   skud: "По данным СКУД",
+  appointments: "По приёмам — отметок СКУД нет",
   schedule: "По расписанию",
   holiday: "Праздничный день",
 };
@@ -294,6 +295,10 @@ export const CellDrawer: React.FC<CellDrawerProps> = ({
                 <Typography variant="caption" color="text.secondary">
                   {detail.cell.source ? SOURCE_LABEL[detail.cell.source] : "Нет отметок СКУД и ручных отметок"}
                   {detail.mark?.closesBooking ? " · запись клиентов закрыта" : ""}
+                  {detail.cell.visits
+                    ? ` · приёмы ${detail.cell.visits.start}–${detail.cell.visits.end} (${detail.cell.visits.count})`
+                    : ""}
+                  {(detail.cell.flags ?? []).includes("visits_outside") ? " · приём вне смены СКУД" : ""}
                 </Typography>
               </Box>
             </Stack>

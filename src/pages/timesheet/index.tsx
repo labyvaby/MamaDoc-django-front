@@ -66,7 +66,7 @@ import { RequestsDrawer } from "./RequestsDrawer";
 import { SelectionBar } from "./SelectionBar";
 import { TimesheetCharts } from "./TimesheetCharts";
 import { TimesheetGrid, type TotalsColumn } from "./TimesheetGrid";
-import { codeFill, codeInk } from "./codeColors";
+import { codeFill, codeInk, VISITS_COLOR, VISITS_OUTSIDE_COLOR } from "./codeColors";
 import { TimesheetKpis } from "./TimesheetKpis";
 import { TimesheetSettingsDialog } from "./TimesheetSettingsDialog";
 import { buildTimesheetXlsx, timesheetFileName } from "./exportTimesheetXlsx";
@@ -77,7 +77,6 @@ import {
   currentMonth,
   dayDate,
   describeSelection,
-  formatHours,
   hotkeyLabel,
   markableCodes,
   MONTH_NAMES_GENITIVE,
@@ -505,6 +504,14 @@ const TimesheetPage: React.FC = () => {
         <Box sx={{ width: 6, height: 6, ml: 1, borderRadius: "50%", bgcolor: "warning.main" }} />
         <Typography variant="caption" fontWeight={700} noWrap>
           заявка
+        </Typography>
+        <Box sx={{ width: 6, height: 6, ml: 1, borderRadius: "50%", bgcolor: VISITS_COLOR }} />
+        <Typography variant="caption" fontWeight={700} noWrap>
+          по приёмам
+        </Typography>
+        <Box sx={{ width: 6, height: 6, ml: 1, borderRadius: "50%", bgcolor: VISITS_OUTSIDE_COLOR }} />
+        <Typography variant="caption" fontWeight={700} noWrap>
+          приём вне смены
         </Typography>
       </Stack>
     </Stack>

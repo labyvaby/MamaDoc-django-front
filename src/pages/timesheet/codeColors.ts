@@ -14,3 +14,8 @@ export function codeInk(theme: Theme, color: string): string {
 export function codeFill(theme: Theme, color: string, strength = 1): string {
   return alpha(color, (theme.palette.mode === "dark" ? 0.26 : 0.17) * strength);
 }
+
+/** Точка «часы по приёмам» (СКУД-отметок нет) в ячейке и легенде. */
+export const VISITS_COLOR = "#14b8a6";
+/** Точка «приём вне смены СКУД» — забыли отметить уход. */
+export const VISITS_OUTSIDE_COLOR = "#f97316";

@@ -290,6 +290,7 @@ const MyTimesheetPage: React.FC = () => {
                           [
                             code?.name ?? (requested ? "Пропуск — заявка подана, ждёт решения" : missing ? "Пропуск" : cell.state === "pending" ? "Сегодня — ещё можно отметиться" : cell.state === "planned" ? "Рабочий день по графику" : ""),
                             cell.hours ? `${formatHours(cell.hours)} ч` : "",
+                            cell.source === "appointments" ? "часы по приёмам" : "",
                             day?.holiday ?? "",
                             clickable ? "нажмите, чтобы исправить" : "",
                           ]

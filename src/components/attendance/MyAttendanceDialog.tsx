@@ -167,6 +167,7 @@ export const MyAttendanceDialog: React.FC<MyAttendanceDialogProps> = ({ open, on
                             title={
                               `${dateShort(date)}: ${code?.name ?? (requested ? "заявка подана, ждёт решения" : cell.state === "missing" ? "пропуск" : cell.state === "pending" ? "ещё можно отметиться" : "нет данных")}` +
                               (cell.hours ? ` · ${formatHours(cell.hours)} ч` : "") +
+                              (cell.source === "appointments" ? " · по приёмам" : "") +
                               (clickable ? " — нажмите, чтобы исправить" : "")
                             }
                           >

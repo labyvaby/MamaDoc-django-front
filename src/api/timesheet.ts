@@ -15,9 +15,16 @@ import { apiRequest } from "./client";
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export type TimesheetCategory = "work" | "rest" | "leave" | "absence";
-export type TimesheetCellSource = "manual" | "skud" | "schedule" | "holiday";
+export type TimesheetCellSource = "manual" | "skud" | "appointments" | "schedule" | "holiday";
 export type TimesheetCellState = "missing" | "pending" | "planned";
-export type TimesheetCellFlag = "holiday" | "open" | "anomalous" | "comment" | "request";
+export type TimesheetCellFlag = "holiday" | "open" | "anomalous" | "comment" | "request" | "visits_outside";
+
+/** Приёмы сотрудника за день: первый, последний и сколько (без отмен и неявок). */
+export interface TimesheetCellVisits {
+  start: string;
+  end: string;
+  count: number;
+}
 export type TimesheetRequestStatus = "pending" | "approved" | "rejected" | "canceled";
 
 export interface TimesheetAccess {
@@ -83,6 +90,7 @@ export interface TimesheetCell {
   overtimeMinutes?: number;
   earlyMinutes?: number;
   flags?: TimesheetCellFlag[];
+  visits?: TimesheetCellVisits | null;
 }
 
 export interface TimesheetTotals {

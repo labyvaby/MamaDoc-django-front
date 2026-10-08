@@ -13,13 +13,14 @@ import type {
 } from "../../api/timesheet";
 import { UserAvatar } from "../../components/ui";
 import { subtleBg, subtleBorder } from "../../theme/uiHelpers";
-import { codeFill, codeInk } from "./codeColors";
+import { codeFill, codeInk, VISITS_COLOR, VISITS_OUTSIDE_COLOR } from "./codeColors";
 import {
   cellKey,
   compactHours,
   formatHours,
   formatMinutes,
   heatLevel,
+  plural,
   toNumber,
   WEEKDAY_SHORT,
   type CellKey,
@@ -238,6 +239,34 @@ const CellView = React.memo(function CellView({
             }}
           />
         )}
+        {cell.source === "appointments" && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: 2,
+              right: 2,
+              width: 5,
+              height: 5,
+              borderRadius: "50%",
+              bgcolor: VISITS_COLOR,
+              boxShadow: `0 0 0 1.5px ${theme.palette.background.paper}`,
+            }}
+          />
+        )}
+        {flags.includes("visits_outside") && (
+          <Box
+            sx={{
+              position: "absolute",
+              bottom: 2,
+              left: 2,
+              width: 5,
+              height: 5,
+              borderRadius: "50%",
+              bgcolor: VISITS_OUTSIDE_COLOR,
+              boxShadow: `0 0 0 1.5px ${theme.palette.background.paper}`,
+            }}
+          />
+        )}
         {flags.includes("request") && (
           <Box
             sx={{
@@ -324,7 +353,12 @@ function CellTooltip({
         : "Ручная отметка",
     );
   } else if (cell.source === "skud") lines.push("Из СКУД");
+  else if (cell.source === "appointments") lines.push("По приёмам: отметок СКУД нет, часы — от первого приёма до конца последнего");
   else if (cell.source === "schedule") lines.push("Из расписания");
+  if (cell.visits) {
+    lines.push(`Приёмы ${cell.visits.start}–${cell.visits.end} · ${plural(cell.visits.count, "приём", "приёма", "приёмов")}`);
+  }
+  if ((cell.flags ?? []).includes("visits_outside")) lines.push("Приём вне смены СКУД — забыли отметить уход?");
   if ((cell.overtimeMinutes ?? 0) > 0) lines.push(`Переработка ${formatMinutes(cell.overtimeMinutes ?? 0)}`);
   if ((cell.earlyMinutes ?? 0) > 0) lines.push(`Ушёл раньше на ${formatMinutes(cell.earlyMinutes ?? 0)}`);
   const flags = cell.flags ?? [];
