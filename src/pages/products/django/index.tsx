@@ -105,6 +105,9 @@ const getStockState = (p: DjangoProduct): StockState => {
   return { label: `${stock} ${unit}`, color: "success", icon: null, out: false, muted: false };
 };
 
+/** Сколько строк списка товаров дорисовывается за раз. */
+const LIST_PAGE = 100;
+
 const DjangoProductsPage: React.FC = () => {
   usePageTitle("Товары");
   const theme = useTheme();
@@ -377,6 +380,33 @@ const DjangoProductsPage: React.FC = () => {
 
   // ── Массовый выбор и действия ──
   const visibleIds = React.useMemo(() => filteredProducts.map((p) => p.id), [filteredProducts]);
+
+  // Строки рисуются порциями: каталог в тысячи карточек (у «Монограм» 6700)
+  // целиком — это десятки тысяч MUI-узлов и секунды на каждый ввод в поиск.
+  // Следующая порция — когда низ списка подходит к краю прокрутки.
+  const [renderLimit, setRenderLimit] = React.useState(LIST_PAGE);
+  const listScrollRef = React.useRef<HTMLDivElement>(null);
+  const listSentinelRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => setRenderLimit(LIST_PAGE), [filteredProducts]);
+  const renderedProducts = React.useMemo(
+    () => filteredProducts.slice(0, renderLimit),
+    [filteredProducts, renderLimit],
+  );
+  const hasMoreRows = renderLimit < filteredProducts.length;
+  React.useEffect(() => {
+    const node = listSentinelRef.current;
+    if (!node || !hasMoreRows) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setRenderLimit((n) => n + LIST_PAGE);
+        }
+      },
+      { root: listScrollRef.current, rootMargin: "600px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMoreRows, renderLimit]);
   // В порядке списка на экране (так же уйдут в Excel), скрытые фильтром — в конце.
   const checkedProducts = React.useMemo(() => {
     const visible = filteredProducts.filter((p) => checkedIds.has(p.id));
@@ -874,7 +904,7 @@ const DjangoProductsPage: React.FC = () => {
                 </Stack>
               )}
 
-              <Box sx={{ overflowY: "auto", flex: 1 }}>
+              <Box ref={listScrollRef} sx={{ overflowY: "auto", flex: 1 }}>
                 {loading ? (
                   <ListLoadingSkeleton rows={6} />
                 ) : filteredProducts.length === 0 ? (
@@ -896,7 +926,7 @@ const DjangoProductsPage: React.FC = () => {
                   />
                 ) : (
                   <Stack spacing={1} sx={{ p: 1.5 }}>
-                    {filteredProducts.map((p) => {
+                    {renderedProducts.map((p) => {
                       const isChecked = checkedIds.has(p.id);
                       const isSelected = selectedProduct?.id === p.id;
                       const stockState = getStockState(p);
@@ -1018,6 +1048,7 @@ const DjangoProductsPage: React.FC = () => {
                         </ButtonBase>
                       );
                     })}
+                    {hasMoreRows && <Box ref={listSentinelRef} sx={{ height: "1px" }} />}
                   </Stack>
                 )}
               </Box>
