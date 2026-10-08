@@ -24,7 +24,7 @@ import CakeOutlined from "@mui/icons-material/CakeOutlined";
 import BadgeOutlined from "@mui/icons-material/BadgeOutlined";
 import AlternateEmailOutlined from "@mui/icons-material/AlternateEmailOutlined";
 import dayjs from "dayjs";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { isProfileTabKey, resolveTabIndex, type ProfileTabKey } from "./profileTabs";
 
 import AddAPhotoOutlined from "@mui/icons-material/AddAPhotoOutlined";
@@ -41,6 +41,8 @@ import EditProfileDrawer, { type ProfileFormValues } from "./EditProfileDrawer";
 import ProfileDocumentsBlock from "./ProfileDocumentsBlock";
 import AchievementsGrid from "../../components/achievements/AchievementsGrid";
 import { InstallAppButton, useInstallPrompt } from "../../pwa";
+import EventAvailableOutlined from "@mui/icons-material/EventAvailableOutlined";
+import { MyAttendanceDialog } from "../../components/attendance/MyAttendanceDialog";
 
 const MotionBox = motion(Box);
 
@@ -175,6 +177,8 @@ const ProfilePage: React.FC = () => {
   const { employee: empFromPerms, role } = usePermissions();
 
   const { can } = useCanChecker();
+  const navigate = useNavigate();
+  const [attendanceOpen, setAttendanceOpen] = React.useState(false);
 
   const [editOpen, setEditOpen] = React.useState(false);
   // Вкладка хранится ключом: «Документы» появляются после загрузки employee и
@@ -257,6 +261,21 @@ const ProfilePage: React.FC = () => {
               <InfoTile icon={<BadgeOutlined />} label="ИНН" value={view.inn} active={Boolean(view.inn)} monospace />
             </Box>
           </AppCard>
+          {hasDjangoEmp && (can("timesheet.view_own") || can("timesheet.view")) && (
+            <AppCard variant="outlined" title="Моя посещаемость">
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }}>
+                <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                  Отметки за последние 30 дней, пропуски и заявки на исправление дня.
+                </Typography>
+                <AppButton variant="contained" onClick={() => setAttendanceOpen(true)}>
+                  Открыть
+                </AppButton>
+                <AppButton variant="outlined" startIcon={<EventAvailableOutlined />} onClick={() => navigate("/my-timesheet")}>
+                  Мой табель
+                </AppButton>
+              </Stack>
+            </AppCard>
+          )}
           <InstallAppCard />
         </Stack>
       ),
@@ -314,6 +333,7 @@ const ProfilePage: React.FC = () => {
       })}
     >
       <PageHeader title="Профиль" showTitle={false} />
+      <MyAttendanceDialog open={attendanceOpen} onClose={() => setAttendanceOpen(false)} />
 
       <Box
         sx={(t) => ({
