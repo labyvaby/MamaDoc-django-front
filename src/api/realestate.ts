@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import { tt } from "../i18n/t";
 import { ApiError, apiRequest } from "./client";
 import * as mock from "./realestate.mocks";
+import { fromRawUnitMedia, type UnitMedia } from "./realtyFiles";
 import { mockDelay } from "./mockUtils";
 import { getAllDjangoEmployees } from "./staff";
 
@@ -239,6 +240,8 @@ export interface UnitDetails extends Unit {
   /** Сначала новые. */
   history: UnitEvent[];
   offers: UnitOffer[];
+  /** План (`images`), рендеры и они же с подписями (`media`) — защищённые ссылки, с 07.10. */
+  media: UnitMedia;
 }
 
 // ─── Команды ───────────────────────────────────────────────────────────────
@@ -452,6 +455,9 @@ export interface RawOffer {
 export interface RawUnitDetails extends RawUnit {
   history: RawEvent[];
   offers: RawOffer[];
+  images?: unknown;
+  renders?: unknown;
+  media?: unknown;
 }
 
 export interface RawLayout {
@@ -607,6 +613,7 @@ export function fromRawUnitDetails(raw: RawUnitDetails, layoutCode = ""): UnitDe
       details: event.details ?? "",
     })),
     offers: raw.offers.map((offer) => ({ ...offer, discount: toMoney(offer.discount) })),
+    media: fromRawUnitMedia(raw),
   };
 }
 

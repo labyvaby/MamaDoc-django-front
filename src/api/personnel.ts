@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { API_BASE, ApiError, apiRequest } from "./client";
 import { realtyHeaders, type RealtyScope } from "./realestate";
 import { fromRawPayslip, type Payslip } from "./salaryPayroll";
 
@@ -14,7 +14,9 @@ import { fromRawPayslip, type Payslip } from "./salaryPayroll";
  *   вопрос бэка №1: это же право есть у прораба (от табеля), поэтому кнопки
  *   карточки фронт дополнительно гейтит MamaDoc-правом `staff.update` /
  *   `staff.create` (как просит гайд);
- * - филиал режет бэк по филиалу сотрудника; деньги — строки → числа.
+ * - филиал режет бэк по филиалу сотрудника; деньги — строки → числа;
+ * - штатное расписание и вакансии (`frontend-new-modules.md` §2, 07.10):
+ *   «Занято» не вводится — бэк считает по сотрудникам с `staffingPositionId`.
  */
 
 const API = "/v2/personnel";
@@ -62,6 +64,8 @@ export interface Employee {
   probationUntil: string | null;
   firedAt: string | null;
   fireReason: string;
+  /** Штатная единица (позиция штатного расписания); `null` — не привязан. */
+  staffingPositionId: number | null;
 }
 
 export interface PersonnelEvent {
@@ -77,7 +81,8 @@ export interface PersonnelEvent {
 export interface EmployeeCard {
   employee: Employee;
   headName: string;
-  documents: { id: number; name: string; url: string }[];
+  /** Трудовой договор, приказы: у бэка `{name, number, date}`, ссылки и id нет (test2, 08.10). */
+  documents: { id: number | null; name: string; number: string; date: string | null; url: string }[];
   events: PersonnelEvent[];
   currentMonth: { month: string; worked: number; workdays: number; vacation: number; sick: number };
 }
@@ -183,6 +188,7 @@ export const fromRawEmployee = (raw: any): Employee => ({
   probationUntil: raw.probationUntil ?? null,
   firedAt: raw.firedAt ?? null,
   fireReason: str(raw.fireReason),
+  staffingPositionId: numOrNull(raw.staffingPositionId),
 });
 
 export const fromRawEvent = (raw: any): PersonnelEvent => ({
@@ -198,7 +204,7 @@ export const fromRawEvent = (raw: any): PersonnelEvent => ({
 export const fromRawCard = (raw: any): EmployeeCard => ({
   employee: fromRawEmployee(raw?.employee ?? raw ?? {}),
   headName: str(raw?.headName),
-  documents: list(raw?.documents).map((d) => ({ id: d.id, name: str(d.name ?? d.title), url: str(d.url ?? d.fileUrl) })),
+  documents: list(raw?.documents).map((d) => ({ id: d.id ?? null, name: str(d.name ?? d.title), number: str(d.number), date: d.date ?? null, url: str(d.url ?? d.fileUrl) })),
   events: list(raw?.events).map(fromRawEvent),
   currentMonth: {
     month: str(raw?.currentMonth?.month),
@@ -325,6 +331,7 @@ export interface EmployeeInput {
   email: string;
   birthday: string | null;
   probation: boolean;
+  staffingPositionId?: number | null;
 }
 
 /** Тело приёма: пустые необязательные поля не шлём. */
@@ -336,6 +343,7 @@ export function employeeBody(input: EmployeeInput): Record<string, unknown> {
   if (input.phone.trim()) body.phone = input.phone.trim();
   if (input.email.trim()) body.email = input.email.trim();
   if (input.birthday) body.birthday = input.birthday;
+  if (input.staffingPositionId != null) body.staffingPositionId = input.staffingPositionId;
   return body;
 }
 
@@ -343,7 +351,19 @@ export async function createEmployee(input: EmployeeInput, scope?: RealtyScope):
   return fromRawCard(await post(scope, "/employees/", employeeBody(input)));
 }
 
-export type EmployeePatch = Partial<{ name: string; position: string; deptId: number | null; projectId: number | null; phone: string; email: string; birthday: string | null; hired: string; salary: string; vacationLeft: number }>;
+export type EmployeePatch = Partial<{
+  name: string;
+  position: string;
+  deptId: number | null;
+  projectId: number | null;
+  phone: string;
+  email: string;
+  birthday: string | null;
+  hired: string;
+  salary: string;
+  vacationLeft: number;
+  staffingPositionId: number | null;
+}>;
 
 export async function updateEmployee(id: number, patch: EmployeePatch, scope?: RealtyScope): Promise<EmployeeCard> {
   return fromRawCard(await personnel(scope, `/employees/${id}/`, { method: "PATCH", body: patch }));
@@ -392,6 +412,228 @@ export async function closeTimesheet(month: string, scope?: RealtyScope): Promis
   return { closedAt: raw?.closedAt ?? null };
 }
 
+// Штатное расписание и вакансии
+
+export interface StaffingEmployee {
+  id: number;
+  name: string;
+  status: string;
+}
+
+export interface StaffingPosition {
+  id: number;
+  title: string;
+  deptId: number | null;
+  deptName: string;
+  branchId: number | null;
+  branchName: string;
+  /** Ставок по штату. */
+  headcount: number;
+  salary: number;
+  /** ФОТ по штату = ставки × оклад. */
+  fund: number;
+  /** Считает бэк: сотрудники с этой штатной единицей. */
+  filled: number;
+  vacant: number;
+  /** Сверх штата. */
+  over: number;
+  inRecruitment: number;
+  employees: StaffingEmployee[];
+  note: string;
+  sortOrder: number;
+}
+
+export interface StaffingDepartment {
+  deptId: number | null;
+  deptName: string;
+  headcount: number;
+  filled: number;
+  vacant: number;
+  fund: number;
+  positions: StaffingPosition[];
+}
+
+export interface Staffing {
+  totals: { positions: number; headcount: number; filled: number; vacant: number; over: number; fund: number; openVacancies: number; unassigned: number };
+  departments: StaffingDepartment[];
+}
+
+export const VACANCY_STATUSES = ["new", "screening", "interview", "offer", "closed", "cancelled"] as const;
+export type VacancyStatus = (typeof VACANCY_STATUSES)[number];
+/** Этапы открытой вакансии — для смены этапа; closed / cancelled закрывают её. */
+export const OPEN_VACANCY_STATUSES: readonly VacancyStatus[] = ["new", "screening", "interview", "offer"];
+
+export interface Vacancy {
+  id: number;
+  positionId: number | null;
+  title: string;
+  deptId: number | null;
+  deptName: string;
+  branchId: number | null;
+  branchName: string;
+  openings: number;
+  hired: number;
+  status: string;
+  statusLabel: string;
+  /** gray / amber / blue / green… */
+  tone: string;
+  isOpen: boolean;
+  candidates: number;
+  responses: number;
+  /** «4 кандидата» / «11 откликов» — склоняет бэк. */
+  countLabel: string;
+  salary: number | null;
+  note: string;
+  openedAt: string | null;
+  closedAt: string | null;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- сырой ответ разбирается здесь и только здесь */
+export const fromRawStaffingPosition = (raw: any): StaffingPosition => ({
+  id: raw.id,
+  title: str(raw.title),
+  deptId: numOrNull(raw.deptId),
+  deptName: str(raw.deptName),
+  branchId: numOrNull(raw.branchId),
+  branchName: str(raw.branchName),
+  headcount: num(raw.headcount),
+  salary: num(raw.salary),
+  fund: num(raw.fund),
+  filled: num(raw.filled),
+  vacant: num(raw.vacant),
+  over: num(raw.over),
+  inRecruitment: num(raw.inRecruitment),
+  employees: list(raw.employees).map((e) => ({ id: e.id, name: str(e.name), status: str(e.status) })),
+  note: str(raw.note),
+  sortOrder: num(raw.sortOrder),
+});
+
+export const fromRawStaffing = (raw: any): Staffing => ({
+  totals: {
+    positions: num(raw?.totals?.positions),
+    headcount: num(raw?.totals?.headcount),
+    filled: num(raw?.totals?.filled),
+    vacant: num(raw?.totals?.vacant),
+    over: num(raw?.totals?.over),
+    fund: num(raw?.totals?.fund),
+    openVacancies: num(raw?.totals?.openVacancies),
+    unassigned: num(raw?.totals?.unassigned),
+  },
+  departments: list(raw?.departments).map((d) => ({
+    deptId: numOrNull(d.deptId),
+    deptName: str(d.deptName),
+    headcount: num(d.headcount),
+    filled: num(d.filled),
+    vacant: num(d.vacant),
+    fund: num(d.fund),
+    positions: list(d.positions).map(fromRawStaffingPosition),
+  })),
+});
+
+export const fromRawVacancy = (raw: any): Vacancy => ({
+  id: raw.id,
+  positionId: numOrNull(raw.positionId),
+  title: str(raw.title),
+  deptId: numOrNull(raw.deptId),
+  deptName: str(raw.deptName),
+  branchId: numOrNull(raw.branchId),
+  branchName: str(raw.branchName),
+  openings: num(raw.openings),
+  hired: num(raw.hired),
+  status: str(raw.status),
+  statusLabel: str(raw.statusLabel),
+  tone: str(raw.tone),
+  isOpen: Boolean(raw.isOpen),
+  candidates: num(raw.candidates),
+  responses: num(raw.responses),
+  countLabel: str(raw.countLabel),
+  salary: numOrNull(raw.salary),
+  note: str(raw.note),
+  openedAt: raw.openedAt ?? null,
+  closedAt: raw.closedAt ?? null,
+});
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+export async function getStaffing(deptId: number | null, scope?: RealtyScope, signal?: AbortSignal): Promise<Staffing> {
+  return fromRawStaffing(await personnel(scope, `/staffing/${query({ deptId })}`, { signal }));
+}
+
+/** Позиция штатного: «Занято» не передаётся — его считает бэк. */
+export interface StaffingPositionInput {
+  title: string;
+  deptId: number | null;
+  headcount: number;
+  salary: string;
+  note: string;
+}
+
+export async function createStaffingPosition(input: StaffingPositionInput, scope?: RealtyScope): Promise<StaffingPosition> {
+  return fromRawStaffingPosition(await post(scope, "/staffing/", { ...input, title: input.title.trim(), note: input.note.trim() }));
+}
+
+export async function updateStaffingPosition(id: number, patch: Partial<StaffingPositionInput>, scope?: RealtyScope): Promise<StaffingPosition> {
+  return fromRawStaffingPosition(await personnel(scope, `/staffing/${id}/`, { method: "PATCH", body: patch }));
+}
+
+export async function deleteStaffingPosition(id: number, scope?: RealtyScope): Promise<void> {
+  await personnel(scope, `/staffing/${id}/`, { method: "DELETE" });
+}
+
+/** «⇩ Штатное» — CSV (`;`, UTF-8 с BOM) blob-ом: ссылка защищена сессией. */
+export async function downloadStaffingCsv(scope?: RealtyScope): Promise<void> {
+  const response = await fetch(`${API_BASE}${API}/staffing/export/`, { credentials: "include", headers: realtyHeaders(scope) });
+  if (!response.ok) throw new ApiError(`Не удалось выгрузить штатное расписание (${response.status})`, response.status, null);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `staffing-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Без статуса бэк отдаёт все вакансии; `open` — только открытые (new…offer). */
+export async function getVacancies(status: "open" | VacancyStatus | null, scope?: RealtyScope, signal?: AbortSignal): Promise<Vacancy[]> {
+  return list(await personnel(scope, `/vacancies/${query({ status })}`, { signal })).map(fromRawVacancy);
+}
+
+export interface VacancyInput {
+  /** Обязательна при создании (иначе 400). */
+  positionId: number | null;
+  title: string;
+  openings: number;
+  salary: string;
+  candidates: number;
+  responses: number;
+  note: string;
+}
+
+export async function createVacancy(input: VacancyInput, scope?: RealtyScope): Promise<Vacancy> {
+  const body: Record<string, unknown> = { title: input.title.trim(), openings: input.openings, candidates: input.candidates, responses: input.responses };
+  if (input.positionId != null) body.positionId = input.positionId;
+  if (input.salary.trim()) body.salary = input.salary.trim();
+  if (input.note.trim()) body.note = input.note.trim();
+  return fromRawVacancy(await post(scope, "/vacancies/", body));
+}
+
+export async function updateVacancy(id: number, patch: Partial<Omit<VacancyInput, "positionId">> & { status?: VacancyStatus }, scope?: RealtyScope): Promise<Vacancy> {
+  return fromRawVacancy(await personnel(scope, `/vacancies/${id}/`, { method: "PATCH", body: patch }));
+}
+
+/**
+ * «Принять по вакансии» — обычный приём (договор и приказ в ЭДО); закрытая по
+ * ставкам вакансия закрывается сама. Ответ — `{vacancy, employee: <карточка>}`
+ * (test2, 08.10), не карточка, как у `POST /employees/`.
+ */
+export async function hireByVacancy(id: number, input: EmployeeInput, scope?: RealtyScope): Promise<{ vacancy: Vacancy | null; card: EmployeeCard }> {
+  const raw = await post<{ vacancy?: unknown; employee?: unknown }>(scope, `/vacancies/${id}/hire/`, employeeBody(input));
+  return { vacancy: raw?.vacancy ? fromRawVacancy(raw.vacancy) : null, card: fromRawCard(raw?.employee ?? raw) };
+}
+
+/** Штатные единицы списком для выбора в карточке сотрудника: «Отдел · Должность». */
+export function staffingOptions(staffing: Staffing | undefined): StaffingPosition[] {
+  return (staffing?.departments ?? []).flatMap((d) => d.positions);
+}
+
 // ─── Хелперы экранов ────────────────────────────────────────────────────────
 
 /** Следующая отметка по кругу Я→В→О→Б→К→Н→Я; пустая ячейка — «Я». */
@@ -432,4 +674,6 @@ export const personnelKeys = {
   events: (scope: RealtyScope | undefined) => [...personnelKeys.scoped(scope), "events"] as const,
   birthdays: (scope: RealtyScope | undefined) => [...personnelKeys.scoped(scope), "birthdays"] as const,
   timesheet: (scope: RealtyScope | undefined, month: string, deptId: number | null) => [...personnelKeys.scoped(scope), "timesheet", month, deptId] as const,
+  staffing: (scope: RealtyScope | undefined, deptId: number | null) => [...personnelKeys.scoped(scope), "staffing", deptId] as const,
+  vacancies: (scope: RealtyScope | undefined, status: string | null) => [...personnelKeys.scoped(scope), "vacancies", status] as const,
 };

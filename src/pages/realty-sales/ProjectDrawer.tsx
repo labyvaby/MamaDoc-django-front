@@ -41,6 +41,7 @@ import {
   type UnitLayout,
 } from "../../api/realtyCatalog";
 import { realEstateKeys } from "../../api/realestate";
+import { ProtectedImage } from "../../components/realty/ProtectedImage";
 import { useCan } from "../../hooks/useCan";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { useT } from "../../i18n/VerticalProvider";
@@ -49,6 +50,7 @@ import { formatDateRu, formatKGS } from "../../utility/format";
 import { formatPhoneDisplay } from "../../utility/phone";
 import { compactMoney } from "../estate-dashboard/format";
 import { PromotionDrawer, ProjectEditDrawer, SectionDrawer, UnitLayoutDrawer } from "./CatalogForms";
+import { ProjectFilesSection } from "./ProjectFiles";
 import { roomsKey } from "./catalogFormat";
 
 type Editing =
@@ -78,6 +80,8 @@ export function ProjectDrawer({ projectId, onClose }: { projectId: number | null
   const { enqueueSnackbar } = useSnackbar();
   const canManage = useCan("realty.manage");
   const canCatalog = useCan("realty.catalog.manage") && canManage;
+  // Файлы ЖК гайд гейтит одним `realty.catalog.manage` (§1 «Файлы ЖК»).
+  const canFiles = useCan("realty.catalog.manage");
   const [editing, setEditing] = React.useState<Editing | null>(null);
   const [removing, setRemoving] = React.useState<Removing | null>(null);
   const open = projectId != null;
@@ -222,6 +226,7 @@ export function ProjectDrawer({ projectId, onClose }: { projectId: number | null
           {!data && !project.isError && [0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={64} />)}
           {data && counters && (
             <>
+              {data.media.coverUrl && <ProtectedImage url={data.media.coverUrl} alt={data.name} sx={(th) => ({ height: { xs: 160, sm: 220 }, borderRadius: "12px", overflow: "hidden", bgcolor: subtleBg(th, true) })} />}
               <Box sx={{ display: "grid", gap: 1, gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
                 {counters.map(([key, value, color]) => (
                   <Box key={key} sx={{ px: 1.25, py: 1, border: 1, borderColor: "divider", borderRadius: "10px" }}>
@@ -252,6 +257,8 @@ export function ProjectDrawer({ projectId, onClose }: { projectId: number | null
                   ))}
                 </Box>
               </Section>
+
+              <ProjectFilesSection projectId={data.id} canUpload={canFiles} layouts={unitLayouts.data ?? []} />
 
               {data.roomStats.length > 0 && (
                 <Section title={t("catalog.drawer.roomStats")}>

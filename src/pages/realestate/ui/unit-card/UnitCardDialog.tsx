@@ -207,7 +207,7 @@ function ApartmentDetail({
   return (
     <Box>
       <ApartmentHead project={project} unit={unit} />
-      <RenderGallery />
+      <RenderGallery unit={unit} />
       <Promotions
         unit={unit}
         offers={unit.offers}

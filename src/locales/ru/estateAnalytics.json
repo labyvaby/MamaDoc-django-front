@@ -56,6 +56,7 @@
     "activity": {
       "title": "Активность отдела",
       "calls": "Звонков",
+      "whatsapp": "WhatsApp",
       "shows": "Показов",
       "bookings": "Броней",
       "contracts": "Договоров",
@@ -68,7 +69,8 @@
       "deals": "Сделки",
       "revenue": "Выручка",
       "calls": "Звонки",
-      "summary": "{{deals}} сделок · {{amount}}"
+      "summary": "{{deals}} сделок · {{amount}}",
+      "plan": "План"
     },
     "dynamics": {
       "title": "Динамика продаж",
@@ -82,14 +84,19 @@
       "title": "Продажи по ЖК",
       "sold": "Продано",
       "reserved": "В брони",
-      "revenue": "{{amount}} выручки"
+      "revenue": "{{amount}} выручки",
+      "plan": "План {{plan}}"
     },
     "sources": {
       "title": "Источники продаж",
       "source": "Источник",
       "leads": "Лиды",
       "deals": "Сделки",
-      "conversion": "Конверсия"
+      "conversion": "Конверсия",
+      "revenue": "Выручка",
+      "spend": "Расход",
+      "costPerDeal": "Стоимость сделки",
+      "organic": "Органика"
     },
     "units": {
       "title": "Квартиры по неделям",
@@ -97,6 +104,14 @@
       "reserved": "Бронь",
       "free": "Свободно",
       "week": "Неделя {{week}}"
+    },
+    "plan": {
+      "badge": "План {{value}} %",
+      "monthHint": "За {{month}}: план {{plan}}, факт {{fact}} · {{deals}} · {{pct}} %",
+      "periodHint": "План за период {{plan}}, факт {{fact}}",
+      "deals_one": "{{count}} сделка",
+      "deals_few": "{{count}} сделки",
+      "deals_many": "{{count}} сделок"
     }
   },
   "bi": {

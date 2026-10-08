@@ -50,6 +50,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { useT } from "../../i18n/VerticalProvider";
 import { subtleBg } from "../../theme/uiHelpers";
+import { FocusPanel } from "./FocusPanel";
 import { cardSx } from "./format";
 import { TaskDrawer, type TaskDrawerMode } from "./TaskDrawer";
 
@@ -58,6 +59,7 @@ import { TaskDrawer, type TaskDrawerMode } from "./TaskDrawer";
  * звонки, встречи, показы, дела. Гайд — `frontend-dashboard-analytics.md` §4,
  * API — `src/api/realtyTasks.ts`. Смотреть — `realty.view`, менять —
  * `realty.manage` (галочка, «＋ Задача», перенос, передача, удаление).
+ * Справа — «Фокус дня» (`FocusPanel`, подсказки бэка по живым данным).
  */
 export default function RealtyTodayPage() {
   const { t } = useT("estateDashboard");
@@ -213,54 +215,62 @@ function TodayScreen() {
           : [0, 1, 2, 3].map((i) => <Skeleton key={i} variant="rounded" height={88} sx={{ borderRadius: "14px" }} />)}
       </Box>
 
-      {/* pr — рамка крайней пилюли: контейнер страницы режет всё, что у самого края. */}
-      <Box sx={{ mb: 1.5, pr: 0.25, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.75 }}>
-        {(["all", ...REALTY_TASK_KINDS] as KindFilter[]).map((key) => (
-          <ButtonBase key={key} aria-pressed={kind === key} onClick={() => setKind(key)} sx={(th) => ({ ...pillSx(th, kind === key), whiteSpace: "nowrap" })}>
-            {t(`today.kinds.${key}`)}
-            {tasks ? ` · ${key === "all" ? tasks.length : tasks.filter((x) => x.kind === key).length}` : ""}
-          </ButtonBase>
-        ))}
-        {/* «Мои» — только у кого есть карточка сотрудника: иначе фильтровать не по кому. */}
-        {myId != null && (
-          <Box sx={{ ml: { md: "auto" }, display: "flex", gap: 0.75 }}>
-            {(["all", "mine"] as const).map((key) => (
-              <ButtonBase
-                key={key}
-                aria-pressed={(key === "mine") === mine}
-                onClick={() => setParam("mine", key === "mine" ? "1" : null)}
-                sx={(th) => ({ ...pillSx(th, (key === "mine") === mine), whiteSpace: "nowrap" })}
-              >
-                {t(`today.scope.${key}`)}
+      <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) 320px" }, alignItems: "start" }}>
+        {/* На телефоне подсказки — над списком: с них начинается день. */}
+        <Box sx={{ order: { xs: -1, lg: 1 }, position: { lg: "sticky" }, top: { lg: 0 }, minWidth: 0 }}>
+          <FocusPanel focusScope={mine ? "mine" : null} />
+        </Box>
+        <Box sx={{ minWidth: 0 }}>
+          {/* pr — рамка крайней пилюли: контейнер страницы режет всё, что у самого края. */}
+          <Box sx={{ mb: 1.5, pr: 0.25, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.75 }}>
+            {(["all", ...REALTY_TASK_KINDS] as KindFilter[]).map((key) => (
+              <ButtonBase key={key} aria-pressed={kind === key} onClick={() => setKind(key)} sx={(th) => ({ ...pillSx(th, kind === key), whiteSpace: "nowrap" })}>
+                {t(`today.kinds.${key}`)}
+                {tasks ? ` · ${key === "all" ? tasks.length : tasks.filter((x) => x.kind === key).length}` : ""}
               </ButtonBase>
             ))}
+            {/* «Мои» — только у кого есть карточка сотрудника: иначе фильтровать не по кому. */}
+            {myId != null && (
+              <Box sx={{ ml: { md: "auto" }, display: "flex", gap: 0.75 }}>
+                {(["all", "mine"] as const).map((key) => (
+                  <ButtonBase
+                    key={key}
+                    aria-pressed={(key === "mine") === mine}
+                    onClick={() => setParam("mine", key === "mine" ? "1" : null)}
+                    sx={(th) => ({ ...pillSx(th, (key === "mine") === mine), whiteSpace: "nowrap" })}
+                  >
+                    {t(`today.scope.${key}`)}
+                  </ButtonBase>
+                ))}
+              </Box>
+            )}
           </Box>
-        )}
-      </Box>
 
-      <Box sx={{ ...cardSx, overflow: "hidden" }}>
-        {!tasks ? (
-          <Box sx={{ p: 2, display: "grid", gap: 1 }}>
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} variant="rounded" height={52} />
-            ))}
+          <Box sx={{ ...cardSx, overflow: "hidden" }}>
+            {!tasks ? (
+              <Box sx={{ p: 2, display: "grid", gap: 1 }}>
+                {[0, 1, 2].map((i) => (
+                  <Skeleton key={i} variant="rounded" height={52} />
+                ))}
+              </Box>
+            ) : shown.length === 0 ? (
+              <Typography sx={{ py: 5, textAlign: "center", color: "text.secondary" }}>{tasks.length === 0 ? t("today.empty") : t("today.emptyFiltered")}</Typography>
+            ) : (
+              shown.map((task, index) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  divider={index > 0}
+                  canManage={canManage}
+                  onToggle={(done) => toggle.mutate({ task, done })}
+                  onReschedule={() => setDrawer({ kind: "reschedule", task })}
+                  onDelegate={() => setDrawer({ kind: "delegate", task })}
+                  onDelete={() => setToDelete(task)}
+                />
+              ))
+            )}
           </Box>
-        ) : shown.length === 0 ? (
-          <Typography sx={{ py: 5, textAlign: "center", color: "text.secondary" }}>{tasks.length === 0 ? t("today.empty") : t("today.emptyFiltered")}</Typography>
-        ) : (
-          shown.map((task, index) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              divider={index > 0}
-              canManage={canManage}
-              onToggle={(done) => toggle.mutate({ task, done })}
-              onReschedule={() => setDrawer({ kind: "reschedule", task })}
-              onDelegate={() => setDrawer({ kind: "delegate", task })}
-              onDelete={() => setToDelete(task)}
-            />
-          ))
-        )}
+        </Box>
       </Box>
 
       {canManage && <TaskDrawer mode={drawer} onClose={() => setDrawer(null)} />}

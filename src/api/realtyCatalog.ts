@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import { realtyHeaders, type RealtyScope } from "./realestate";
+import { fromRawProjectMedia, fromRawUnitMedia, type ProjectMedia, type UnitMedia } from "./realtyFiles";
 
 /**
  * «Каталог объектов» застройщика (AIVIO): ЖК с подбором, планировки, секции,
@@ -93,6 +94,8 @@ export interface CatalogProject {
   matching: number | null;
   /** Свободных под фильтры. */
   available: number;
+  /** Фото, фасад, документы и презентация (`frontend-new-modules.md` §1). */
+  media: ProjectMedia;
 }
 
 export interface CatalogFilters {
@@ -126,8 +129,10 @@ export interface CatalogLayout {
   hasBalcony: boolean;
   panoramic: boolean;
   corner: boolean;
+  /** План планировки — защищённые ссылки, показывать через `ProtectedImage`. */
   images: string[];
   representativeUnitId: number | null;
+  media: UnitMedia;
 }
 
 export interface UnitLayout {
@@ -213,6 +218,7 @@ export const fromRawCatalogProject = (raw: any): CatalogProject => ({
     : [],
   matching: typeof raw.matching === "number" ? raw.matching : null,
   available: Number(raw.available ?? raw.free) || 0,
+  media: fromRawProjectMedia(raw),
 });
 
 const fromRawLayout = (raw: any): CatalogLayout => ({
@@ -236,6 +242,7 @@ const fromRawLayout = (raw: any): CatalogLayout => ({
   corner: Boolean(raw.corner),
   images: Array.isArray(raw.images) ? raw.images : [],
   representativeUnitId: raw.representativeUnitId ?? null,
+  media: fromRawUnitMedia(raw),
 });
 
 const fromRawUnitLayout = (raw: any): UnitLayout => ({

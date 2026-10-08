@@ -11,6 +11,7 @@ import {
   fireEmployee,
   getEmployeeCard,
   getEmployeePayslip,
+  hireByVacancy,
   personnelKeys,
   raiseEmployee,
   registerAbsence,
@@ -19,6 +20,7 @@ import {
   type AbsenceKind,
   type Employee,
   type EmployeePatch,
+  type Vacancy,
   type VacationType,
 } from "../../api/personnel";
 import { getMotivation, motivationKeys } from "../../api/salaryMotivation";
@@ -32,7 +34,7 @@ import { HistoryList, SectionTitle, StatusPill } from "../construction/shared";
 import { ConfirmDialog, FormDrawer, InfoRow } from "../realty-finance/shared";
 import { useProjectOptions } from "../realty-finance/hooks";
 import { employeeTone, isoDate, parseNumber } from "./format";
-import { useDepartments, useRefreshPersonnel } from "./hooks";
+import { useDepartments, useRefreshPersonnel, useStaffingOptions } from "./hooks";
 
 const message = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback);
 
@@ -131,14 +133,20 @@ export function EmployeeDrawer({ id, preview, canManage, onClose }: { id: number
                   {detail.documents.length === 0 ? (
                     <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{t("staff.card.documentsEmpty")}</Typography>
                   ) : (
-                    detail.documents.map((d) => (
-                      <Typography key={d.id} sx={{ fontSize: "0.8125rem" }}>
+                    detail.documents.map((d, index) => (
+                      <Typography key={d.id ?? `${d.number}-${index}`} sx={{ fontSize: "0.8125rem" }}>
                         {d.url ? (
                           <Link href={d.url} target="_blank" rel="noreferrer">
                             {d.name}
                           </Link>
                         ) : (
                           d.name
+                        )}
+                        {(d.number || d.date) && (
+                          <Box component="span" sx={{ color: "text.secondary" }}>
+                            {" · "}
+                            {[d.number, d.date ? dayjs(d.date).format("DD.MM.YYYY") : ""].filter(Boolean).join(" · ")}
+                          </Box>
                         )}
                       </Typography>
                     ))
@@ -186,14 +194,33 @@ export function EmployeeDrawer({ id, preview, canManage, onClose }: { id: number
 }
 
 /** «＋ Сотрудник» (employee = null) и «Изменить». */
-export function EmployeeFormDrawer({ open, employee, onClose, onCreated }: { open: boolean; employee: Employee | null; onClose: () => void; onCreated?: (id: number) => void }) {
+/**
+ * Приём / правка сотрудника. С `vacancy` — «Принять по вакансии»: тот же приём
+ * (договор и приказ в ЭДО) через `/vacancies/<id>/hire/`, должность, отдел,
+ * оклад и штатная единица подставлены из вакансии.
+ */
+export function EmployeeFormDrawer({
+  open,
+  employee,
+  vacancy = null,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  employee: Employee | null;
+  vacancy?: Vacancy | null;
+  onClose: () => void;
+  onCreated?: (id: number) => void;
+}) {
   const { t } = useT("personnel");
   const scope = useRealtyScope();
   const refresh = useRefreshPersonnel();
   const { enqueueSnackbar } = useSnackbar();
   const departments = useDepartments(open).data ?? [];
   const projects = useProjectOptions(open);
+  const positions = useStaffingOptions(open);
   const editing = employee != null;
+  const [staffingPositionId, setStaffingPositionId] = React.useState<number | "">("");
   const [name, setName] = React.useState("");
   const [position, setPosition] = React.useState("");
   const [deptId, setDeptId] = React.useState<number | "">("");
@@ -210,10 +237,11 @@ export function EmployeeFormDrawer({ open, employee, onClose, onCreated }: { ope
   React.useEffect(() => {
     if (!open) return;
     setName(employee?.name ?? "");
-    setPosition(employee?.position ?? "");
-    setDeptId(employee?.deptId ?? "");
+    setPosition(employee?.position ?? vacancy?.title ?? "");
+    setDeptId(employee?.deptId ?? vacancy?.deptId ?? "");
     setProjectId(employee?.projectId ?? "");
-    setSalary(employee?.salary != null ? String(employee.salary) : "");
+    setSalary(employee?.salary != null ? String(employee.salary) : vacancy?.salary != null ? String(vacancy.salary) : "");
+    setStaffingPositionId(employee?.staffingPositionId ?? vacancy?.positionId ?? "");
     setPhone(employee?.phone ?? "");
     setEmail(employee?.email ?? "");
     setBirthday(employee?.birthday ? dayjs(employee.birthday) : null);
@@ -222,7 +250,18 @@ export function EmployeeFormDrawer({ open, employee, onClose, onCreated }: { ope
     setProbation(true);
     setTouched(false);
     save.reset();
-  }, [open, employee]); // eslint-disable-line react-hooks/exhaustive-deps -- сброс формы при открытии
+  }, [open, employee, vacancy]); // eslint-disable-line react-hooks/exhaustive-deps -- сброс формы при открытии
+
+  // Штатная единица подставляет должность, отдел и оклад — только в пустые поля
+  // при приёме; при правке человек мог договориться об окладе отдельно.
+  const pickPosition = (value: number | "") => {
+    setStaffingPositionId(value);
+    const p = positions.find((x) => x.id === value);
+    if (!p || editing) return;
+    if (!position.trim()) setPosition(p.title);
+    if (deptId === "" && p.deptId != null) setDeptId(p.deptId);
+    if (!salary.trim()) setSalary(String(p.salary));
+  };
 
   // Правка: шлём только изменённые поля (PATCH).
   const patch = (): EmployeePatch => {
@@ -240,27 +279,24 @@ export function EmployeeFormDrawer({ open, employee, onClose, onCreated }: { ope
     if (s != null && s !== employee.salary) p.salary = String(s);
     const v = parseNumber(vacationLeft);
     if (v != null && v !== employee.vacationLeft) p.vacationLeft = Math.round(v);
+    if ((staffingPositionId === "" ? null : staffingPositionId) !== employee.staffingPositionId) p.staffingPositionId = staffingPositionId === "" ? null : staffingPositionId;
     return p;
   };
+  const input = () => ({
+    name,
+    position,
+    hired: isoDate(hired) as string,
+    deptId: deptId === "" ? null : deptId,
+    projectId: projectId === "" ? null : projectId,
+    salary: parseNumber(salary) != null ? String(parseNumber(salary)) : "",
+    phone,
+    email,
+    birthday: isoDate(birthday),
+    probation,
+    staffingPositionId: staffingPositionId === "" ? null : staffingPositionId,
+  });
   const save = useMutation({
-    mutationFn: () =>
-      editing
-        ? updateEmployee(employee.id, patch(), scope)
-        : createEmployee(
-            {
-              name,
-              position,
-              hired: isoDate(hired) as string,
-              deptId: deptId === "" ? null : deptId,
-              projectId: projectId === "" ? null : projectId,
-              salary: parseNumber(salary) != null ? String(parseNumber(salary)) : "",
-              phone,
-              email,
-              birthday: isoDate(birthday),
-              probation,
-            },
-            scope,
-          ),
+    mutationFn: () => (editing ? updateEmployee(employee.id, patch(), scope) : vacancy ? hireByVacancy(vacancy.id, input(), scope).then((r) => r.card) : createEmployee(input(), scope)),
     onSuccess: (card) => {
       refresh();
       enqueueSnackbar(editing ? t("staff.card.saved") : t("staff.form.created"), { variant: "success" });
@@ -277,7 +313,7 @@ export function EmployeeFormDrawer({ open, employee, onClose, onCreated }: { ope
   return (
     <FormDrawer
       open={open}
-      title={editing ? t("staff.form.editTitle", { name: employee.name }) : t("staff.form.newTitle")}
+      title={editing ? t("staff.form.editTitle", { name: employee.name }) : vacancy ? t("staff.form.hireTitle", { title: vacancy.title }) : t("staff.form.newTitle")}
       submitLabel={editing ? t("common.save") : t("staff.form.create")}
       busy={save.isPending}
       error={save.error}
@@ -291,6 +327,24 @@ export function EmployeeFormDrawer({ open, employee, onClose, onCreated }: { ope
     >
       <TextField size="small" label={t("staff.form.name")} value={name} onChange={(ev) => setName(ev.target.value)} error={touched && invalid.name} helperText={req(invalid.name)} />
       <TextField size="small" label={t("staff.form.position")} value={position} onChange={(ev) => setPosition(ev.target.value)} error={touched && invalid.position} helperText={req(invalid.position)} />
+      <TextField
+        select
+        size="small"
+        label={t("staff.form.staffingPosition")}
+        value={staffingPositionId}
+        onChange={(ev) => pickPosition(ev.target.value === "" ? "" : Number(ev.target.value))}
+        SelectProps={{ displayEmpty: true }}
+        InputLabelProps={{ shrink: true }}
+        helperText={t("staff.form.staffingPositionHint")}
+      >
+        <MenuItem value="">{t("staff.form.noStaffingPosition")}</MenuItem>
+        {positions.map((p) => (
+          <MenuItem key={p.id} value={p.id}>
+            {[p.deptName, p.title].filter(Boolean).join(" · ")}
+            {p.vacant > 0 ? ` — ${t("vacancies.form.vacant", { count: p.vacant })}` : ""}
+          </MenuItem>
+        ))}
+      </TextField>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5 }}>
         <TextField select size="small" label={t("staff.form.dept")} value={deptId} onChange={(ev) => setDeptId(ev.target.value === "" ? "" : Number(ev.target.value))} SelectProps={{ displayEmpty: true }} InputLabelProps={{ shrink: true }}>
           <MenuItem value="">—</MenuItem>

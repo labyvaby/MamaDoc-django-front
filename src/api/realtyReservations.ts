@@ -133,6 +133,11 @@ export async function getReservations(status: ReservationStatus | null, scope?: 
   return (raw ?? []).map(fromRawReservation);
 }
 
+/** Одна бронь — для перехода из подсказки «Бронь истекает» на её квартиру в шахматке. */
+export async function getReservation(id: number, scope?: RealtyScope, signal?: AbortSignal): Promise<ReservationRow> {
+  return fromRawReservation(await apiRequest(`${REALTY_API}/reservations/${id}/`, { headers: realtyHeaders(scope), signal }));
+}
+
 export async function getContracts(status: ContractStatus | null, scope?: RealtyScope, signal?: AbortSignal): Promise<ContractRow[]> {
   const raw = await apiRequest<unknown[]>(`${REALTY_API}/contracts/${status ? `?status=${status}` : ""}`, { headers: realtyHeaders(scope), signal });
   return (raw ?? []).map(fromRawContract);

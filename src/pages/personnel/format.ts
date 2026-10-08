@@ -31,3 +31,7 @@ export function shiftMonth(month: string, delta: number): string {
 }
 
 export const currentMonth = (today = new Date()) => `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+
+/** Тон бэка у вакансии (`gray` / `amber` / `blue` / `green` …) → цвет пилюли. */
+export const vacancyTone = (tone: string): Tone =>
+  tone === "amber" ? "warning" : tone === "blue" ? "info" : tone === "green" ? "success" : tone === "red" ? "error" : tone === "violet" ? "primary" : null;

@@ -7,6 +7,9 @@ import { realtyHeaders, type RealtyScope } from "./realestate";
  * - «Аналитика CRM» — `GET /api/v2/realty/analytics/summary/` (право `realty.view`):
  *   период чипом (`period` = 1 | -1 | 7 | 30 | 90) или датами (`from`/`to`, `from > to` → 400),
  *   «Мои» — `managerId`; филиал и менеджер режут всё, включая `previous`;
+ *   с 07.10 (`frontend-new-modules.md` §4) — план продаж: `plan`, `managers[].plan/planPct`,
+ *   `projects[].plan/planPct`, расходы каналов в `sources[]`, `activity.whatsapp`
+ *   (план — из «Планов и мотивации», факт — подписанные договоры);
  * - «Сводная аналитика» — `GET /api/v2/estate-dashboard/bi/` (право `estate_dashboard.view`):
  *   без права модуля его секция `null`, KPI-поле `null`, код модуля — в `denied[]`.
  * Деньги приходят строками-decimal — здесь переводятся в числа.
@@ -49,6 +52,9 @@ export interface AnalyticsManager {
   deals: number;
   revenue: number;
   calls: number;
+  /** План на период; `null` — у менеджера плана нет. */
+  plan: number | null;
+  planPct: number | null;
 }
 
 export interface AnalyticsProject {
@@ -57,6 +63,8 @@ export interface AnalyticsProject {
   sold: number;
   reserved: number;
   revenue: number;
+  plan: number | null;
+  planPct: number | null;
 }
 
 export interface AnalyticsSource {
@@ -64,6 +72,25 @@ export interface AnalyticsSource {
   leads: number;
   deals: number;
   conversion: number;
+  revenue: number;
+  /** Расход на канал; `null` — бесплатный канал («Органика»). */
+  spend: number | null;
+  costPerLead: number | null;
+  costPerDeal: number | null;
+}
+
+/** Выполнение плана: за выбранный период (`pct`) и за текущий месяц (`month*`). */
+export interface AnalyticsPlan {
+  amount: number;
+  fact: number;
+  /** `null` — плана на период нет, плашку не показываем. */
+  pct: number | null;
+  /** YYYY-MM. */
+  month: string;
+  monthPlan: number | null;
+  monthFact: number;
+  monthDeals: number;
+  monthPct: number | null;
 }
 
 export interface AnalyticsSlot {
@@ -86,7 +113,8 @@ export interface CrmAnalytics extends AnalyticsTotals {
   previous: AnalyticsTotals | null;
   stages: AnalyticsStage[];
   tasks: { overdue: number; done: number; open: number; leadsWithoutTask: number };
-  activity: { calls: number; shows: number; bookings: number; contracts: number; proposals: number };
+  activity: { calls: number; shows: number; bookings: number; contracts: number; proposals: number; whatsapp: number };
+  plan: AnalyticsPlan | null;
   managers: AnalyticsManager[];
   projects: AnalyticsProject[];
   sources: AnalyticsSource[];
@@ -202,10 +230,49 @@ export function fromRawCrmAnalytics(raw: any): CrmAnalytics {
       bookings: num(raw?.activity?.bookings),
       contracts: num(raw?.activity?.contracts),
       proposals: num(raw?.activity?.proposals),
+      whatsapp: num(raw?.activity?.whatsapp),
     },
-    managers: list(raw?.managers, (m) => ({ managerId: num(m.managerId), name: m.name ?? "", leads: num(m.leads), deals: num(m.deals), revenue: num(m.revenue), calls: num(m.calls) })),
-    projects: list(raw?.projects, (p) => ({ projectId: num(p.projectId), name: p.name ?? p.projectName ?? "", sold: num(p.sold), reserved: num(p.reserved), revenue: num(p.revenue) })),
-    sources: list(raw?.sources, (s) => ({ source: s.source || "—", leads: num(s.leads), deals: num(s.deals), conversion: num(s.conversion) })),
+    plan: raw?.plan
+      ? {
+          amount: num(raw.plan.amount),
+          fact: num(raw.plan.fact),
+          pct: numOrNull(raw.plan.pct),
+          month: raw.plan.month ?? "",
+          monthPlan: numOrNull(raw.plan.monthPlan),
+          monthFact: num(raw.plan.monthFact),
+          monthDeals: num(raw.plan.monthDeals),
+          monthPct: numOrNull(raw.plan.monthPct),
+        }
+      : null,
+    managers: list(raw?.managers, (m) => ({
+      managerId: num(m.managerId),
+      name: m.name ?? "",
+      leads: num(m.leads),
+      deals: num(m.deals),
+      revenue: num(m.revenue),
+      calls: num(m.calls),
+      plan: numOrNull(m.plan),
+      planPct: numOrNull(m.planPct),
+    })),
+    projects: list(raw?.projects, (p) => ({
+      projectId: num(p.projectId),
+      name: p.name ?? p.projectName ?? "",
+      sold: num(p.sold),
+      reserved: num(p.reserved),
+      revenue: num(p.revenue),
+      plan: numOrNull(p.plan),
+      planPct: numOrNull(p.planPct),
+    })),
+    sources: list(raw?.sources, (s) => ({
+      source: s.source || "—",
+      leads: num(s.leads),
+      deals: num(s.deals),
+      conversion: num(s.conversion),
+      revenue: num(s.revenue),
+      spend: numOrNull(s.spend),
+      costPerLead: numOrNull(s.costPerLead),
+      costPerDeal: numOrNull(s.costPerDeal),
+    })),
     dynamics: list(raw?.dynamics, (d) => ({ label: d.label ?? "", dateFrom: d.dateFrom ?? "", dateTo: d.dateTo ?? "", leads: num(d.leads), contracts: num(d.contracts) })),
     unitTrends: list(raw?.unitTrends, (u) => ({ date: u.date ?? "", week: String(u.week ?? ""), sold: num(u.sold), reserved: num(u.reserved), free: num(u.free) })),
   };

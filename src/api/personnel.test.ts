@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { employeeBody, fromRawCard, fromRawEmployee, fromRawSummary, fromRawTimesheet, isWeekend, nextMark, tenure } from "./personnel";
+import { employeeBody, fromRawCard, fromRawEmployee, fromRawStaffing, fromRawSummary, fromRawTimesheet, fromRawVacancy, isWeekend, nextMark, tenure } from "./personnel";
 import { fromRawPayslip, fromRawRun, payrollActions, previousMonth } from "./salaryPayroll";
 
 describe("кадры", () => {
@@ -82,5 +82,59 @@ describe("зарплата", () => {
   it("прошлый месяц через год", () => {
     expect(previousMonth(new Date(2026, 9, 6))).toBe("2026-09");
     expect(previousMonth(new Date(2026, 0, 15))).toBe("2025-12");
+  });
+});
+
+describe("штатное расписание и вакансии (test2, demo.hr 08.10)", () => {
+  it("разбирает штатное: деньги — числа, занятые — из сотрудников", () => {
+    const staffing = fromRawStaffing({
+      totals: { positions: 27, headcount: 33, filled: 30, vacant: 3, over: 0, fund: "4186000.00", openVacancies: 3, unassigned: 3 },
+      departments: [
+        {
+          deptId: 2,
+          deptName: "Отдел продаж",
+          headcount: 7,
+          filled: 6,
+          vacant: 1,
+          fund: "778000.00",
+          positions: [
+            {
+              id: 4,
+              title: "Менеджер продаж",
+              deptId: 2,
+              deptName: "Отдел продаж",
+              branchId: null,
+              branchName: null,
+              headcount: 4,
+              salary: "95000.00",
+              fund: "380000.00",
+              filled: 3,
+              vacant: 1,
+              over: 0,
+              inRecruitment: 1,
+              employees: [{ id: 3, name: "Анна Котова", status: "active" }],
+              note: "",
+              sortOrder: 3,
+            },
+          ],
+        },
+      ],
+    });
+    expect(staffing.totals).toMatchObject({ positions: 27, headcount: 33, filled: 30, vacant: 3, fund: 4_186_000, unassigned: 3 });
+    const p = staffing.departments[0].positions[0];
+    expect(p).toMatchObject({ salary: 95_000, fund: 380_000, vacant: 1, inRecruitment: 1, branchName: "" });
+    expect(p.employees[0].name).toBe("Анна Котова");
+    expect(fromRawStaffing({}).departments).toEqual([]);
+  });
+
+  it("вакансия: тон и подпись бэка, оклад числом", () => {
+    const v = fromRawVacancy({ id: 2, positionId: 4, title: "Менеджер продаж", deptId: 2, deptName: "Отдел продаж", openings: 1, hired: 0, status: "screening", statusLabel: "отбор", tone: "amber", isOpen: true, candidates: 0, responses: 11, countLabel: "11 откликов", salary: "95000.00", note: "", openedAt: "2026-09-26", closedAt: null });
+    expect(v).toMatchObject({ positionId: 4, salary: 95_000, isOpen: true, tone: "amber", responses: 11 });
+  });
+
+  it("штатная единица уходит в тело приёма", () => {
+    const body = employeeBody({ name: " Тест ", position: "Электрик", hired: "2026-10-08", deptId: 10, projectId: null, salary: "70000", phone: "", email: "", birthday: null, probation: true, staffingPositionId: 26 });
+    expect(body).toMatchObject({ name: "Тест", staffingPositionId: 26 });
+    expect(employeeBody({ name: "Тест", position: "", hired: "2026-10-08", deptId: null, projectId: null, salary: "", phone: "", email: "", birthday: null, probation: false })).not.toHaveProperty("staffingPositionId");
   });
 });

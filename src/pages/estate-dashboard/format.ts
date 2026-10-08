@@ -1,6 +1,7 @@
 import type { Theme } from "@mui/material/styles";
 
 import type { Tone } from "../../api/estateDashboard";
+import type { FocusItem } from "../../api/realtyTasks";
 import { formatKGS } from "../../utility/format";
 
 export const cardSx = { border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" } as const;
@@ -16,6 +17,9 @@ export function toneColor(theme: Theme, tone: Tone | null | undefined): string {
       return theme.palette.success.main;
     case "blue":
       return theme.palette.info.main;
+    case "violet":
+    case "purple":
+      return theme.palette.purple.main;
     default:
       return theme.palette.text.disabled;
   }
@@ -117,5 +121,28 @@ export function estateHref(view: string, objectId?: number | null): string | nul
       return objectId ? `/realestate/calls?call=${objectId}` : "/realestate/calls";
     default:
       return null;
+  }
+}
+
+/**
+ * Подсказка «Фокуса дня» → адрес. Запись по id: заявка — карточка лида (там же
+ * её задачи с датами — деталки задачи у бэка нет), счёт — биллинг. Бронь
+ * открывается в шахматке, но для этого нужна её квартира — это делает панель
+ * отдельным запросом, здесь — запасной адрес реестра броней.
+ */
+export function focusHref(item: Pick<FocusItem, "code" | "view" | "leadId" | "billingAccountId">): string | null {
+  if (item.leadId != null && ["leads", "funnel", "today", "calls"].includes(item.view)) return `/realestate/leads?lead=${item.leadId}`;
+  switch (item.view) {
+    case "booking":
+    case "reservations":
+      return "/realestate/deals";
+    // «Показы и встречи сегодня» считает и встречи — их видно только в «Моём дне», не на «Показах».
+    case "showings":
+    case "shows":
+      return "/realestate/today";
+    case "leads":
+      return item.code === "no-next-step" ? "/realestate/leads?filter=notask" : "/realestate/leads";
+    default:
+      return estateHref(item.view, item.view === "billing" ? item.billingAccountId : null);
   }
 }

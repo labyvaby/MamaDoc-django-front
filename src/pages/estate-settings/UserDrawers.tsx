@@ -5,7 +5,7 @@ import { useSnackbar } from "notistack";
 import dayjs from "dayjs";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 
-import { inviteUser, updateOrgUser, type InviteInput, type MatrixRole, type OrgUser } from "../../api/estateSettings";
+import { inviteUser, resetUserTwoFa, updateOrgUser, type InviteInput, type MatrixRole, type OrgUser } from "../../api/estateSettings";
 import { useCan } from "../../hooks/useCan";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
@@ -26,6 +26,7 @@ export function UserDrawer({ user, open, roles, onClose }: { user: OrgUser | nul
   const perms = useSettingsCan();
   const { activeMembership } = usePermissions();
   const [blockOpen, setBlockOpen] = React.useState(false);
+  const [resetOpen, setResetOpen] = React.useState(false);
   // `id` участника = id членства: себя узнаём по активному членству (бэк и так не даст заблокировать себя — 400).
   const isMe = user != null && activeMembership?.id === user.id;
   const canEdit = perms.usersUpdate && user != null && !user.isOwner;
@@ -41,9 +42,20 @@ export function UserDrawer({ user, open, roles, onClose }: { user: OrgUser | nul
       if (!blockOpen) enqueueSnackbar(errorMessage(error, t("common.failed")), { variant: "error" });
     },
   });
+  // Сбросить 2FA сотруднику: потерял телефон — подключит заново.
+  const reset2fa = useMutation({
+    mutationFn: () => resetUserTwoFa((user as OrgUser).id, scope),
+    onSuccess: () => {
+      setResetOpen(false);
+      refresh();
+      enqueueSnackbar(t("roles.users.twoFaResetDone"), { variant: "success" });
+    },
+  });
   React.useEffect(() => {
     setBlockOpen(false);
+    setResetOpen(false);
     update.reset();
+    reset2fa.reset();
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- сброс при смене карточки
 
   // Роль пользователя может не попасть в матрицу (нет rbac.roles.view) — оставляем её в списке подписью из пользователя.
@@ -72,6 +84,8 @@ export function UserDrawer({ user, open, roles, onClose }: { user: OrgUser | nul
               {user.position && <InfoRow label={t("roles.users.position")} value={user.position} />}
               <InfoRow label={t("roles.users.email")} value={user.email || "—"} />
               <InfoRow label={t("roles.users.lastLogin")} value={user.lastLogin ? dayjs(user.lastLogin).format("DD.MM.YYYY HH:mm") : t("common.never")} />
+              <InfoRow label={t("roles.users.activeSessions")} value={user.activeSessions} />
+              <InfoRow label={t("roles.users.twoFaEnrolled")} value={user.twoFaEnrolled ? t("common.yes") : t("common.no")} tone={user.twoFaEnrolled ? "success" : null} />
             </Box>
             {canEdit ? (
               <TextField
@@ -100,6 +114,11 @@ export function UserDrawer({ user, open, roles, onClose }: { user: OrgUser | nul
                 label={t("roles.users.twoFaSwitch")}
               />
               <Typography sx={{ fontSize: "0.72rem", color: "text.secondary" }}>{t("roles.users.twoFaNote")}</Typography>
+              {perms.twoFaReset && user.twoFaEnrolled && !isMe && (
+                <Button size="small" color="warning" onClick={() => setResetOpen(true)} sx={{ mt: 1 }}>
+                  {t("roles.users.twoFaReset")}
+                </Button>
+              )}
             </Box>
             {canEdit && !isMe && (
               <Box>
@@ -117,6 +136,17 @@ export function UserDrawer({ user, open, roles, onClose }: { user: OrgUser | nul
           </>
         )}
       </Box>
+      <ConfirmDialog
+        open={resetOpen}
+        title={t("roles.users.twoFaResetTitle")}
+        text={t("roles.users.twoFaResetText", { name: user?.name || user?.email || "" })}
+        confirmLabel={t("roles.users.twoFaReset")}
+        danger
+        busy={reset2fa.isPending}
+        error={reset2fa.error}
+        onConfirm={() => reset2fa.mutate()}
+        onClose={() => setResetOpen(false)}
+      />
       <ConfirmDialog
         open={blockOpen}
         title={t("roles.users.blockTitle")}

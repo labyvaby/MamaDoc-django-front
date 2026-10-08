@@ -545,6 +545,7 @@ function unitDetails(unit: Unit): UnitDetails {
     contract: s.contract,
     history: historyOf(unit),
     offers: offersOf(unit),
+    media: { images: [], renders: [], media: [] },
   });
 }
 

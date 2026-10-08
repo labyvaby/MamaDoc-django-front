@@ -1,7 +1,7 @@
 import React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getDepartments, personnelKeys } from "../../api/personnel";
+import { getDepartments, getStaffing, personnelKeys, staffingOptions } from "../../api/personnel";
 import { payrollKeys } from "../../api/salaryPayroll";
 import { useCan } from "../../hooks/useCan";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
@@ -34,4 +34,17 @@ export function useRefreshPersonnel() {
     void queryClient.invalidateQueries({ queryKey: personnelKeys.all });
     void queryClient.invalidateQueries({ queryKey: payrollKeys.all });
   }, [queryClient]);
+}
+
+/** Штатные единицы для выбора (карточка сотрудника, новая вакансия). */
+export function useStaffingOptions(enabled: boolean) {
+  const scope = useRealtyScope();
+  const staffing = useQuery({
+    queryKey: personnelKeys.staffing(scope, null),
+    queryFn: ({ signal }) => getStaffing(null, scope, signal),
+    enabled: enabled && scope.orgReady !== false,
+    staleTime: 60_000,
+    retry: false,
+  });
+  return React.useMemo(() => staffingOptions(staffing.data), [staffing.data]);
 }

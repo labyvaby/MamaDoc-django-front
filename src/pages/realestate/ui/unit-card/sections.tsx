@@ -11,6 +11,8 @@ import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 
 import type { Project, Unit, UnitDetails, UnitEventType, UnitOffer } from "../../../../api/realestate";
+import { unitPlan, unitRenders } from "../../../../api/realtyFiles";
+import { ProtectedImage } from "../../../../components/realty/ProtectedImage";
 import { AppButton } from "../../../../components/ui";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { subtleBg } from "../../../../theme/uiHelpers";
@@ -116,7 +118,71 @@ export function ApartmentHead({ project, unit }: { project: Project; unit: Unit 
   );
 }
 
-export function RenderGallery() {
+/**
+ * Рендеры интерьера. Загруженные к ЖК (`renders[]` / `media[]` квартиры,
+ * `frontend-new-modules.md` §1) — по защищённым ссылкам; пока их нет —
+ * общие примеры интерьера с пометкой «концепт».
+ */
+export function RenderGallery({ unit }: { unit: UnitDetails }) {
+  const renders = unitRenders(unit.media);
+  if (renders.length) return <UnitRenderGallery renders={renders} />;
+  return <ConceptRenderGallery />;
+}
+
+function UnitRenderGallery({ renders }: { renders: { url: string; title: string; note: string }[] }) {
+  const { t } = useT("realestate");
+  const [active, setActive] = React.useState(0);
+  const current = renders[Math.min(active, renders.length - 1)]!;
+  const label = (item: { title: string }, index: number) => item.title || t("renders.numbered", { index: index + 1 });
+  return (
+    <Box component="section" sx={{ ...sectionSx, overflow: "hidden" }}>
+      <SectionTitle eyebrow={t("renders.eyebrow")} title={t("renders.title")} text={t("renders.textReal")} size="0.95rem" />
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: renders.length > 1 ? "136px minmax(0, 1fr)" : "minmax(0, 1fr)" }, gap: 1.5 }}>
+        {renders.length > 1 && (
+          <Box sx={{ display: "grid", gap: 1, alignContent: "start", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "1fr" } }}>
+            {renders.map((item, index) => (
+              <ButtonBase
+                key={item.url}
+                aria-label={t("renders.show", { label: label(item, index) })}
+                aria-pressed={index === active}
+                onClick={() => setActive(index)}
+                sx={(t) => ({
+                  display: "grid",
+                  gridTemplateColumns: "48px 1fr",
+                  alignItems: "center",
+                  gap: 1,
+                  minWidth: 0,
+                  p: 0.6,
+                  borderRadius: "10px",
+                  border: 1,
+                  textAlign: "left",
+                  borderColor: index === active ? alpha(t.palette.primary.main, 0.6) : "divider",
+                  bgcolor: index === active ? alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.16 : 0.08) : subtleBg(t),
+                })}
+              >
+                <ProtectedImage url={item.url} alt="" sx={{ width: 48, height: 42, borderRadius: "7px", overflow: "hidden" }} />
+                <Typography component="span" sx={{ fontSize: "0.7rem", fontWeight: 600, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                  {label(item, index)}
+                </Typography>
+              </ButtonBase>
+            ))}
+          </Box>
+        )}
+        <Box component="figure" sx={{ minWidth: 0, m: 0 }}>
+          <ProtectedImage url={current.url} alt={label(current, active)} sx={(t) => ({ height: { xs: 240, md: 390 }, borderRadius: "12px", overflow: "hidden", bgcolor: subtleBg(t, true) })} />
+          {(current.title || current.note) && (
+            <Box component="figcaption" sx={{ mt: 0.75, display: "flex", flexDirection: "column", gap: 0.25 }}>
+              {current.title && <Typography sx={{ fontSize: "0.8125rem", fontWeight: 700 }}>{current.title}</Typography>}
+              {current.note && <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{current.note}</Typography>}
+            </Box>
+          )}
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+function ConceptRenderGallery() {
   const { t } = useT("realestate");
   const label = (key: string) => t(`renders.${key}.label`);
   const [active, setActive] = React.useState(0);
@@ -733,10 +799,20 @@ const planRoomSx = (t: Theme) => ({
   border: `1px solid ${alpha(t.palette.text.primary, 0.22)}`,
 });
 
-export function FloorPlan({ unit }: { unit: Unit }) {
+export function FloorPlan({ unit }: { unit: UnitDetails }) {
   const { t } = useT("realestate");
   const balcony = balconyLabel(unit);
   const terrace = terraceLabel(unit);
+  // Загруженный план планировки важнее схемы, нарисованной по площадям комнат.
+  const plan = unitPlan(unit.media);
+  if (plan) {
+    return (
+      <Box component="section" sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
+        <SectionTitle title={t("card.planTitle")} text={plan.note || t("card.planText")} />
+        <ProtectedImage url={plan.url} alt={plan.title || t("card.planTitle")} fit="contain" sx={(th) => ({ height: { xs: 260, md: 340 }, borderRadius: "10px", overflow: "hidden", bgcolor: subtleBg(th) })} />
+      </Box>
+    );
+  }
   if (!unit.roomsBreakdown.length) {
     return (
       <Box component="section" sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>

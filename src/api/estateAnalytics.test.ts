@@ -32,8 +32,32 @@ describe("fromRawCrmAnalytics", () => {
     expect(a.unitTrends[0].free).toBe(261);
   });
 
+  it("план, расходы каналов и WhatsApp (test2, 08.10): null — нет плана / органика", () => {
+    const a = fromRawCrmAnalytics({
+      plan: { amount: "95174193.55", fact: "69026000.00", pct: 73, managers: 5, month: "2026-10", monthPlan: "96000000.00", monthFact: "15624000.00", monthDeals: 1, monthPct: 16 },
+      managers: [
+        { managerId: 5, name: "Марина Садыкова", leads: 5, deals: 2, revenue: "21340000.00", calls: 1, plan: "19827956.99", planPct: 108 },
+        { managerId: 7, name: "Без плана", leads: 1, deals: 0, revenue: "0.00", calls: 0, plan: null, planPct: null },
+      ],
+      projects: [{ projectId: 2, name: "Ордо Park", sold: 4, reserved: 40, revenue: "30259000.00", plan: "17845161.29", planPct: 170 }],
+      sources: [
+        { source: "Instagram", leads: 5, deals: 1, conversion: 20, revenue: "5000000.00", spend: "120000.00", costPerLead: "24000.00", costPerDeal: "120000.00" },
+        { source: "Рекомендация", leads: 4, deals: 0, conversion: 0, revenue: "0.00", spend: null, costPerLead: null, costPerDeal: null },
+      ],
+      activity: { calls: 8, shows: 19, bookings: 64, contracts: 8, proposals: 1, whatsapp: 2 },
+    });
+    expect(a.plan).toMatchObject({ pct: 73, monthPlan: 96_000_000, monthFact: 15_624_000, monthDeals: 1, monthPct: 16 });
+    expect(a.managers.map((m) => m.planPct)).toEqual([108, null]);
+    expect(a.managers[1].plan).toBeNull();
+    expect(a.projects[0].plan).toBeCloseTo(17_845_161.29);
+    expect(a.sources[0]).toMatchObject({ spend: 120_000, costPerDeal: 120_000, revenue: 5_000_000 });
+    expect(a.sources[1].spend).toBeNull();
+    expect(a.activity.whatsapp).toBe(2);
+  });
+
   it("терпит пустой ответ", () => {
     const a = fromRawCrmAnalytics({});
+    expect(a.plan).toBeNull();
     expect(a.previous).toBeNull();
     expect(a.stages).toEqual([]);
     expect(a.tasks.open).toBe(0);

@@ -159,10 +159,78 @@ export async function getShowsSummary(date: string | null, scope?: RealtyScope, 
   };
 }
 
+/**
+ * «Фокус дня» — правая панель «Моего дня» (`frontend-new-modules.md` §5, 07.10):
+ * `GET /api/v2/realty/tasks/focus/` (право `realty.view`). Без `scope` бэк сам
+ * решает: менеджеру — свои, руководителю — по команде. `canAct: false` —
+ * подсказки без кнопок действий. Пустой `items` — «Всё под контролем».
+ */
+export type FocusScope = "mine" | "team";
+
+export interface FocusItem {
+  /** new-lead / overdue-tasks / reservation-expiring / shows-today / billing-overdue / alternatives / no-next-step. */
+  code: string;
+  /** red / amber / blue / violet. */
+  tone: string;
+  /** Глиф бэка («⚠», «⚡») — запасной, если коду нет своей иконки. */
+  icon: string;
+  title: string;
+  text: string;
+  count: number;
+  /** Экран подсказки: leads / today / booking / billing / showings… */
+  view: string;
+  leadId: number | null;
+  taskId: number | null;
+  reservationId: number | null;
+  billingAccountId: number | null;
+  amount: number | null;
+}
+
+export interface TaskFocus {
+  scope: FocusScope | string;
+  canAct: boolean;
+  items: FocusItem[];
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- сырой ответ разбирается здесь и только здесь */
+const idOrNull = (value: unknown) => (value == null || value === "" ? null : Number(value) || null);
+
+export function fromRawFocus(raw: any): TaskFocus {
+  const items: any[] = Array.isArray(raw?.items) ? raw.items.filter((item: unknown) => item && typeof item === "object") : [];
+  return {
+    scope: raw?.scope ?? "",
+    canAct: Boolean(raw?.canAct),
+    items: items.map((item) => ({
+      code: item.code ?? "",
+      tone: item.tone ?? "",
+      icon: item.icon ?? "",
+      title: item.title ?? "",
+      text: item.text ?? "",
+      count: Number(item.count) || 0,
+      view: item.view ?? "",
+      leadId: idOrNull(item.leadId),
+      taskId: idOrNull(item.taskId),
+      reservationId: idOrNull(item.reservationId),
+      billingAccountId: idOrNull(item.billingAccountId),
+      amount: item.amount == null || item.amount === "" ? null : Number(item.amount),
+    })),
+  };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+export async function getTaskFocus(params: { scope?: FocusScope | null; managerId?: number | null }, scope?: RealtyScope, signal?: AbortSignal): Promise<TaskFocus> {
+  const query = new URLSearchParams();
+  if (params.scope) query.set("scope", params.scope);
+  if (params.managerId != null) query.set("managerId", String(params.managerId));
+  const qs = query.toString();
+  return fromRawFocus(await apiRequest(`${TASKS_API}/focus/${qs ? `?${qs}` : ""}`, { headers: realtyHeaders(scope), signal }));
+}
+
 const scopeKey = (scope: RealtyScope | undefined) => [scope?.organizationId ?? "session", scope?.branchId ?? "all"] as const;
 
 export const realtyTaskKeys = {
   all: ["django", "realty-tasks"] as const,
   list: (scope: RealtyScope | undefined, params: RealtyTaskParams) => [...realtyTaskKeys.all, ...scopeKey(scope), params] as const,
   showsSummary: (scope: RealtyScope | undefined, date: string) => [...realtyTaskKeys.all, ...scopeKey(scope), "shows-summary", date] as const,
+  focus: (scope: RealtyScope | undefined, focusScope: FocusScope | null) => [...realtyTaskKeys.all, ...scopeKey(scope), "focus", focusScope] as const,
 };

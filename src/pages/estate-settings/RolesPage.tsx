@@ -29,10 +29,11 @@ import { useT } from "../../i18n/VerticalProvider";
 import { subtleBg } from "../../theme/uiHelpers";
 import { StatusPill } from "../construction/shared";
 import { cardSx } from "../estate-dashboard/format";
-import { ConfirmDialog, EmptyNote, PillTabs, SubPill, TwoLines } from "../realty-finance/shared";
+import { ConfirmDialog, PillTabs, SubPill, TwoLines } from "../realty-finance/shared";
 import { KpiCards, ScreenError } from "../realty-sales/shared";
 import { useIdParam } from "../realty-sales/useLeadParam";
 import { errorMessage, useRefreshSettings, useSettingsCan } from "./hooks";
+import { SecurityTab } from "./SecurityTab";
 import { InviteDrawer, UserDrawer } from "./UserDrawers";
 
 type Tab = "matrix" | "users" | "security";
@@ -42,9 +43,10 @@ type UserFilter = "all" | "active" | "blocked";
 /**
  * «Роли и права» застройщика (AIVIO, гайд `frontend-settings.md` §2):
  * матрица «раздел × роль» (`/roles-matrix/`), пользователи организации
- * (`/users/`, карточка — `?user=`) и политики безопасности. Столбцы — все роли
- * организации из API, подписи ролей — с бэка. «Войти как», сессии и резервные
- * копии макета API не имеют — не показываем.
+ * (`/users/`, карточка — `?user=`) и «Безопасность» — сессии, своя 2FA,
+ * политики, резервные копии (`SecurityTab`, `frontend-new-modules.md` §3).
+ * Столбцы — все роли организации из API, подписи ролей — с бэка. «Войти как»
+ * API не имеет — не показываем.
  */
 export default function EstateRolesPage() {
   const { t } = useT("estateSettings");
@@ -104,7 +106,7 @@ function RolesScreen() {
       ) : tab === "users" ? (
         perms.usersView ? <UsersTab /> : <Alert severity="info">{t("roles.users.noAccess")}</Alert>
       ) : (
-        <SecurityTab policies={s?.policies ?? null} />
+        <SecurityTab summary={s} />
       )}
     </>
   );
@@ -347,32 +349,5 @@ function UsersTab() {
       <UserDrawer user={all.find((u) => u.id === userId) ?? null} open={userId != null} roles={roles} onClose={() => openUser(null)} />
       {perms.usersCreate && <InviteDrawer open={inviteOpen} roles={roles} users={all} onClose={() => setInviteOpen(false)} onInvited={(u) => openUser(u.id)} />}
     </>
-  );
-}
-
-function SecurityTab({ policies }: { policies: { code: string; title: string; description: string; status: string; enforced: boolean }[] | null }) {
-  const { t } = useT("estateSettings");
-  return (
-    <Box sx={{ ...cardSx, overflow: "hidden" }}>
-      <Typography sx={{ px: 2.25, pt: 2, pb: 1, fontWeight: 700 }}>{t("roles.security.policies")}</Typography>
-      {!policies ? (
-        <Box sx={{ p: 2 }}>
-          <Skeleton variant="rounded" height={140} />
-        </Box>
-      ) : policies.length === 0 ? (
-        <EmptyNote text={t("common.empty")} />
-      ) : (
-        policies.map((p) => (
-          <Box key={p.code} sx={{ px: 2.25, py: 1.25, display: "flex", alignItems: "center", gap: 1.5, borderTop: 1, borderColor: "divider" }}>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography sx={{ fontSize: "0.875rem", fontWeight: 600 }}>{p.title}</Typography>
-              {p.description && <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{p.description}</Typography>}
-            </Box>
-            {p.enforced && <Typography sx={{ fontSize: "0.72rem", color: "text.secondary" }}>{t("roles.security.enforced")}</Typography>}
-            <StatusPill label={t(`roles.security.status_${p.status}`, { defaultValue: p.status })} tone={p.status === "enabled" ? "success" : p.status === "partial" ? "warning" : null} />
-          </Box>
-        ))
-      )}
-    </Box>
   );
 }

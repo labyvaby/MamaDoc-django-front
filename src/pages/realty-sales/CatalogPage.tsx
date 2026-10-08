@@ -21,6 +21,7 @@ import {
   type CatalogSort,
 } from "../../api/realtyCatalog";
 import { realEstateKeys } from "../../api/realestate";
+import { ProtectedImage } from "../../components/realty/ProtectedImage";
 import { pillSx } from "../../components/ui";
 import { useCan } from "../../hooks/useCan";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
@@ -377,6 +378,8 @@ function ProjectCard({ project, filtered, onOpen, onChessboard }: { project: Cat
   ].filter(Boolean) as string[];
   return (
     <Box sx={{ ...cardSx, overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0 }}>
+      {/* Фото ЖК — только если загружено; без него остаётся цветная шапка макета. */}
+      {project.media.coverUrl && <ProtectedImage url={project.media.coverUrl} alt={project.name} sx={(th) => ({ height: 150, bgcolor: subtleBg(th, true) })} />}
       <Box sx={(th) => ({ px: 2, pt: 1.75, pb: 1.5, bgcolor: subtleBg(th) })}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, flexWrap: "wrap" }}>
           {project.statusLabel && <Chip tone="primary">{project.statusLabel}</Chip>}
@@ -474,7 +477,7 @@ function LayoutCard({ layout, onOpen }: { layout: CatalogLayout; onOpen: () => v
   ].filter(Boolean) as string[];
   return (
     <Box sx={{ ...cardSx, p: 2, display: "grid", gap: 1, alignContent: "start", minWidth: 0 }}>
-      {layout.images[0] && <Box component="img" src={layout.images[0]} alt={layout.code} sx={{ width: "100%", height: 160, objectFit: "contain", borderRadius: "10px" }} />}
+      {layout.images[0] && <ProtectedImage url={layout.images[0]} alt={layout.code} fit="contain" sx={{ height: 160, borderRadius: "10px", overflow: "hidden" }} />}
       <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
         <Typography sx={{ fontWeight: 700, flex: 1, minWidth: 0 }}>
           {t(`catalog.roomsShort.${roomsKey(layout.rooms)}`)} · {area}

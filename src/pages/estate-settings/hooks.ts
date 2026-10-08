@@ -23,6 +23,9 @@ export function useSettingsCan() {
     usersView: view && can("rbac.memberships.view"),
     usersCreate: manage && can("rbac.memberships.create"),
     usersUpdate: manage && can("rbac.memberships.update"),
+    // Безопасность (`frontend-new-modules.md` §3): завершить — manage ИЛИ rbac.memberships.update, сбросить 2FA — оба.
+    sessionsTerminate: view && (manage || can("rbac.memberships.update")),
+    twoFaReset: manage && can("rbac.memberships.update"),
   };
 }
 

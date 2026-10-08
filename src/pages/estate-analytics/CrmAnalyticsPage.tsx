@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Button, ButtonBase, Popover, Skeleton, Typography } from "@mui/material";
+import { Box, Button, ButtonBase, Popover, Skeleton, Tooltip as MuiTooltip, Typography } from "@mui/material";
 import { useTheme, type Theme } from "@mui/material/styles";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { ruRU } from "@mui/x-data-grid/locales";
@@ -45,7 +45,8 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
  * отчёт отдела продаж за период — `GET /api/v2/realty/analytics/summary/`.
  * Период и «Мои» — в адресе (`?period=`, `?from=&to=`, `?mine=1`), клики ведут
  * в «Лиды» с фильтром этапа / менеджера и в «Мой день». Право — `realty.view`.
- * Планов менеджеров и ЖК, расходов источников и WhatsApp в API нет — не рисуем.
+ * План (`plan`, `managers[].planPct`, `projects[].planPct`), расходы каналов и
+ * WhatsApp — с 07.10 (`frontend-new-modules.md` §4); нет плана → `null`, не рисуем.
  */
 export default function CrmAnalyticsPage() {
   const { t } = useT("estateAnalytics");
@@ -333,7 +334,7 @@ function Tasks({ data, onTasks, onNoTask }: { data: CrmAnalytics; onTasks: () =>
 
 function Activity({ data }: { data: CrmAnalytics }) {
   const { t } = useT("estateAnalytics");
-  const items = (["calls", "shows", "bookings", "contracts", "proposals"] as const).map((key) => ({ key, value: data.activity[key] }));
+  const items = (["calls", "whatsapp", "shows", "bookings", "contracts", "proposals"] as const).map((key) => ({ key, value: data.activity[key] }));
   const max = Math.max(0, ...items.map((i) => i.value));
   return (
     <Box sx={{ ...cardSx, minWidth: 0 }}>
@@ -355,13 +356,52 @@ function Activity({ data }: { data: CrmAnalytics }) {
 
 const tooltipStyle = (theme: Theme) => ({ background: theme.palette.background.paper, border: `1px solid ${theme.palette.divider}`, borderRadius: 8, fontSize: 12 });
 
+/** Цвет выполнения плана: от 100% — успех, от 70% — норма, ниже — отставание. */
+const planColor = (pct: number) => (pct >= 100 ? "success.main" : pct >= 70 ? "primary.main" : "warning.main");
+
+/** Плашка «План N %» в «Динамике продаж»; подсказка — выполнение за текущий месяц. */
+function PlanBadge({ data }: { data: CrmAnalytics }) {
+  const { t } = useT("estateAnalytics");
+  const plan = data.plan;
+  if (!plan || plan.pct == null) return null;
+  const month = plan.month ? dayjs(`${plan.month}-01`) : null;
+  const hint =
+    plan.monthPlan != null
+      ? t("crm.plan.monthHint", {
+          month: month?.isValid() ? month.format("MMMM") : plan.month,
+          plan: compactSum(plan.monthPlan, t),
+          fact: compactSum(plan.monthFact, t),
+          deals: t("crm.plan.deals", { count: plan.monthDeals }),
+          pct: plan.monthPct ?? 0,
+        })
+      : t("crm.plan.periodHint", { plan: compactSum(plan.amount, t), fact: compactSum(plan.fact, t) });
+  return (
+    <MuiTooltip title={hint} arrow>
+      <Typography component="span" tabIndex={0} sx={(th) => ({ px: 1, py: 0.25, borderRadius: "6px", fontSize: "0.75rem", fontWeight: 600, whiteSpace: "nowrap", bgcolor: subtleBg(th, true), color: planColor(plan.pct ?? 0), cursor: "help" })}>
+        {t("crm.plan.badge", { value: plan.pct })}
+      </Typography>
+    </MuiTooltip>
+  );
+}
+
+/** Процент плана с полосой — для таблиц и списков; нет плана — «—». */
+function PlanCell({ pct }: { pct: number | null }) {
+  if (pct == null) return <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>—</Typography>;
+  return (
+    <Box sx={{ width: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 0.75, alignItems: "center" }}>
+      <ProgressBar value={pct} color={planColor(pct)} height={5} />
+      <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{pct}%</Typography>
+    </Box>
+  );
+}
+
 function Dynamics({ data }: { data: CrmAnalytics }) {
   const { t } = useT("estateAnalytics");
   const theme = useTheme();
   const empty = data.dynamics.every((d) => d.leads === 0 && d.contracts === 0);
   return (
     <Box sx={{ ...cardSx, minWidth: 0 }}>
-      <CardHeader title={t("crm.dynamics.title")} />
+      <CardHeader title={t("crm.dynamics.title")} action={<PlanBadge data={data} />} />
       <Box sx={{ px: 1, pb: 1.5, height: 240 }}>
         {data.dynamics.length === 0 || empty ? (
           <EmptyNote text={t("common.empty")} />
@@ -418,6 +458,14 @@ function Managers({ rows, onOpen }: { rows: AnalyticsManager[]; onOpen: (row: An
     { field: "deals", headerName: t("crm.managers.deals"), width: 80, type: "number" },
     { field: "revenue", headerName: t("crm.managers.revenue"), width: 120, type: "number", valueFormatter: (value: number) => compactSum(value, t) },
     { field: "calls", headerName: t("crm.managers.calls"), width: 80, type: "number" },
+    {
+      field: "planPct",
+      headerName: t("crm.managers.plan"),
+      width: 130,
+      type: "number",
+      sortComparator: (a: number | null, b: number | null) => (a ?? -1) - (b ?? -1),
+      renderCell: ({ row }) => <PlanCell pct={row.planPct} />,
+    },
   ];
   return (
     <Box sx={{ ...cardSx, minWidth: 0, overflow: "hidden" }}>
@@ -464,6 +512,12 @@ function Projects({ data }: { data: CrmAnalytics }) {
               <Typography sx={{ mt: 0.4, fontSize: "0.72rem", color: "text.secondary" }}>
                 {t("crm.projects.sold")}: <b>{p.sold}</b> · {t("crm.projects.reserved")}: <b>{p.reserved}</b>
               </Typography>
+              {p.planPct != null && p.plan != null && (
+                <Box sx={{ mt: 0.75 }}>
+                  <Typography sx={{ mb: 0.4, fontSize: "0.72rem", color: "text.secondary" }}>{t("crm.projects.plan", { plan: compactSum(p.plan, t) })}</Typography>
+                  <PlanCell pct={p.planPct} />
+                </Box>
+              )}
             </Box>
           ))}
         </Box>
@@ -479,6 +533,23 @@ function Sources({ rows }: { rows: AnalyticsSource[] }) {
     { field: "leads", headerName: t("crm.sources.leads"), width: 90, type: "number" },
     { field: "deals", headerName: t("crm.sources.deals"), width: 90, type: "number" },
     { field: "conversion", headerName: t("crm.sources.conversion"), width: 110, type: "number", valueFormatter: (value: number) => `${value}%` },
+    { field: "revenue", headerName: t("crm.sources.revenue"), width: 110, type: "number", valueFormatter: (value: number) => (value ? compactSum(value, t) : "—") },
+    {
+      field: "spend",
+      headerName: t("crm.sources.spend"),
+      width: 110,
+      type: "number",
+      sortComparator: (a: number | null, b: number | null) => (a ?? -1) - (b ?? -1),
+      valueFormatter: (value: number | null) => (value == null ? t("crm.sources.organic") : compactSum(value, t)),
+    },
+    {
+      field: "costPerDeal",
+      headerName: t("crm.sources.costPerDeal"),
+      width: 170,
+      type: "number",
+      sortComparator: (a: number | null, b: number | null) => (a ?? -1) - (b ?? -1),
+      valueFormatter: (value: number | null) => (value == null ? "—" : compactSum(value, t)),
+    },
   ];
   return (
     <Box sx={{ ...cardSx, minWidth: 0, overflow: "hidden" }}>

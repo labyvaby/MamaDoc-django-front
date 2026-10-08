@@ -58,7 +58,13 @@ export interface OrgUser {
   roleCode: string;
   roleName: string;
   isOwner: boolean;
+  /** Флаг «требовать 2FA» (ставит администратор). */
   twoFa: boolean;
+  /** Требование уже действует при входе — пока всегда `false` (2FA на логине не спрашивается). */
+  twoFaEnforced: boolean;
+  /** Сотрудник сам подключил приложение-аутентификатор. */
+  twoFaEnrolled: boolean;
+  activeSessions: number;
   lastLogin: string | null;
   invitedAt: string | null;
   status: "active" | "blocked" | string;
@@ -77,9 +83,61 @@ export interface SecuritySummary {
   customizedRoles: number;
   users: number;
   activeUsers: number;
+  /** Скольким требуется 2FA (флаг администратора). */
   twoFaEnabled: number;
   twoFaPct: number;
+  /** Сколько реально подключили приложение. */
+  twoFaEnrolled: number;
   policies: SecurityPolicy[];
+  activeSessions: number;
+  sessionsWeb: number;
+  sessionsMobile: number;
+  /** Резервные копии: `available: false` — показываем `note`, кнопки «Создать копию» нет. */
+  backups: { available: boolean; note: string; items: unknown[] };
+}
+
+/** Активная сессия входа (`frontend-new-modules.md` §3; поля сверены с test2 08.10). */
+export interface SecuritySession {
+  id: number;
+  userId: number | null;
+  membershipId: number | null;
+  name: string;
+  roleName: string;
+  isOwner: boolean;
+  memberStatus: string;
+  /** «macOS · Chrome»; бэк не узнал — «Неизвестное устройство». */
+  device: string;
+  os: string;
+  browser: string;
+  /** web / mobile. */
+  channel: string;
+  ip: string;
+  createdAt: string | null;
+  lastActivity: string | null;
+  /** Своя текущая сессия — её не завершают (бэк отвечает 400 «используйте „Выйти“»). */
+  isCurrent: boolean;
+}
+
+/** Своя 2FA (`GET /security/2fa/`). */
+export interface MyTwoFa {
+  enrolled: boolean;
+  method: string | null;
+  confirmedAt: string | null;
+  /** Секрет выдан, код ещё не подтверждён. */
+  pendingSetup: boolean;
+  /** Администратор требует 2FA. */
+  required: boolean;
+  /** Проверяется ли код при входе — пока `false`. */
+  enforcedAtLogin: boolean;
+  recoveryCodesLeft: number;
+}
+
+export interface TotpSetup {
+  secret: string;
+  otpauthUri: string;
+  issuer: string;
+  digits: number;
+  period: number;
 }
 
 export type DictionaryItem = Record<string, unknown> & { id?: string | number };
@@ -273,6 +331,9 @@ export const fromRawUser = (u: any): OrgUser => ({
   roleName: str(u.roleName),
   isOwner: Boolean(u.isOwner),
   twoFa: Boolean(u.twoFa),
+  twoFaEnforced: Boolean(u.twoFaEnforced),
+  twoFaEnrolled: Boolean(u.twoFaEnrolled),
+  activeSessions: num(u.activeSessions),
   lastLogin: u.lastLogin || null,
   invitedAt: u.invitedAt || null,
   status: str(u.status) || "active",
@@ -285,7 +346,40 @@ const fromRawSecurity = (raw: any): SecuritySummary => ({
   activeUsers: num(raw?.activeUsers),
   twoFaEnabled: num(raw?.twoFaEnabled),
   twoFaPct: num(raw?.twoFaPct),
+  twoFaEnrolled: num(raw?.twoFaEnrolled),
   policies: rows(raw?.policies).map((p) => ({ code: str(p.code), title: str(p.title), description: str(p.description), status: str(p.status), enforced: Boolean(p.enforced) })),
+  activeSessions: num(raw?.activeSessions),
+  sessionsWeb: num(raw?.sessionsWeb),
+  sessionsMobile: num(raw?.sessionsMobile),
+  backups: { available: Boolean(raw?.backups?.available), note: str(raw?.backups?.note), items: rows(raw?.backups?.items) },
+});
+
+export const fromRawSession = (s: any): SecuritySession => ({
+  id: num(s.id),
+  userId: numOrNull(s.userId),
+  membershipId: numOrNull(s.membershipId),
+  name: str(s.name),
+  roleName: str(s.roleName),
+  isOwner: Boolean(s.isOwner),
+  memberStatus: str(s.memberStatus),
+  device: str(s.device),
+  os: str(s.os),
+  browser: str(s.browser),
+  channel: str(s.channel) || "web",
+  ip: str(s.ip),
+  createdAt: s.createdAt || null,
+  lastActivity: s.lastActivity || null,
+  isCurrent: Boolean(s.isCurrent),
+});
+
+export const fromRawMyTwoFa = (raw: any): MyTwoFa => ({
+  enrolled: Boolean(raw?.enrolled),
+  method: raw?.method || null,
+  confirmedAt: raw?.confirmedAt || null,
+  pendingSetup: Boolean(raw?.pendingSetup),
+  required: Boolean(raw?.required),
+  enforcedAtLogin: Boolean(raw?.enforcedAtLogin),
+  recoveryCodesLeft: num(raw?.recoveryCodesLeft),
 });
 
 export const fromRawDictionary = (d: any): Dictionary => ({
@@ -425,6 +519,51 @@ export async function resetRolesMatrix(roleId: number | null, scope?: RealtyScop
 
 export async function getSecuritySummary(scope?: RealtyScope, signal?: AbortSignal): Promise<SecuritySummary> {
   return fromRawSecurity(await call(scope, "/security/summary/", { signal }));
+}
+
+// ── Безопасность: сессии и 2FA (`frontend-new-modules.md` §3) ────────────────
+// Сессии видны с `integrations.view`; завершать — `integrations.manage` или
+// `rbac.memberships.update`. Своя 2FA — любому сотруднику. Сбросить 2FA
+// сотруднику — `integrations.manage` и `rbac.memberships.update`.
+
+export async function getSecuritySessions(scope?: RealtyScope, signal?: AbortSignal): Promise<SecuritySession[]> {
+  return rows(await call(scope, "/security/sessions/", { signal })).map(fromRawSession);
+}
+
+export async function terminateSession(id: number, scope?: RealtyScope): Promise<{ terminated: number; skipped: number }> {
+  const raw = await post<{ terminated?: number; skipped?: number }>(scope, `/security/sessions/${id}/terminate/`);
+  return { terminated: num(raw?.terminated), skipped: num(raw?.skipped) };
+}
+
+/** Своя текущая сессия бэком пропускается (`skipped`). */
+export async function terminateAllSessions(scope?: RealtyScope): Promise<{ terminated: number; skipped: number }> {
+  const raw = await post<{ terminated?: number; skipped?: number }>(scope, "/security/sessions/terminate-all/");
+  return { terminated: num(raw?.terminated), skipped: num(raw?.skipped) };
+}
+
+export async function getMyTwoFa(scope?: RealtyScope, signal?: AbortSignal): Promise<MyTwoFa> {
+  return fromRawMyTwoFa(await call(scope, "/security/2fa/", { signal }));
+}
+
+/** Новый секрет: QR рисуем из `otpauthUri`; повторный вызов выдаёт новый секрет. */
+export async function setupTotp(scope?: RealtyScope): Promise<TotpSetup> {
+  const raw = await post<Partial<TotpSetup>>(scope, "/security/2fa/totp/setup/");
+  return { secret: str(raw?.secret), otpauthUri: str(raw?.otpauthUri), issuer: str(raw?.issuer), digits: num(raw?.digits) || 6, period: num(raw?.period) || 30 };
+}
+
+/** Код из приложения → резервные коды (показываются один раз). Неверный код — 400 `details.fields.code`. */
+export async function confirmTotp(code: string, scope?: RealtyScope): Promise<{ enrolled: boolean; recoveryCodes: string[] }> {
+  const raw = await post<{ enrolled?: boolean; recoveryCodes?: unknown }>(scope, "/security/2fa/totp/confirm/", { code: code.trim() });
+  return { enrolled: Boolean(raw?.enrolled), recoveryCodes: Array.isArray(raw?.recoveryCodes) ? raw.recoveryCodes.map(String) : [] };
+}
+
+export async function disableTwoFa(code: string, scope?: RealtyScope): Promise<MyTwoFa> {
+  return fromRawMyTwoFa(await post(scope, "/security/2fa/disable/", { code: code.trim() }));
+}
+
+/** Сбросить 2FA сотруднику: `id` — членство (`OrgUser.id`). Ответ — пользователь. */
+export async function resetUserTwoFa(membershipId: number, scope?: RealtyScope): Promise<OrgUser> {
+  return fromRawUser(await post(scope, `/users/${membershipId}/2fa/reset/`));
 }
 
 export async function getOrgUsers(status: "all" | "active" | "blocked", scope?: RealtyScope, signal?: AbortSignal): Promise<OrgUser[]> {
@@ -591,6 +730,8 @@ export const estateSettingsKeys = {
   scoped: (scope: RealtyScope | undefined) => [...estateSettingsKeys.all, ...scopeKey(scope)] as const,
   matrix: (scope: RealtyScope | undefined) => [...estateSettingsKeys.scoped(scope), "matrix"] as const,
   security: (scope: RealtyScope | undefined) => [...estateSettingsKeys.scoped(scope), "security"] as const,
+  sessions: (scope: RealtyScope | undefined) => [...estateSettingsKeys.scoped(scope), "sessions"] as const,
+  myTwoFa: (scope: RealtyScope | undefined) => [...estateSettingsKeys.scoped(scope), "my-2fa"] as const,
   users: (scope: RealtyScope | undefined, status: string) => [...estateSettingsKeys.scoped(scope), "users", status] as const,
   dictionaries: (scope: RealtyScope | undefined) => [...estateSettingsKeys.scoped(scope), "dictionaries"] as const,
   company: (scope: RealtyScope | undefined) => [...estateSettingsKeys.scoped(scope), "company"] as const,

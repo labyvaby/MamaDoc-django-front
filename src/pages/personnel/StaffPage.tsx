@@ -7,7 +7,19 @@ import { useSearchParams } from "react-router";
 import dayjs from "dayjs";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 
-import { EMPLOYEE_FILTERS, getBirthdays, getEmployees, getOrgStructure, getPersonnelEvents, getPersonnelSummary, personnelKeys, tenure, type Employee, type EmployeeFilter } from "../../api/personnel";
+import {
+  EMPLOYEE_FILTERS,
+  getBirthdays,
+  getEmployees,
+  getOrgStructure,
+  getPersonnelEvents,
+  getPersonnelSummary,
+  personnelKeys,
+  tenure,
+  type Employee,
+  type EmployeeFilter,
+  type Vacancy,
+} from "../../api/personnel";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { useT } from "../../i18n/VerticalProvider";
@@ -20,9 +32,10 @@ import { useIdParam } from "../realty-sales/useLeadParam";
 import { compactSum, employeeTone, eventTone } from "./format";
 import { useCanManageStaff, useDepartments } from "./hooks";
 import { EmployeeDrawer, EmployeeFormDrawer } from "./StaffDrawers";
+import { StaffingView, VacanciesPanel, VacancyDrawer, VacancyFormDrawer } from "./StaffingPanels";
 
-type Tab = "list" | "org" | "events";
-const TABS: Tab[] = ["list", "org", "events"];
+type Tab = "list" | "org" | "staffing" | "events";
+const TABS: Tab[] = ["list", "org", "staffing", "events"];
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = React.useState(value);
@@ -38,6 +51,8 @@ function useDebounced<T>(value: T, ms: number): T {
  * учёт на `/api/v2/personnel` (не MamaDoc `/api/staff/employees/` — там нет
  * отдела, оклада и кадровых статусов). Вкладка — `?tab=`, карточка —
  * `?employee=`. Кнопки — `personnel.manage` + `staff.update` (см. hooks).
+ * Штатное расписание — вкладка `?tab=staffing`, вакансии — панель справа и
+ * карточка `?vacancy=` (`frontend-new-modules.md` §2).
  */
 export default function StaffPage() {
   const { t } = useT("personnel");
@@ -55,6 +70,9 @@ function StaffScreen() {
   const canManage = useCanManageStaff();
   const [searchParams, setSearchParams] = useSearchParams();
   const [employeeId, openEmployee] = useIdParam("employee");
+  const [vacancyId, openVacancy] = useIdParam("vacancy");
+  const [creatingVacancy, setCreatingVacancy] = React.useState(false);
+  const [hiring, setHiring] = React.useState<Vacancy | null>(null);
   const tabParam = searchParams.get("tab") as Tab | null;
   const tab: Tab = tabParam && TABS.includes(tabParam) ? tabParam : "list";
   const [status, setStatus] = React.useState<EmployeeFilter>("working");
@@ -114,7 +132,7 @@ function StaffScreen() {
 
       <Box sx={{ mb: 1.25, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1 }}>
         <PillTabs<Tab> value={tab} onChange={setTab} tabs={TABS.map((key) => ({ key, label: t(`staff.tabs.${key}`) }))} />
-        {tab === "list" && (
+        {(tab === "list" || tab === "staffing") && (
           <Box sx={{ ml: { md: "auto" }, display: "flex", alignItems: "center", gap: 1, flexWrap: { xs: "wrap", md: "nowrap" }, flex: { xs: "1 1 100%", md: "0 1 auto" } }}>
             <TextField
               select
@@ -132,7 +150,7 @@ function StaffScreen() {
                 </MenuItem>
               ))}
             </TextField>
-            <SearchBox value={search} onChange={setSearch} placeholder={t("staff.search")} />
+            {tab === "list" && <SearchBox value={search} onChange={setSearch} placeholder={t("staff.search")} />}
           </Box>
         )}
       </Box>
@@ -154,6 +172,8 @@ function StaffScreen() {
             </Box>
           ) : tab === "org" ? (
             <OrgView data={org.data} onOpen={openEmployee} />
+          ) : tab === "staffing" ? (
+            <StaffingView deptId={deptId === "" ? null : deptId} canManage={canManage} onOpenEmployee={openEmployee} />
           ) : (
             <Box sx={{ ...cardSx, overflow: "hidden" }}>
               {!events.data ? (
@@ -181,29 +201,52 @@ function StaffScreen() {
             </Box>
           )}
         </Box>
-        <Box sx={{ ...cardSx, minWidth: 0 }}>
-          <CardHeader title={t("staff.birthdays")} />
-          <Box sx={{ px: 2.25, pb: 1.5 }}>
-            {(birthdays.data ?? []).length === 0 && <Typography sx={{ pb: 1, fontSize: "0.8125rem", color: "text.secondary" }}>{t("staff.birthdaysEmpty")}</Typography>}
-            {birthdays.data?.map((b) => (
-              <ButtonBase key={b.id} onClick={() => openEmployee(b.id)} sx={{ width: "100%", py: 0.9, display: "flex", alignItems: "baseline", gap: 1, textAlign: "left", borderTop: 1, borderColor: "divider", "&:first-of-type": { borderTop: 0 } }}>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography noWrap sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-                    {b.name}
+        <Box sx={{ display: "grid", gap: 2, minWidth: 0 }}>
+          <VacanciesPanel canManage={canManage} onOpen={openVacancy} onCreate={() => setCreatingVacancy(true)} />
+          <Box sx={{ ...cardSx, minWidth: 0 }}>
+            <CardHeader title={t("staff.birthdays")} />
+            <Box sx={{ px: 2.25, pb: 1.5 }}>
+              {(birthdays.data ?? []).length === 0 && <Typography sx={{ pb: 1, fontSize: "0.8125rem", color: "text.secondary" }}>{t("staff.birthdaysEmpty")}</Typography>}
+              {birthdays.data?.map((b) => (
+                <ButtonBase key={b.id} onClick={() => openEmployee(b.id)} sx={{ width: "100%", py: 0.9, display: "flex", alignItems: "baseline", gap: 1, textAlign: "left", borderTop: 1, borderColor: "divider", "&:first-of-type": { borderTop: 0 } }}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography noWrap sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+                      {b.name}
+                    </Typography>
+                    <Typography noWrap sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
+                      {b.position}
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontSize: "0.75rem", color: b.daysLeft === 0 ? "success.main" : "text.secondary", whiteSpace: "nowrap" }}>
+                    {b.daysLeft === 0 ? t("staff.birthdayToday") : b.daysLeft != null ? t("staff.birthdayIn", { days: t("common.days", { count: b.daysLeft }) }) : dayjs(b.date).format("DD.MM")}
                   </Typography>
-                  <Typography noWrap sx={{ fontSize: "0.72rem", color: "text.secondary" }}>
-                    {b.position}
-                  </Typography>
-                </Box>
-                <Typography sx={{ fontSize: "0.75rem", color: b.daysLeft === 0 ? "success.main" : "text.secondary", whiteSpace: "nowrap" }}>
-                  {b.daysLeft === 0 ? t("staff.birthdayToday") : b.daysLeft != null ? t("staff.birthdayIn", { days: t("common.days", { count: b.daysLeft }) }) : dayjs(b.date).format("DD.MM")}
-                </Typography>
-              </ButtonBase>
-            ))}
+                </ButtonBase>
+              ))}
+            </Box>
           </Box>
         </Box>
       </Box>
 
+      <VacancyDrawer id={vacancyId} canManage={canManage} onClose={() => openVacancy(null)} onHire={setHiring} />
+      {canManage && <VacancyFormDrawer open={creatingVacancy} vacancy={null} onClose={() => setCreatingVacancy(false)} onCreated={openVacancy} />}
+      <EmployeeFormDrawer
+        open={hiring != null}
+        employee={null}
+        vacancy={hiring}
+        onClose={() => setHiring(null)}
+        // Одним обновлением адреса: два setSearchParams подряд затирают друг друга.
+        onCreated={(id) =>
+          setSearchParams(
+            (prev) => {
+              const p = new URLSearchParams(prev);
+              p.delete("vacancy");
+              p.set("employee", String(id));
+              return p;
+            },
+            { replace: true },
+          )
+        }
+      />
       <EmployeeDrawer id={employeeId} preview={employees.data?.find((e) => e.id === employeeId) ?? null} canManage={canManage} onClose={() => openEmployee(null)} />
       <EmployeeFormDrawer open={creating} employee={null} onClose={() => setCreating(false)} onCreated={(id) => openEmployee(id)} />
     </>
