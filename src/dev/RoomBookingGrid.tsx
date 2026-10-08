@@ -325,6 +325,12 @@ interface GridFilter {
   debt: boolean;
 }
 const EMPTY_FILTER: GridFilter = { q: "", roomTypeIds: new Set(), sources: new Set(), stay: "", debt: false };
+/** Пункт «Все» в мультивыборе фильтра: в значении не задерживается — его появление значит «сбросить выбор». */
+const ALL_OPTION = "__all__";
+const multiSelectValues = (raw: unknown): string[] => {
+  const values = typeof raw === "string" ? raw.split(",") : (raw as (string | number)[]).map(String);
+  return values.includes(ALL_OPTION) ? [] : values;
+};
 const STAY_FILTER_LABELS: Record<Exclude<GridStayFilter, "">, string> = {
   expected: "Ждут заезда",
   missed: "Не заехали",
@@ -1346,13 +1352,16 @@ export const RoomBookingGrid: React.FC = () => {
             size="small"
             label="Категория"
             value={[...filter.roomTypeIds]}
-            onChange={(e) => setFilter((f) => ({ ...f, roomTypeIds: new Set((typeof e.target.value === "string" ? e.target.value.split(",") : (e.target.value as (number | string)[])).map(Number)) }))}
+            onChange={(e) => setFilter((f) => ({ ...f, roomTypeIds: new Set(multiSelectValues(e.target.value).map(Number)) }))}
             slotProps={{
               select: { multiple: true, displayEmpty: true, renderValue: (v) => ((v as number[]).length === 0 ? "Все" : (v as number[]).map((id) => roomTypeName(id) ?? `№${id}`).join(", ")) },
               inputLabel: { shrink: true },
             }}
             sx={{ minWidth: { md: 170 }, bgcolor: "background.paper" }}
           >
+            <MenuItem value={ALL_OPTION} sx={{ fontWeight: filter.roomTypeIds.size === 0 ? 700 : undefined }}>
+              Все
+            </MenuItem>
             {roomTypes.map((t) => (
               <MenuItem key={t.id} value={t.id}>
                 {t.name}
@@ -1364,13 +1373,16 @@ export const RoomBookingGrid: React.FC = () => {
             size="small"
             label="Источник"
             value={[...filter.sources]}
-            onChange={(e) => setFilter((f) => ({ ...f, sources: new Set(typeof e.target.value === "string" ? e.target.value.split(",") : (e.target.value as string[])) }))}
+            onChange={(e) => setFilter((f) => ({ ...f, sources: new Set(multiSelectValues(e.target.value)) }))}
             slotProps={{
               select: { multiple: true, displayEmpty: true, renderValue: (v) => ((v as string[]).length === 0 ? "Все" : (v as string[]).map((s) => HOTEL_BOOKING_SOURCE_LABELS[s] ?? s).join(", ")) },
               inputLabel: { shrink: true },
             }}
             sx={{ minWidth: { md: 160 }, bgcolor: "background.paper" }}
           >
+            <MenuItem value={ALL_OPTION} sx={{ fontWeight: filter.sources.size === 0 ? 700 : undefined }}>
+              Все
+            </MenuItem>
             {sourceOptions.map((s) => (
               <MenuItem key={s} value={s}>
                 {HOTEL_BOOKING_SOURCE_LABELS[s] ?? s}
