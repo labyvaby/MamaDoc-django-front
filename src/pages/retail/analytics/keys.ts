@@ -9,6 +9,10 @@ export const retailKeys = {
     ["retail-analytics", organizationId, "sell-through", filters] as const,
   sizeGrid: (organizationId: number | undefined, filters: Record<string, unknown>) =>
     ["retail-analytics", organizationId, "size-grid", filters] as const,
+  sales: (organizationId: number | undefined, filters: Record<string, unknown>) =>
+    ["retail-analytics", organizationId, "sales", filters] as const,
+  salesDetail: (organizationId: number | undefined, filters: Record<string, unknown>) =>
+    ["retail-analytics", organizationId, "sales-detail", filters] as const,
   matrix: (organizationId: number | undefined, modelId: number | null) =>
     ["retail-analytics", organizationId, "matrix", modelId] as const,
 };
