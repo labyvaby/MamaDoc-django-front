@@ -25,7 +25,7 @@ import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import PauseCircleOutlineRounded from "@mui/icons-material/PauseCircleOutlineRounded";
-import { apiRequest } from "../../api/client";
+import { apiRequest, getErrorFields } from "../../api/client";
 import { uploadClientPhoto, type CreateClientPayload, type DjangoClientStatus } from "../../api/clients";
 import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
@@ -69,6 +69,8 @@ import { PosErrorNotice } from "./ErrorNotice";
 import { CertificateSellDialog } from "./CertificateSellDialog";
 import {
   HOLD_BLOCKED_BY_CERTIFICATE,
+  certificateCodeErrors,
+  certificateCodesUnsupported,
   certificateDraftsTotalCents,
   giftCardExpiryLabel,
   normalizeCheckoutResult,
@@ -302,6 +304,8 @@ export default function LivePosPage() {
   const [clientEditorTarget, setClientEditorTarget] = React.useState<"receipt" | "certificate">("receipt");
   const [certificateSellOpen, setCertificateSellOpen] = React.useState(false);
   const [certificateBuyer, setCertificateBuyer] = React.useState<PosClient | null>(null);
+  /** Скан карты, пока открыто окно продажи сертификата: номер уходит в его поле. */
+  const [certificateScan, setCertificateScan] = React.useState<{ code: string; at: number } | null>(null);
   /** Сертификаты, проданные строками текущего чека (сертификаты v2). */
   const [certificates, setCertificates] = React.useState<PosCertificateDraft[]>([]);
   const [benefits, setBenefits] = React.useState<Benefits>(emptyBenefits);
@@ -615,9 +619,14 @@ export default function LivePosPage() {
   // Старый бэкенд молча отбросил бы сертификаты и взял деньги только за товары.
   const certificatesUnsupported =
     !held && certificates.length > 0 && !!serverQuote && !quoteStale && serverQuote.certificatesTotal === undefined;
+  // …а без поддержки номера — выдал бы свой номер вместо номера с карты.
+  const codesUnsupported =
+    !held && !!serverQuote && !quoteStale && certificateCodesUnsupported(certificates, serverQuote.certificates);
   const payDisabledReason = certificatesUnsupported
     ? "Сервер кассы ещё не принимает сертификаты в чеке. Уберите сертификат из чека или обновите бэкенд."
-    : null;
+    : codesUnsupported
+      ? "Сервер кассы ещё не принимает номер сертификата с карты. Уберите сертификат и оформите его без номера или обновите бэкенд."
+      : null;
   // Сервер без поддержки скидки на позицию молча её отбрасывает — не прячем это.
   const lineDiscountIgnored =
     !held &&
@@ -785,9 +794,10 @@ export default function LivePosPage() {
 
   /** Код со сканера — сразу в чек, при любом фокусе. */
   const handleScan = (code: string) => {
-    // Окно продажи сертификата: номер выдаёт CRM, сканировать там нечего.
+    // Окно продажи сертификата: скан — это номер карты, он идёт в поле номера.
     if (certificateSellOpen) {
-      playScanFeedback(false);
+      setCertificateScan({ code, at: Date.now() });
+      playScanFeedback(true);
       return;
     }
     // Открыто окно (оплата, скидка, выбор варианта): товар в чек не кладём —
@@ -995,7 +1005,7 @@ export default function LivePosPage() {
         ...(held
           ? []
           : certificates.map((item) => ({
-              name: `Подарочный сертификат · ${item.client.name}`,
+              name: `Подарочный сертификат${item.code ? ` № ${item.code}` : ""} · ${item.client.name}`,
               quantity: "1",
               total: item.nominalCents / 100,
               certificate: true,
@@ -1007,14 +1017,18 @@ export default function LivePosPage() {
     { label: "Бонусы", value: Number(quote?.bonuses ?? 0), tone: "bonus" as const },
     { label: "Подарочные сертификаты", value: held ? 0 : certificatesTotal, tone: undefined },
   ].filter((item) => item.value > 0);
+  // Сервер отказал по номеру конкретной строки (номер успели выдать) — пишем у неё.
+  const codeErrors = quoteQuery.isError && !held ? certificateCodeErrors(getErrorFields(quoteQuery.error)) : {};
   const receiptCertificates = held
     ? []
-    : certificates.map((item) => ({
+    : certificates.map((item, index) => ({
         key: item.key,
         clientName: item.client.name,
         amount: item.nominalCents / 100,
         expiryLabel: giftCardExpiryLabel(item.noExpiry, item.expiresOn),
         comment: item.comment,
+        code: item.code,
+        error: codeErrors[index] ? `${codeErrors[index]} Уберите строку и оформите сертификат с другим номером.` : undefined,
       }));
   const due = quote ? Number(quote.due) : 0;
   const canPay =
@@ -1301,6 +1315,7 @@ export default function LivePosPage() {
         onSellCertificate={() => {
           // Чаще всего сертификат покупает тот же покупатель, что и в чеке.
           setCertificateBuyer(client);
+          setCertificateScan(null);
           setCertificateSellOpen(true);
         }}
         onScan={() => void addByCode(search, "manual")}
@@ -1530,6 +1545,8 @@ export default function LivePosPage() {
                 }
               : undefined
           }
+          codesInCart={certificates.map((item) => item.code ?? "").filter(Boolean)}
+          scannedCode={certificateScan}
           onClose={() => setCertificateSellOpen(false)}
           onAdd={(draft) => {
             setCertificates((current) => [...current, draft]);

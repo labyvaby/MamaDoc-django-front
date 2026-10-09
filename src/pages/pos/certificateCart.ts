@@ -19,7 +19,7 @@ import type { PosClient } from "./types";
  * разбор ответа checkout/.
  */
 
-/** Строка «Подарочный сертификат» в чеке кассы. Код выдаст сервер при оплате. */
+/** Строка «Подарочный сертификат» в чеке кассы. */
 export type PosCertificateDraft = {
   /** Локальный ключ строки — по нему её удаляют из чека. */
   key: string;
@@ -30,32 +30,118 @@ export type PosCertificateDraft = {
   expiresOn: string | null;
   noExpiry: boolean;
   comment: string;
+  /**
+   * Номер с карты (уже нормализованный). Пусто или нет поля (черновик,
+   * сохранённый до появления номера) — номер выдаст CRM при оплате.
+   */
+  code?: string;
 };
 
 /** Предел номинала на кассе: опечатка «500000000» не должна уйти в чек. */
 export const MAX_CERTIFICATE_NOMINAL_CENTS = 10_000_000 * 100;
 
+/** Длина `GiftCertificate.code` на сервере. */
+export const MAX_CERTIFICATE_CODE_LENGTH = 80;
+
+/**
+ * Номер сертификата как его хранит сервер: без пробелов, в верхнем регистре
+ * (`normalize_certificate_code`). Сканер может дописать Enter/Tab или
+ * служебный символ GS1 — управляющие символы тоже выбрасываем.
+ */
+export const normalizeCertificateCode = (value: string | null | undefined): string =>
+  // eslint-disable-next-line no-control-regex
+  (value ?? "").replace(/[\s\u0000-\u001f\u007f]+/g, "").toUpperCase();
+
 export const certificateDraftsTotalCents = (drafts: readonly PosCertificateDraft[]): number =>
   drafts.reduce((total, draft) => total + draft.nominalCents, 0);
 
-/** Строки чека → `certificates` в quote/ и checkout/. */
+/** Строки чека → `certificates` в quote/ и checkout/. Номер — только если введён. */
 export const toCertificateInputs = (drafts: readonly PosCertificateDraft[]): PosCertificateInput[] =>
-  drafts.map((draft) => ({
-    clientId: Number(draft.client.id),
-    nominal: centsToAmount(draft.nominalCents),
-    expiresOn: draft.noExpiry ? null : draft.expiresOn,
-    noExpiry: draft.noExpiry,
-    comment: draft.comment.trim(),
-  }));
+  drafts.map((draft) => {
+    const code = normalizeCertificateCode(draft.code);
+    return {
+      clientId: Number(draft.client.id),
+      nominal: centsToAmount(draft.nominalCents),
+      expiresOn: draft.noExpiry ? null : draft.expiresOn,
+      noExpiry: draft.noExpiry,
+      comment: draft.comment.trim(),
+      ...(code ? { code } : {}),
+    };
+  });
+
+/**
+ * Старый бэкенд не знает `certificates[].code` и молча выдаст свой номер.
+ * Новый эхом возвращает `code` в каждой строке quote/ — нет поля при
+ * введённом номере значит «номер с карты потеряется».
+ */
+export const certificateCodesUnsupported = (
+  drafts: readonly PosCertificateDraft[],
+  quoted: ReadonlyArray<{ code?: string }> | undefined,
+): boolean =>
+  Boolean(quoted) &&
+  drafts.some((draft, index) => Boolean(normalizeCertificateCode(draft.code)) && quoted?.[index]?.code === undefined);
+
+/**
+ * Ошибки номера по строкам чека из ответа сервера:
+ * `details.fields["certificates.N.code"]` → `{ N: текст }`.
+ */
+export const certificateCodeErrors = (fields: Record<string, string> | null | undefined): Record<number, string> => {
+  const out: Record<number, string> = {};
+  for (const [key, text] of Object.entries(fields ?? {})) {
+    const match = /^certificates\.(\d+)\.code$/.exec(key);
+    if (match) out[Number(match[1])] = text;
+  }
+  return out;
+};
+
+/** Что известно о номере в окне продажи. */
+export type CertificateCodeStatus = "empty" | "invalid" | "inCart" | "checking" | "free" | "taken" | "unknown";
 
 export type CertificateFormValues = {
   buyer: PosClient | null;
   nominal: string;
   expiresOn: string;
   noExpiry: boolean;
+  /** Номер с карты; необязателен. */
+  code?: string;
+  /** Номера, которые уже лежат в этом чеке. */
+  codesInCart?: readonly string[];
 };
 
-export type CertificateFormErrors = Partial<Record<"buyer" | "nominal" | "expiresOn", string>>;
+export type CertificateFormErrors = Partial<Record<"buyer" | "nominal" | "expiresOn" | "code", string>>;
+
+/**
+ * Состояние номера в окне продажи. `checkedCode` — номер, по которому уже
+ * спросили `lookup/` (ввод с задержкой); пока он отстаёт от введённого,
+ * номер «проверяется». `lookup`: found — 200 (занят), missing — 404
+ * (свободен), error — проверить не удалось (решит сервер при quote/).
+ */
+export const resolveCertificateCodeStatus = (input: {
+  code: string;
+  checkedCode: string;
+  localError?: string;
+  inCart?: boolean;
+  lookup: "pending" | "found" | "missing" | "error";
+}): CertificateCodeStatus => {
+  const code = normalizeCertificateCode(input.code);
+  if (!code) return "empty";
+  if (input.inCart) return "inCart";
+  if (input.localError) return "invalid";
+  if (normalizeCertificateCode(input.checkedCode) !== code || input.lookup === "pending") return "checking";
+  if (input.lookup === "found") return "taken";
+  if (input.lookup === "missing") return "free";
+  return "unknown";
+};
+
+/** Проверка номера без сервера: длина и повтор в чеке. */
+export const validateCertificateCode = (code: string, codesInCart: readonly string[] = []): string | undefined => {
+  const normalized = normalizeCertificateCode(code);
+  if (!normalized) return undefined;
+  if (normalized.length > MAX_CERTIFICATE_CODE_LENGTH)
+    return `Номер не длиннее ${MAX_CERTIFICATE_CODE_LENGTH} символов.`;
+  if (codesInCart.some((item) => normalizeCertificateCode(item) === normalized)) return "Этот номер уже есть в чеке.";
+  return undefined;
+};
 
 /**
  * Проверка окна продажи. `touched` — поля, которые кассир уже трогал:
@@ -77,11 +163,26 @@ export const validateCertificateForm = (
     else if (!formatIsoDay(values.expiresOn)) errors.expiresOn = "Неверная дата.";
     else if (values.expiresOn < today) errors.expiresOn = "Дата не может быть в прошлом.";
   }
+  const code = validateCertificateCode(values.code ?? "", values.codesInCart);
+  if (code) errors.code = code;
   return errors;
 };
 
 /** Ввод суммы → копейки; «5 000», «5000,5» и «5000.50» понимаются одинаково. */
 export const nominalInputToCents = (value: string): number => amountToCents(value);
+
+/**
+ * Кегль номера на подарочной карте по длине (в `cqw` от ширины карты).
+ * Короткий номер — крупно и разреженно, как тиснение; длинный мельчает и в
+ * крайнем случае переносится на вторую строку, а не выезжает за край карты
+ * (на телефоне 360 px карта ~330 px шириной).
+ */
+export const giftCardCodeSize = (length: number): { fontSize: string; letterSpacing: string } =>
+  length <= 14
+    ? { fontSize: "3.6cqw", letterSpacing: ".2em" }
+    : length <= 22
+      ? { fontSize: "3cqw", letterSpacing: ".12em" }
+      : { fontSize: "2.5cqw", letterSpacing: ".04em" };
 
 /** Сумма на подарочной карте: «5 000»; пусто или ошибка — «0». */
 export const giftCardAmountLabel = (cents: number): string =>

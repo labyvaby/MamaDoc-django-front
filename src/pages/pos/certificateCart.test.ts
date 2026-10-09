@@ -3,15 +3,22 @@ import { describe, expect, it } from "vitest";
 import type { PosClientCertificate, PosSavedReceipt } from "../../api/pos";
 import type { GiftCertificateDetail } from "../../api/promotions";
 import {
+  MAX_CERTIFICATE_CODE_LENGTH,
+  certificateCodeErrors,
+  certificateCodesUnsupported,
   certificateCoverage,
   certificateDraftsTotalCents,
   formatIsoDay,
   giftCardAmountLabel,
+  giftCardCodeSize,
   giftCardExpiryLabel,
   giftCardHolderName,
+  normalizeCertificateCode,
   normalizeCheckoutResult,
   payableCertificates,
+  resolveCertificateCodeStatus,
   toCertificateInputs,
+  validateCertificateCode,
   validateCertificateForm,
   type PosCertificateDraft,
 } from "./certificateCart";
@@ -51,6 +58,79 @@ describe("certificate lines of the receipt", () => {
       { clientId: 55, nominal: "5000.00", expiresOn: "2027-10-07", noExpiry: false, comment: "на день рождения" },
       { clientId: 55, nominal: "5000.00", expiresOn: null, noExpiry: true, comment: "" },
     ]);
+  });
+});
+
+describe("card number typed at the till", () => {
+  it("normalizes like the server: no spaces, upper case, scanner tails dropped", () => {
+    expect(normalizeCertificateCode(" mng 0001 ")).toBe("MNG0001");
+    expect(normalizeCertificateCode("mng-0001")).toBe("MNG-0001");
+    expect(normalizeCertificateCode("\tmng\u001d0001\r\n")).toBe("MNG0001");
+    expect(normalizeCertificateCode("сертификат-7")).toBe("СЕРТИФИКАТ-7");
+    expect(normalizeCertificateCode(null)).toBe("");
+    expect(normalizeCertificateCode("   ")).toBe("");
+  });
+
+  it("sends the number only when it was typed", () => {
+    expect(toCertificateInputs([draft({ code: " mng-0001 " }), draft({ key: "b", code: "" }), draft({ key: "c" })])).toEqual([
+      {
+        clientId: 55,
+        nominal: "5000.00",
+        expiresOn: "2027-10-07",
+        noExpiry: false,
+        comment: "на день рождения",
+        code: "MNG-0001",
+      },
+      { clientId: 55, nominal: "5000.00", expiresOn: "2027-10-07", noExpiry: false, comment: "на день рождения" },
+      { clientId: 55, nominal: "5000.00", expiresOn: "2027-10-07", noExpiry: false, comment: "на день рождения" },
+    ]);
+  });
+
+  it("checks length and duplicates in the receipt", () => {
+    expect(validateCertificateCode("")).toBeUndefined();
+    expect(validateCertificateCode("A".repeat(MAX_CERTIFICATE_CODE_LENGTH))).toBeUndefined();
+    expect(validateCertificateCode("A".repeat(MAX_CERTIFICATE_CODE_LENGTH + 1))).toMatch(/80/);
+    expect(validateCertificateCode("mng-1", ["MNG-1"])).toMatch(/чеке/);
+    const form = { buyer: client, nominal: "5000", expiresOn: "", noExpiry: true };
+    expect(validateCertificateForm({ ...form, code: "MNG-1", codesInCart: ["mng-1"] }).code).toMatch(/чеке/);
+    expect(validateCertificateForm({ ...form, code: "MNG-2", codesInCart: ["mng-1"] })).toEqual({});
+  });
+
+  it("tells free, taken and still-checking numbers apart", () => {
+    const base = { code: "MNG-1", checkedCode: "MNG-1" };
+    expect(resolveCertificateCodeStatus({ ...base, code: "", lookup: "pending" })).toBe("empty");
+    expect(resolveCertificateCodeStatus({ ...base, checkedCode: "MNG-", lookup: "missing" })).toBe("checking");
+    expect(resolveCertificateCodeStatus({ ...base, lookup: "pending" })).toBe("checking");
+    expect(resolveCertificateCodeStatus({ ...base, lookup: "missing" })).toBe("free");
+    expect(resolveCertificateCodeStatus({ ...base, lookup: "found" })).toBe("taken");
+    expect(resolveCertificateCodeStatus({ ...base, lookup: "error" })).toBe("unknown");
+    expect(resolveCertificateCodeStatus({ ...base, lookup: "found", inCart: true })).toBe("inCart");
+    expect(resolveCertificateCodeStatus({ ...base, lookup: "missing", localError: "long" })).toBe("invalid");
+  });
+
+  it("maps server field errors to receipt rows", () => {
+    expect(
+      certificateCodeErrors({
+        "certificates.1.code": "Сертификат под этим номером уже есть.",
+        "certificates.0.nominal": "x",
+        payments: "y",
+      }),
+    ).toEqual({ 1: "Сертификат под этим номером уже есть." });
+    expect(certificateCodeErrors(null)).toEqual({});
+  });
+
+  it("notices a backend that drops the typed number", () => {
+    const typed = [draft({ code: "MNG-1" })];
+    expect(certificateCodesUnsupported(typed, [{}])).toBe(true);
+    expect(certificateCodesUnsupported(typed, [{ code: "MNG-1" }])).toBe(false);
+    expect(certificateCodesUnsupported([draft()], [{}])).toBe(false);
+    expect(certificateCodesUnsupported(typed, undefined)).toBe(false);
+  });
+
+  it("shrinks long numbers on the card", () => {
+    expect(giftCardCodeSize(9).fontSize).toBe("3.6cqw");
+    expect(giftCardCodeSize(20).fontSize).toBe("3cqw");
+    expect(giftCardCodeSize(80).fontSize).toBe("2.5cqw");
   });
 });
 

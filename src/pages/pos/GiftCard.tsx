@@ -3,12 +3,13 @@ import Box from "@mui/material/Box";
 import { alpha, keyframes, useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 
-import { giftCardAmountLabel, giftCardHolderName } from "./certificateCart";
+import { giftCardAmountLabel, giftCardCodeSize, giftCardHolderName } from "./certificateCart";
 
 /**
  * Подарочная карта в окне продажи сертификата: формат пластиковой карты
  * (ISO/IEC 7810 ID-1, 85,6 × 53,98 мм → 1,586 : 1), тёмная, с оттенком
- * акцента кассы. Сумма, имя покупателя и срок «заполняются» по мере ввода.
+ * акцента кассы. Номер, сумма, имя покупателя и срок «заполняются» по мере
+ * ввода.
  *
  * Это не банковская карта — ни чипа, ни «•••• ••••». Вместо них печать
  * магазина: логотип организации маленьким квадратом (название на нём уже
@@ -73,8 +74,10 @@ type Props = {
   holderName?: string | null;
   /** «до 07.10.2027» или «бессрочно». */
   expiryLabel: string;
-  /** Номер карты; до оплаты его нет — сервер выдаст при продаже. */
+  /** Номер карты: введённый кассиром (живой предпросмотр) или выданный при продаже. */
   code?: string | null;
+  /** Без номера показать пустую строку «№ ———— ————» (окно продажи). */
+  codePlaceholder?: boolean;
   /** Логотип организации (`/auth/me/` → organization.logoUrl). Нет — монограмма. */
   logoUrl?: string | null;
 };
@@ -127,7 +130,7 @@ const BrandSeal: React.FC<{ brand: string; logoUrl: string | null; onLogoError: 
   );
 };
 
-export const GiftCard: React.FC<Props> = ({ organizationName, amountCents, holderName, expiryLabel, code, logoUrl }) => {
+export const GiftCard: React.FC<Props> = ({ organizationName, amountCents, holderName, expiryLabel, code, codePlaceholder = false, logoUrl }) => {
   const theme = useTheme();
   const reduced = useMediaQuery("(prefers-reduced-motion: reduce)", { noSsr: true });
   const target = Number.isFinite(amountCents) && amountCents > 0 ? Math.round(amountCents) : 0;
@@ -142,12 +145,14 @@ export const GiftCard: React.FC<Props> = ({ organizationName, amountCents, holde
   const dated = /^до\s+/i.test(expiryLabel);
   const expiry = dated ? expiryLabel.replace(/^до\s+/i, "") : expiryLabel;
   const empty = target === 0;
+  const number = (code ?? "").trim();
+  const numberSize = giftCardCodeSize(number.length);
 
   return (
     <Box sx={{ containerType: "inline-size", width: "100%" }}>
       <Box
         role="img"
-        aria-label={`Подарочный сертификат ${brand} на ${giftCardAmountLabel(target)} сом${holder ? `, владелец ${holder}` : ""}, ${expiryLabel}`}
+        aria-label={`Подарочный сертификат ${brand}${number ? ` № ${number}` : ""} на ${giftCardAmountLabel(target)} сом${holder ? `, владелец ${holder}` : ""}, ${expiryLabel}`}
         sx={{
           position: "relative",
           width: "100%",
@@ -239,15 +244,35 @@ export const GiftCard: React.FC<Props> = ({ organizationName, amountCents, holde
             </Box>
           </Box>
 
-          {/* Номер — только когда он уже есть: до оплаты его выдаст сервер. */}
-          <Box sx={{ alignSelf: "center", minHeight: "4cqw" }}>
-            {code ? (
-              <Box sx={{ display: "flex", alignItems: "baseline", gap: "2.4cqw", whiteSpace: "nowrap" }}>
-                <Box component="span" sx={{ fontSize: "2.2cqw", letterSpacing: ".22em", textTransform: "uppercase", color: "rgba(247,243,234,.5)" }}>
+          {/* Номер: введённый с карты появляется по мере ввода; пусто — выдаст CRM. */}
+          <Box sx={{ alignSelf: "center", minWidth: 0, minHeight: "4cqw" }}>
+            {number || codePlaceholder ? (
+              <Box sx={{ display: "flex", alignItems: "baseline", gap: "2.4cqw", minWidth: 0 }} data-testid="gift-card-number">
+                <Box component="span" sx={{ flexShrink: 0, fontSize: "2.2cqw", letterSpacing: ".22em", textTransform: "uppercase", color: "rgba(247,243,234,.5)" }}>
                   №
                 </Box>
-                <Box component="span" sx={{ fontFamily: MONO, fontSize: "3.6cqw", letterSpacing: ".2em", color: "rgba(247,243,234,.9)" }}>
-                  {code}
+                <Box
+                  component="span"
+                  title={number || undefined}
+                  sx={{
+                    minWidth: 0,
+                    fontFamily: MONO,
+                    fontWeight: 500,
+                    ...(number ? numberSize : { fontSize: "3.6cqw", letterSpacing: ".2em" }),
+                    lineHeight: 1.35,
+                    color: number ? "rgba(247,243,234,.92)" : "rgba(247,243,234,.26)",
+                    textShadow: number ? "0 1px 0 rgba(0,0,0,.55), 0 -1px 0 rgba(255,255,255,.06)" : "none",
+                    // Длинный номер — не дальше двух строк и не за край карты.
+                    overflowWrap: "anywhere",
+                    wordBreak: "break-all",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    transition: "font-size .15s, letter-spacing .15s, color .2s",
+                  }}
+                >
+                  {number || "———— ————"}
                 </Box>
               </Box>
             ) : null}

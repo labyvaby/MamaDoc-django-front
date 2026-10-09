@@ -2,6 +2,7 @@ import React from "react";
 import {
   Box,
   ButtonBase,
+  CircularProgress,
   Dialog,
   FormControlLabel,
   IconButton,
@@ -15,15 +16,21 @@ import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import ArrowForwardRounded from "@mui/icons-material/ArrowForwardRounded";
+import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
+import ErrorOutlineRounded from "@mui/icons-material/ErrorOutlineRounded";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 
-import { posRequest, type PosScope } from "../../api/pos";
+import { ApiError } from "../../api/client";
+import { lookupPosCertificate, posRequest, type PosScope } from "../../api/pos";
 import { getGiftCertificateSettings } from "../../api/promotions";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   giftCardExpiryLabel,
+  MAX_CERTIFICATE_CODE_LENGTH,
   nominalInputToCents,
+  normalizeCertificateCode,
+  resolveCertificateCodeStatus,
   validateCertificateForm,
   type PosCertificateDraft,
 } from "./certificateCart";
@@ -36,10 +43,15 @@ import { PosAmount } from "./ui";
 /**
  * Продажа подарочного сертификата — через чек кассы (сертификаты v2).
  *
- * Окно только собирает строку: покупатель, сумма, срок и комментарий. «Далее»
- * кладёт сертификат строкой в текущий чек, а деньги принимает обычная оплата
- * чека вместе с товарами. Номер карты выдаёт сервер при оплате.
+ * Окно только собирает строку: номер с карты, покупатель, сумма, срок и
+ * комментарий. «Далее» кладёт сертификат строкой в текущий чек, а деньги
+ * принимает обычная оплата чека вместе с товарами. Номер необязателен: пусто
+ * — его выдаст сервер при оплате. Введённый номер сразу виден на карте и
+ * проверяется на занятость (`lookup/`, 404 — свободен).
  */
+
+/** Пауза перед проверкой номера: не дёргать сервер на каждую букву. */
+const CODE_LOOKUP_DELAY_MS = 400;
 
 type Props = {
   open: boolean;
@@ -55,6 +67,14 @@ type Props = {
   onCreateBuyer?: (query: string) => void;
   onClose: () => void;
   onAdd: (draft: PosCertificateDraft) => void;
+  /** Номера сертификатов, которые уже лежат в этом чеке. */
+  codesInCart?: readonly string[];
+  /**
+   * Код, пойманный сканером кассы, пока окно открыто (сканер перехватывает
+   * клавиатуру на всей странице). `at` — чтобы повторный скан того же кода
+   * тоже дошёл.
+   */
+  scannedCode?: { code: string; at: number } | null;
 };
 
 export function CertificateSellDialog({
@@ -68,11 +88,15 @@ export function CertificateSellDialog({
   onCreateBuyer,
   onClose,
   onAdd,
+  codesInCart = [],
+  scannedCode = null,
 }: Props) {
   const theme = useTheme();
   const c = posColors(theme);
   const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
 
+  const [code, setCode] = React.useState("");
+  const nominalInput = React.useRef<HTMLInputElement | null>(null);
   const [nominal, setNominal] = React.useState("");
   const [expiresOn, setExpiresOn] = React.useState("");
   const [noExpiry, setNoExpiry] = React.useState(false);
@@ -84,6 +108,7 @@ export function CertificateSellDialog({
 
   React.useEffect(() => {
     if (!open) return;
+    setCode("");
     setNominal("");
     setExpiresOn("");
     setNoExpiry(false);
@@ -116,10 +141,42 @@ export function CertificateSellDialog({
     enabled: open && canSearchClients && !buyer && Boolean(clientSearch),
   });
 
+  // Скан карты: номер — в поле (и на карту), курсор — к сумме.
+  React.useEffect(() => {
+    if (!open || !scannedCode) return;
+    setCode(normalizeCertificateCode(scannedCode.code));
+    nominalInput.current?.focus();
+  }, [open, scannedCode]);
+
+  // Занят ли номер: lookup/ отвечает 200 — карта уже есть, 404 — свободен.
+  const checkedCode = useDebouncedValue(code, CODE_LOOKUP_DELAY_MS);
+  const codeLocallyValid = Boolean(checkedCode) && checkedCode.length <= MAX_CERTIFICATE_CODE_LENGTH;
+  const lookup = useQuery({
+    queryKey: ["pos-workspace", scope.organizationId, scope.branchId, "certificate-lookup", checkedCode],
+    queryFn: ({ signal }) => lookupPosCertificate(scope, checkedCode, signal),
+    enabled: open && codeLocallyValid,
+    retry: false,
+    staleTime: 15_000,
+  });
+  const lookupState: "pending" | "found" | "missing" | "error" = lookup.isSuccess
+    ? "found"
+    : lookup.isError
+      ? lookup.error instanceof ApiError && lookup.error.status === 404
+        ? "missing"
+        : "error"
+      : "pending";
+
   const today = dayjs().format("YYYY-MM-DD");
   const nominalCents = nominalInputToCents(nominal);
-  const errors = validateCertificateForm({ buyer, nominal, expiresOn, noExpiry }, today);
-  const valid = Object.keys(errors).length === 0;
+  const errors = validateCertificateForm({ buyer, nominal, expiresOn, noExpiry, code, codesInCart }, today);
+  const codeStatus = resolveCertificateCodeStatus({
+    code,
+    checkedCode,
+    localError: errors.code,
+    inCart: Boolean(code) && codesInCart.some((item) => normalizeCertificateCode(item) === code),
+    lookup: lookupState,
+  });
+  const valid = Object.keys(errors).length === 0 && codeStatus !== "taken";
   const showNominalError = (submitted || nominalTouched) && Boolean(errors.nominal);
   const showExpiryError = (submitted || expiryTouched) && Boolean(errors.expiresOn);
   const expiryLabel = giftCardExpiryLabel(noExpiry, expiresOn);
@@ -127,6 +184,8 @@ export function CertificateSellDialog({
   const submit = () => {
     setSubmitted(true);
     if (!valid || !buyer) return;
+    // Номер ещё проверяется — «Далее» подождёт ответа, а не продаст вслепую.
+    if (codeStatus === "checking") return;
     onAdd({
       key: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now()),
       client: { id: buyer.id, name: buyer.name, phone: buyer.phone },
@@ -134,8 +193,25 @@ export function CertificateSellDialog({
       expiresOn: noExpiry ? null : expiresOn,
       noExpiry,
       comment: comment.trim(),
+      code: normalizeCertificateCode(code),
     });
   };
+
+  const codeHint: { tone: "dim" | "ok" | "bad"; text: string; busy?: boolean } =
+    codeStatus === "empty"
+      ? { tone: "dim", text: "Номер с карты. Пусто — номер выдаст CRM." }
+      : codeStatus === "checking"
+        ? { tone: "dim", text: "Проверяем номер…", busy: true }
+        : codeStatus === "free"
+          ? { tone: "ok", text: "Номер свободен" }
+          : codeStatus === "taken"
+            ? { tone: "bad", text: "Такой номер уже выдан — проверьте карту или оставьте поле пустым." }
+            : codeStatus === "inCart"
+              ? { tone: "bad", text: "Этот номер уже есть в чеке." }
+              : codeStatus === "invalid"
+                ? { tone: "bad", text: errors.code ?? "Проверьте номер." }
+                : { tone: "dim", text: "Не удалось проверить номер — касса проверит его перед оплатой." };
+  const codeBad = codeHint.tone === "bad";
 
   const label = (text: string, required = false) => (
     <Typography sx={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: c.textDim }}>
@@ -198,10 +274,74 @@ export function CertificateSellDialog({
             amountCents={nominalCents}
             holderName={buyer?.name}
             expiryLabel={expiryLabel}
+            code={code}
+            codePlaceholder
           />
         </Box>
 
         <Stack gap={2.25}>
+          <Stack gap={0.75}>
+            {label("Номер сертификата")}
+            <InputBase
+              value={code}
+              autoFocus={!fullScreen}
+              onChange={(event) => setCode(normalizeCertificateCode(event.target.value))}
+              onKeyDown={(event) => {
+                // Enter (руками или хвост сканера) не продаёт карту раньше
+                // времени: только переводит к сумме.
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  nominalInput.current?.focus();
+                }
+              }}
+              placeholder="Например, MNG-0001"
+              inputProps={{
+                autoComplete: "off",
+                autoCapitalize: "characters",
+                spellCheck: false,
+                enterKeyHint: "next",
+                "aria-label": "Номер сертификата",
+                "aria-invalid": codeBad || undefined,
+                "aria-describedby": "pos-certificate-code-hint",
+              }}
+              sx={{
+                height: 48,
+                minHeight: 48,
+                px: 2,
+                borderRadius: `${POS_RADIUS.control}px`,
+                bgcolor: c.card,
+                border: `1px solid ${codeBad ? c.danger : c.hairline}`,
+                fontFamily: '"JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
+                fontSize: 17,
+                fontWeight: 700,
+                letterSpacing: ".08em",
+                color: c.text,
+                transition: "border-color .15s",
+                "&.Mui-focused": { borderColor: codeBad ? c.danger : c.accent },
+                "& input": { textOverflow: "ellipsis" },
+                "& input::placeholder": { color: c.textDim, opacity: 0.6, letterSpacing: ".02em", fontWeight: 600 },
+              }}
+            />
+            <Stack
+              id="pos-certificate-code-hint"
+              direction="row"
+              alignItems="center"
+              gap={0.75}
+              role={codeHint.tone === "dim" ? undefined : "status"}
+              sx={{
+                minHeight: 18,
+                fontSize: 12,
+                lineHeight: 1.35,
+                color: codeHint.tone === "ok" ? c.positive : codeHint.tone === "bad" ? c.danger : c.textDim,
+              }}
+            >
+              {codeHint.busy ? <CircularProgress size={12} thickness={5} sx={{ color: "inherit", flexShrink: 0 }} /> : null}
+              {codeHint.tone === "ok" ? <CheckCircleRounded sx={{ fontSize: 15, flexShrink: 0 }} /> : null}
+              {codeHint.tone === "bad" ? <ErrorOutlineRounded sx={{ fontSize: 15, flexShrink: 0 }} /> : null}
+              <Box component="span" sx={{ minWidth: 0 }}>{codeHint.text}</Box>
+            </Stack>
+          </Stack>
+
           <Stack gap={0.75}>
             {label("Покупатель", true)}
             {canSearchClients ? (
@@ -235,7 +375,7 @@ export function CertificateSellDialog({
             {label("Сумма сертификата", true)}
             <InputBase
               value={nominal}
-              autoFocus={!fullScreen}
+              inputRef={nominalInput}
               onChange={(event) => setNominal(event.target.value.replace(/[^\d\s.,]/g, ""))}
               onBlur={() => setNominalTouched(Boolean(nominal.trim()))}
               onKeyDown={(event) => {
@@ -359,7 +499,7 @@ export function CertificateSellDialog({
         </ButtonBase>
         <ButtonBase
           onClick={submit}
-          aria-disabled={!valid}
+          aria-disabled={!valid || codeStatus === "checking"}
           sx={{
             minHeight: 48,
             px: 2.75,
@@ -369,7 +509,7 @@ export function CertificateSellDialog({
             color: c.onAccent,
             fontSize: 15,
             fontWeight: 800,
-            opacity: valid ? 1 : 0.55,
+            opacity: valid && codeStatus !== "checking" ? 1 : 0.55,
             transition: "opacity .15s",
           }}
         >

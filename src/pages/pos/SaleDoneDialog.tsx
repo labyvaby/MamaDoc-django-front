@@ -165,7 +165,7 @@ export function SaleDoneDialog({
                           <Typography fontWeight={800} color={held ? theme.palette.warning.dark : c.positive}>
                             {held ? "Чек отложен — оплата не принята" : receipt ? "Оплата прошла успешно" : certificates.length > 1 ? "Сертификаты проданы" : "Сертификат продан"}
                           </Typography>
-                          <Typography variant="caption" color={c.textDim}>
+                          <Typography variant="caption" color={c.textDim} sx={{ overflowWrap: "anywhere" }}>
                             {title} · {new Date(createdAt).toLocaleString("ru-RU")}
                           </Typography>
                         </Box>
@@ -390,7 +390,20 @@ function CertificatePrint({
       <Box sx={{ border: "1.5px solid #141722", borderRadius: 1, p: 1.5, textAlign: "center" }}>
         <Typography sx={{ fontSize: 10, fontWeight: 800, letterSpacing: ".22em" }}>ПОДАРОЧНЫЙ СЕРТИФИКАТ</Typography>
         <Typography sx={{ mt: 1, fontSize: 28, fontWeight: 900, lineHeight: 1.1 }}>{money(certificate.nominal)}</Typography>
-        <Typography sx={{ mt: 1, fontFamily: "monospace", fontSize: 18, fontWeight: 800, letterSpacing: ".18em" }}>{certificate.code}</Typography>
+        {/* Номер с карты бывает длинным — переносим, а не режем край талона. */}
+        <Typography
+          sx={{
+            mt: 1,
+            fontFamily: "monospace",
+            fontSize: certificate.code.length > 16 ? 14 : 18,
+            fontWeight: 800,
+            letterSpacing: certificate.code.length > 16 ? ".06em" : ".18em",
+            overflowWrap: "anywhere",
+            wordBreak: "break-all",
+          }}
+        >
+          {certificate.code}
+        </Typography>
       </Box>
       <Stack gap={0.4} mt={1.25}>
         <Stack direction="row" justifyContent="space-between" gap={1}><Typography variant="caption">Действует</Typography><Typography variant="caption" fontWeight={700}>{certificateExpiryLabel(certificate.expiresAt)}</Typography></Stack>
