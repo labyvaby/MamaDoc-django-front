@@ -61,7 +61,7 @@ export type PosReceiptDebt = {
 };
 /**
  * Подарочный сертификат, который продаётся строкой чека (сертификаты v2).
- * Код выдаёт сервер при оплате; скидки, акции и бонусы на строку не действуют.
+ * Скидки, акции и бонусы на строку не действуют.
  */
 export type PosCertificateInput = {
   clientId: number;
@@ -70,6 +70,13 @@ export type PosCertificateInput = {
   expiresOn: string | null;
   noExpiry: boolean;
   comment: string;
+  /**
+   * Номер с карты: без пробелов, верхний регистр, ≤ 80 символов, уникален в
+   * организации. Не передан — номер выдаёт сервер (`XXXX-XXXX`). quote/
+   * возвращает его эхом (`""` — выдаст сервер); занятый номер — 400
+   * `details.fields["certificates.N.code"]`.
+   */
+  code?: string;
 };
 export type PosCart = {
   warehouseId: number;

@@ -19,6 +19,10 @@ export type PosReceiptCertificate = {
   /** «до 07.10.2027» или «бессрочно». */
   expiryLabel: string;
   comment?: string;
+  /** Номер с карты; пусто — выдаст CRM при оплате. */
+  code?: string;
+  /** Ошибка сервера по этой строке (например, номер уже выдан). */
+  error?: string;
 };
 
 /**
@@ -61,10 +65,32 @@ export const CertificateReceiptRow: React.FC<{
         <Typography sx={{ fontSize: 14, fontWeight: 700, lineHeight: 1.25, color: c.text }}>
           Подарочный сертификат
         </Typography>
+        {certificate.code ? (
+          <Typography
+            data-testid="pos-certificate-line-code"
+            sx={{
+              fontFamily: '"JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
+              fontSize: 12.5,
+              fontWeight: 700,
+              lineHeight: 1.3,
+              letterSpacing: ".06em",
+              color: c.textSoft,
+              // Длинный номер переносится только там, где не помещается.
+              overflowWrap: "anywhere",
+            }}
+          >
+            № {certificate.code}
+          </Typography>
+        ) : null}
         <Typography sx={{ fontSize: 12, lineHeight: 1.3, color: c.textDim, overflowWrap: "anywhere" }}>
           на {certificate.clientName || "покупателя"} · {certificate.expiryLabel}
           {certificate.comment ? ` · ${certificate.comment}` : ""}
         </Typography>
+        {certificate.error ? (
+          <Typography role="alert" sx={{ fontSize: 12, lineHeight: 1.3, color: c.danger, overflowWrap: "anywhere" }}>
+            {certificate.error}
+          </Typography>
+        ) : null}
       </Stack>
       <Typography noWrap sx={{ flexShrink: 0, fontSize: 15, fontWeight: 900, color: c.text }}>
         <PosAmount value={certificate.amount} />

@@ -223,7 +223,7 @@ const RegistryRow: React.FC<{ row: GiftCertificateRow; selected: boolean; onClic
       })}
     >
       <Box sx={{ minWidth: 0 }}>
-        <Typography variant="body2" fontWeight={700} noWrap sx={{ fontVariantNumeric: "tabular-nums" }}>
+        <Typography variant="body2" fontWeight={700} noWrap title={row.code} sx={{ fontVariantNumeric: "tabular-nums" }}>
           №{row.code}
         </Typography>
         <Box sx={{ mt: 0.5 }}>
@@ -295,7 +295,7 @@ const RegistryCard: React.FC<{ row: GiftCertificateRow; selected: boolean; onCli
       <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
         <Box sx={{ minWidth: 0 }}>
           <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-            <Typography variant="body2" fontWeight={700} sx={{ fontVariantNumeric: "tabular-nums" }}>
+            <Typography variant="body2" fontWeight={700} sx={{ fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
               №{row.code}
             </Typography>
             <TonedChip label={status.label} toneName={status.tone} />
