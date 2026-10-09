@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, IconButton, Stack, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
+import dayjs from "dayjs";
 import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
 import CloseRounded from "@mui/icons-material/CloseRounded";
 import DownloadRounded from "@mui/icons-material/DownloadRounded";
@@ -26,6 +27,7 @@ const CHIP_METHOD: Record<string, string> = {
   cashless: "по QR",
   certificate: "сертификатом",
   bonus: "бонусами",
+  debt: "в долг",
 };
 type Terminals = ReadonlyArray<{ id: number; name: string }>;
 type DonePayment = { method: string; amount?: string; cashlessMethodId?: number | null; cashlessMethodName?: string | null };
@@ -76,11 +78,18 @@ export function SaleDoneDialog({
   // Частями — ниже отдельный блок: каждая часть своей строкой с терминалом и суммой.
   const parts = payments.length > 1 ? payments : [];
   const title = receipt ? `Чек №${receipt.number.slice(0, 8)}` : certificates.length === 1 ? `Сертификат ${certificates[0].code}` : `Сертификатов: ${certificates.length}`;
+  const debt = sale?.debt ?? null;
   const facts = [
     { label: "Позиций", value: `${(receipt?.lines.length ?? 0) + certificates.length} шт.` },
     held
       ? { label: "Оплата", value: "Не принята" }
       : { label: "Способ оплаты", value: parts.length ? "Частями" : methods.length ? methods.join(", ") : "—" },
+    ...(debt
+      ? [{
+          label: "В долг",
+          value: `${money(debt.outstanding)}${debt.dueDate ? ` · до ${dayjs(debt.dueDate).format("DD.MM.YYYY")}` : " · без срока"}`,
+        }]
+      : []),
     { label: "Клиент", value: receipt?.clientName || (receipt?.clientId ? `#${receipt.clientId}` : certificates[0]?.buyerName || "Без клиента") },
     { label: "Кассир", value: cashier },
   ];

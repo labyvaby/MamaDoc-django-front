@@ -92,8 +92,11 @@ function isInflow(entry: CashboxEntry): boolean {
 
 /** Продажа подарочного сертификата или возврат денег при его аннулировании. */
 const isCertificate = (e: CashboxEntry): boolean => e.source === "certificate";
+/** Погашение долга клиента: деньги ящика, выручкой был чек, проданный в долг. */
+const isDebtRepayment = (e: CashboxEntry): boolean => e.source === "debt";
 
 function entryTitle(e: CashboxEntry): string {
+  if (isDebtRepayment(e)) return e.patientName || e.note || "Погашение долга";
   if (isCertificate(e)) {
     const number = e.certificateCode ? ` №${e.certificateCode}` : "";
     // У продажи бэк кладёт в note «Продажа сертификата №…» — это и есть заголовок.
@@ -111,6 +114,10 @@ function entryTitle(e: CashboxEntry): string {
 }
 
 function entrySubtitle(e: CashboxEntry): string {
+  if (isDebtRepayment(e)) {
+    // «Погашение долга №12 · после зарплаты» — бэк уже собрал в note.
+    return e.note ? `${e.note} · не выручка` : "Погашение долга · не выручка";
+  }
   if (isCertificate(e)) {
     // Аванс, а не выручка: деньги в кассе, выручка — когда картой оплатят товар.
     const parts = ["Не выручка"];

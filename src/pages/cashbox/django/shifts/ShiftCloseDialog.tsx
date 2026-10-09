@@ -140,6 +140,12 @@ const ShiftCloseDialog: React.FC<Props> = ({
                       <Typography variant="caption" color="success.main">+ {fmt(summary.salesCash)} с</Typography>
                     </Stack>
                   )}
+                  {parseFloat(summary.debtRepaymentCashIncome ?? "0") > 0 && (
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="caption" color="text.secondary">Погашение долгов:</Typography>
+                      <Typography variant="caption" color="success.main">+ {fmt(summary.debtRepaymentCashIncome)} с</Typography>
+                    </Stack>
+                  )}
                   {/* Деньги за подарочные сертификаты магазин откладывает отдельно:
                       в ожидаемые наличные они не входят, показаны справочно. */}
                   {parseFloat(summary.certificateCashIncome ?? "0") > 0 && (

@@ -30,6 +30,7 @@ import { uploadClientPhoto, type CreateClientPayload, type DjangoClientStatus } 
 import { getDiscountKinds, type DiscountKind } from "../../api/promotions";
 import {
   checkoutPosCart,
+  type PosDebtTerms,
   getPosBootstrap,
   getPosClientCertificates,
   getPosProducts,
@@ -838,10 +839,10 @@ export default function LivePosPage() {
     }
     update(id, { product: replacement });
   };
-  const save = (payments: PosTender[], status = "completed", comment = "") =>
+  const save = (payments: PosTender[], status = "completed", comment = "", terms: PosDebtTerms = {}) =>
     act(async () => {
       if (!quote) return;
-      const fingerprint = JSON.stringify({ cart, payments, status, comment });
+      const fingerprint = JSON.stringify({ cart, payments, status, comment, terms });
       if (fingerprint !== attempt.current.fingerprint)
         attempt.current = { fingerprint, key: crypto.randomUUID() };
       const result: PosSaleResult = held
@@ -858,11 +859,13 @@ export default function LivePosPage() {
               payments,
               status,
               comment,
+              ...terms,
               expectedTotal: quote.due,
               idempotencyKey: attempt.current.key,
             })
           );
       const soldCertificates = certificates.length > 0 || result.certificates.length > 0;
+      const soldOnCredit = payments.some((payment) => payment.method === "debt");
       reset();
       setCheckoutOpen(false);
       setHoldOpen(false);
@@ -877,6 +880,10 @@ export default function LivePosPage() {
         void cache.invalidateQueries({ queryKey: ["django", "cashbox"] });
         void cache.invalidateQueries({ queryKey: ["django", "shifts"] });
         void cache.invalidateQueries({ queryKey: ["django", "promotions", "certificates"] });
+      }
+      if (soldOnCredit) {
+        // Долг появился в карточке покупателя и в реестре долгов.
+        void cache.invalidateQueries({ queryKey: ["client-debts"] });
       }
     });
   const restore = (receipt: PosSavedReceipt) => {
@@ -1553,7 +1560,21 @@ export default function LivePosPage() {
           recalculating={!held && quoteQuery.isFetching}
           error={error ? formatPosError(error) : null}
           onClose={() => setCheckoutOpen(false)}
-          onPay={(payments) => void save(payments)}
+          onPay={(payments, terms) => void save(payments, "completed", "", terms)}
+          debt={
+            held
+              ? undefined
+              : {
+                  enabled: Boolean(actions.debt),
+                  hasGoods: cart.lines.length > 0,
+                  hasCertificates: certificates.length > 0,
+                  clientName: client?.name ?? null,
+                  onPickClient: () => {
+                    setCheckoutOpen(false);
+                    if (phone) setTab("receipt");
+                  },
+                }
+          }
           certificate={
             held
               ? undefined

@@ -4,6 +4,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import CakeOutlined from "@mui/icons-material/CakeOutlined";
 import ClearOutlined from "@mui/icons-material/ClearOutlined";
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
+import HandshakeOutlined from "@mui/icons-material/HandshakeOutlined";
 import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
 import { motion } from "framer-motion";
@@ -16,12 +17,14 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useSheetBackClose } from "../../hooks/useSheetBackClose";
 import type { AttachmentOwner } from "../../api/attachments";
-import { getClient, getClientMetrics, getClientPage, getClientStatuses, type DjangoClient } from "../../api/clients";
+import { getClient, getClientDebts, getClientMetrics, getClientPage, getClientStatuses, type DjangoClient } from "../../api/clients";
 import { getClientPurchases, type ClientPurchase } from "../../api/retail";
 import CardAttachmentsPanel from "../../components/attachments/CardAttachmentsPanel";
 import { useCardAttachments } from "../../components/attachments/useCardAttachments";
 import { ReceiptDetailDrawer } from "../pos/ReceiptDetailDrawer";
 import ClientCard from "./ClientCard";
+import ClientDebtsCard from "./ClientDebtsCard";
+import { debtsQueryKey, openDebtsCount } from "./debtsMeta";
 import ClientEditorDrawer from "./ClientEditorDrawer";
 import ClientListPanel from "./ClientListPanel";
 import ClientPurchaseHistoryCard from "./ClientPurchaseHistoryCard";
@@ -29,8 +32,8 @@ import { defaultClientLayoutSettings, getClientLayoutSettings, type ClientLayout
 
 const MotionBox = motion(Box);
 
-type DetailTab = "card" | "purchases" | "files";
-type DesktopTab = "purchases" | "files";
+type DetailTab = "card" | "purchases" | "debts" | "files";
+type DesktopTab = "purchases" | "debts" | "files";
 
 /** Сколько карточек грузим за раз — остальное подтягивает скролл. */
 const PAGE_SIZE = 50;
@@ -60,6 +63,11 @@ export default function ClientsPage() {
   // Сколько клиент потратил (вместе с покупками до перехода в CRM) и его
   // уровень лояльности — метрики CRM-карточки, право clients.crm.view.
   const canViewMetrics = auth.canAccess("clients.crm.view");
+  // Долги: смотреть — clients.debts.view; принять погашение может и касса
+  // (pos.debt), списать остаток — только clients.debts.manage.
+  const canViewDebts = auth.isSuperAdmin() || auth.canAccess("clients.debts.view");
+  const canManageDebts = auth.isSuperAdmin() || auth.canAccess("clients.debts.manage");
+  const canRepayDebts = canManageDebts || auth.canAccess("pos.debt");
 
   usePageTitle("Все клиенты");
   const [search, setSearch] = React.useState("");
@@ -145,6 +153,12 @@ export default function ClientsPage() {
     queryFn: ({ signal }) => getClientMetrics(selected!.id, organizationId as number, signal),
     enabled: Boolean(selected && organizationId && canViewMetrics),
   });
+  // Тот же запрос, что внутри карточки долгов: здесь — бейдж открытых на вкладке.
+  const debts = useQuery({
+    queryKey: debtsQueryKey(organizationId, selected?.id ?? null),
+    queryFn: ({ signal }) => getClientDebts(selected!.id, organizationId as number, {}, signal),
+    enabled: Boolean(selected && organizationId && canViewDebts),
+  });
 
   // Файлы карточки: панель грузит их сама, а тот же запрос даёт счётчик на вкладке.
   const selectedId = selected?.id ?? null;
@@ -185,16 +199,34 @@ export default function ClientsPage() {
     />
   );
   const filesNode = <CardAttachmentsPanel owner={attachmentsOwner} canManage={canUpdate} />;
+  const debtsNode = (
+    <ClientDebtsCard
+      clientId={selected?.id ?? null}
+      organizationId={organizationId}
+      branchId={auth.activeBranch?.id ?? null}
+      canView={canViewDebts}
+      canRepay={canRepayDebts}
+      canCancel={canManageDebts}
+    />
+  );
   const purchasesTab = { key: "purchases" as const, label: "Покупки", icon: <ShoppingBagOutlined />, badge: purchases.data?.length || undefined };
+  const debtsTab = { key: "debts" as const, label: "Долги", icon: <HandshakeOutlined />, badge: openDebtsCount(debts.data) || undefined };
   const filesTab = { key: "files" as const, label: "Файлы", icon: <FolderOutlined />, badge: attachments.data?.length || undefined };
   const detailTabs: Array<{ key: DetailTab; label: string; icon: React.ReactElement; badge?: number }> = [
     { key: "card", label: "Карточка", icon: <PersonOutlineOutlined /> },
     ...(canViewPurchaseHistory ? [purchasesTab] : []),
+    ...(canViewDebts ? [debtsTab] : []),
     filesTab,
   ];
   const activeTab: DetailTab = detailTabs.some((tab) => tab.key === detailTab) ? detailTab : "card";
-  const detailNode = activeTab === "card" ? cardNode : activeTab === "purchases" ? historyNode : filesNode;
-  const desktopTabs: Array<{ key: DesktopTab; label: string; icon: React.ReactElement; badge?: number }> = [purchasesTab, filesTab];
+  const detailNode = activeTab === "card" ? cardNode : activeTab === "purchases" ? historyNode : activeTab === "debts" ? debtsNode : filesNode;
+  const desktopTabs: Array<{ key: DesktopTab; label: string; icon: React.ReactElement; badge?: number }> = [
+    ...(canViewPurchaseHistory ? [purchasesTab] : []),
+    ...(canViewDebts ? [debtsTab] : []),
+    filesTab,
+  ];
+  const desktopActive: DesktopTab = desktopTabs.some((tab) => tab.key === desktopTab) ? desktopTab : desktopTabs[0].key;
+  const desktopNode = desktopActive === "purchases" ? historyNode : desktopActive === "debts" ? debtsNode : filesNode;
   const noSelection = (
     <Box sx={{ height: "100%", display: "grid", placeItems: "center", border: "1px dashed", borderColor: "divider", borderRadius: "12px", bgcolor: "background.paper", p: 3, textAlign: "center" }}>
       <Box>
@@ -306,17 +338,17 @@ export default function ClientsPage() {
           </MotionBox>
           <MotionBox variants={cascadeItem} sx={{ flex: "5.5 1 0", minWidth: 0, height: "100%", display: "flex", flexDirection: "column" }}>
             {selected ? (
-              canViewPurchaseHistory ? (
+              desktopTabs.length > 1 ? (
                 <>
                   <Box sx={{ flexShrink: 0, mb: 1.5 }}>
-                    <SegmentedTabs layoutId="clients-desktop-right-tabs" tabs={desktopTabs} value={desktopTab} onChange={setDesktopTab} />
+                    <SegmentedTabs layoutId="clients-desktop-right-tabs" tabs={desktopTabs} value={desktopActive} onChange={setDesktopTab} />
                   </Box>
-                  <Box sx={{ flex: 1, minHeight: 0 }}>{desktopTab === "purchases" ? historyNode : filesNode}</Box>
+                  <Box sx={{ flex: 1, minHeight: 0 }}>{desktopNode}</Box>
                 </>
               ) : filesNode
             ) : (
               <Box sx={{ height: "100%", display: "grid", placeItems: "center", border: "1px dashed", borderColor: "divider", borderRadius: "12px", bgcolor: "background.paper" }}>
-                <Typography color="text.secondary">{canViewPurchaseHistory ? "Покупки и файлы клиента" : "Файлы клиента"}</Typography>
+                <Typography color="text.secondary">{desktopTabs.length > 1 ? "Покупки, долги и файлы клиента" : "Файлы клиента"}</Typography>
               </Box>
             )}
           </MotionBox>

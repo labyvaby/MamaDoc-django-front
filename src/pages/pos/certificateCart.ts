@@ -4,6 +4,7 @@ import type {
   PosCertificateInput,
   PosCheckoutResponse,
   PosClientCertificate,
+  PosReceiptDebt,
   PosSavedReceipt,
 } from "../../api/pos";
 import type { GiftCertificateDetail } from "../../api/promotions";
@@ -136,17 +137,21 @@ export type PosSaleResult = {
   /** Товарный чек; null — в чеке были только сертификаты. */
   receipt: PosSavedReceipt | null;
   certificates: GiftCertificateDetail[];
+  /** Долг покупателя, открытый чеком при оплате «в долг». */
+  debt?: PosReceiptDebt | null;
 };
 
 /** Ответ checkout/ → чек (если был) и проданные сертификаты. */
 export const normalizeCheckoutResult = (raw: PosCheckoutResponse | PosSavedReceipt): PosSaleResult => {
   const response = raw as PosCheckoutResponse;
   const certificates = Array.isArray(response.soldCertificates) ? response.soldCertificates : [];
+  // Долг — только когда бэк его открыл: старый ответ и чек без долга поля не несут.
+  const debt = response.debt && typeof response.debt === "object" ? { debt: response.debt } : {};
   if (response.receipt && typeof response.receipt === "object" && response.receipt.id != null) {
-    return { receipt: response.receipt, certificates };
+    return { receipt: response.receipt, certificates, ...debt };
   }
   const hasReceipt = response.id != null && Array.isArray(response.lines);
-  return { receipt: hasReceipt ? (response as PosSavedReceipt) : null, certificates };
+  return { receipt: hasReceipt ? (response as PosSavedReceipt) : null, certificates, ...debt };
 };
 
 /** «Отложить» недоступно, пока в чеке есть сертификат: сервер такой чек не отложит. */

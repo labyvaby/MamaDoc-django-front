@@ -26,6 +26,9 @@ export const SALES_NO_METHOD_HINT =
   "В продаже указывают нал или карту, но не конкретный терминал — поэтому в разрезе по способам её нет";
 const REFUNDS_LABEL = "Возвраты";
 export const CERTIFICATES_LABEL = "Продажа сертификатов";
+export const DEBT_REPAYMENTS_LABEL = "Погашение долгов";
+export const DEBT_REPAYMENTS_HINT =
+  "Деньги, которые покупатели возвращают за товар, взятый в долг. Входят в остаток кассы, но не в выручку: выручкой был чек в день продажи.";
 export const CERTIFICATES_HINT =
   "Не входит в остаток кассы и в выручку: деньги за подарочные карты откладывают отдельно. Выручка появится, когда сертификатом оплатят товар. Возвраты — при аннулировании карты.";
 
@@ -99,6 +102,39 @@ function certificateRow(income: number, refunds: number, children: FlowSubRow[])
       children,
     },
   ];
+}
+
+/**
+ * Строка «Погашение долгов»: деньги за товар, проданный в долг раньше. В
+ * остаток кассы входят (бэк считает их в `netCashFlow` и `expectedCash`),
+ * в выручку — нет. Без движений строки нет вовсе.
+ */
+function debtRepaymentRow(income: number, children: FlowSubRow[]): FlowBreakdownRow[] {
+  if (income === 0) return [];
+  return [
+    {
+      key: "debt",
+      label: DEBT_REPAYMENTS_LABEL,
+      amount: income,
+      direction: 1,
+      hint: DEBT_REPAYMENTS_HINT,
+      children,
+    },
+  ];
+}
+
+/** Погашения долгов по терминалам — только безнал. */
+function debtMethodSubRows(rows: CashlessMethodBreakdownRow[] | undefined): FlowSubRow[] {
+  return (rows ?? [])
+    .filter((r) => num(r.debtIncome) !== 0)
+    .map((r) => ({
+      key: `debt-${r.cashlessMethodId ?? "none"}`,
+      label: r.cashlessMethodName ?? NO_METHOD_LABEL,
+      amount: num(r.debtIncome),
+      muted: r.cashlessMethodId == null,
+      hint: r.cashlessMethodId == null ? NO_METHOD_HINT : undefined,
+    }))
+    .sort((a, b) => Number(a.muted) - Number(b.muted) || b.amount - a.amount);
 }
 
 /** Подстроки сертификатов: «Продано» и «Возвращено» — только если возвраты были. */
@@ -211,9 +247,11 @@ export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
   const certificates = num(s?.certificateCardIncome);
   const certificateRefunds = num(s?.certificateCardRefunds);
   const certificateMethods = certificateMethodSubRows(methods);
+  // Погашения долгов картой и QR: деньги ящика, выручкой был чек.
+  const debts = num(s?.debtRepaymentCardIncome);
 
   return {
-    inflow: payments - refunds + sales,
+    inflow: payments - refunds + sales + debts,
     outflow: expenses + supplies,
     breakdown: [
       paymentsRow(payments, refunds, cardPaymentSubRows(methods, refunds)),
@@ -227,6 +265,7 @@ export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
         // отсутствие разреза — иначе продажи выглядят как потерянные деньги.
         hint: sales > 0 && saleSubRows.length === 0 ? SALES_NO_METHOD_HINT : undefined,
       },
+      ...debtRepaymentRow(debts, debtMethodSubRows(methods)),
       ...certificateRow(
         certificates,
         certificateRefunds,
@@ -260,7 +299,8 @@ export function cardFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
 export function cashNet(s: CashboxSummary): number {
   return (
     num(s.cashIncome) +
-    num(s.salesCashIncome) -
+    num(s.salesCashIncome) +
+    num(s.debtRepaymentCashIncome) -
     num(s.cashRefunds) -
     num(s.cashExpenses) -
     num(s.supplyCashExpenses)
@@ -280,9 +320,10 @@ export function cashFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
   const supplies = num(s?.supplyCashExpenses);
   const certificates = num(s?.certificateCashIncome);
   const certificateRefunds = num(s?.certificateCashRefunds);
+  const debts = num(s?.debtRepaymentCashIncome);
 
   return {
-    inflow: payments - refunds + sales,
+    inflow: payments - refunds + sales + debts,
     outflow: expenses + supplies,
     breakdown: [
       paymentsRow(
@@ -296,6 +337,7 @@ export function cashFlowNumbers(s: CashboxSummary | undefined): FlowNumbers {
           : [],
       ),
       { key: "sale", label: "Продажи товаров", amount: sales, direction: 1 },
+      ...debtRepaymentRow(debts, []),
       ...certificateRow(certificates, certificateRefunds, certificateGrossSubRows(certificates, certificateRefunds)),
       { key: "expense", label: "Расходы", amount: expenses, direction: -1 },
       { key: "supply", label: "Закупки товара", amount: supplies, direction: -1 },
