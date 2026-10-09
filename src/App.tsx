@@ -198,7 +198,7 @@ const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module =>
 const DoctorProfitPage = lazy(() => import("./pages/doctor-profit"));
 const PnlPage = lazy(() => import("./pages/pnl").then(module => ({ default: module.PnlPage })));
 const ProfilePage = lazy(() => import("./pages/profile"));
-const RetailDashboardPage = lazy(() => import("./pages/retail/RetailDashboardPage"));
+const RetailAnalyticsPage = lazy(() => import("./pages/retail/RetailAnalyticsPage"));
 // Касса (POS) — полноэкранный модуль: собственная шапка вместо общей, поэтому
 // живёт в отдельной ветке layout.
 const PosPage = lazy(() => import("./pages/pos"));
@@ -802,9 +802,9 @@ function App() {
                         <Route
                           path="retail"
                           element={
-                            <RequirePermission permission={PAGE_PERMISSIONS.pos}>
+                            <RequirePermission permission={PAGE_PERMISSIONS.retailAnalytics}>
                               <Suspense fallback={<LinearProgress />}>
-                                <RetailDashboardPage />
+                                <RetailAnalyticsPage />
                               </Suspense>
                             </RequirePermission>
                           }

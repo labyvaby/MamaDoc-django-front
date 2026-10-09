@@ -42,6 +42,8 @@ const PREFIX_TO_MODULE: Record<string, string> = {
   announcements: 'announcements',
   profigram: 'profigram',
   pos: 'pos',
+  // Вертикаль «магазин»: коллекции и сезонные отчёты (server/apps/retail).
+  retail: 'retail',
   promotions: 'promotions',
   loyalty: 'loyalty',
   printforms: 'printforms',
