@@ -51,8 +51,8 @@ import {
  * суперпользователь в Django-админке (`OrganizationLabConfig`,
  * `BranchLabRegistry`). Право `lab.settings.manage`.
  *
- * Синк каталога отсюда не запускается: он идёт больше часа и гоняется
- * отдельным контейнером — здесь только видно, шёл ли он и когда.
+ * Каталог загружается отдельной фоновой задачей; здесь видны её
+ * состояние и результат, а страницу можно закрыть.
  */
 const LabSettingsPage: React.FC = () => {
   usePageTitle("Лаборатория (ЛИС)");
@@ -132,6 +132,12 @@ const LabSettingsPage: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [syncRunning, queryClient]);
 
+  React.useEffect(() => {
+    if (sync?.state === "ok") {
+      void queryClient.invalidateQueries({ queryKey: djangoQueryKeys.lab.all });
+    }
+  }, [sync?.state, queryClient]);
+
   const handleSync = async () => {
     setSyncBusy(true);
     setSyncError(null);
@@ -144,6 +150,71 @@ const LabSettingsPage: React.FC = () => {
       setSyncBusy(false);
     }
   };
+
+  const catalogControls = (
+    <Stack spacing={2}>
+      <Box>
+        <Typography variant="subtitle2" fontWeight={600}>
+          Каталог анализов
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          При первом подключении загрузите анализы и цены из ExpressLab. Потом этой же
+          кнопкой обновляйте каталог. Загрузка идёт в фоне до часа, страницу можно закрыть.
+        </Typography>
+      </Box>
+
+      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+        <Button
+          variant={mirror?.tests ? "outlined" : "contained"}
+          onClick={handleSync}
+          disabled={busy || syncBusy || syncRunning || !config?.configured}
+          startIcon={
+            syncBusy || syncRunning ? (
+              <CircularProgress size={16} />
+            ) : (
+              <SyncOutlined />
+            )
+          }
+        >
+          {syncBusy || syncRunning ? "Загрузка идёт…" : mirror?.tests ? "Обновить каталог" : "Загрузить анализы"}
+        </Button>
+        {sync && sync.state !== "idle" && (
+          <Typography variant="body2" color="text.secondary">
+            {syncRunning
+              ? `начато ${dayjs(sync.startedAt).format("DD.MM.YYYY HH:mm")}`
+              : sync.state === "ok"
+                ? `последнее обновление ${dayjs(sync.finishedAt).format("DD.MM.YYYY HH:mm")}`
+                : ""}
+          </Typography>
+        )}
+      </Stack>
+      {sync?.state === "failed" && sync.error && (
+        <Alert severity="error">Не удалось загрузить каталог: {sync.error}</Alert>
+      )}
+      {syncError && <Alert severity="error">{syncError}</Alert>}
+      {mirror && (
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(5, minmax(0, 1fr))" },
+            gap: 1.25,
+            maxWidth: 960,
+          }}
+        >
+          <InfoTile icon={<ScienceOutlined />} label="Анализы" value={mirror.tests} />
+          <InfoTile icon={<GroupsOutlined />} label="Врачи ЛИС" value={mirror.doctors} />
+          <InfoTile icon={<LocalOfferOutlined />} label="Типы клиента" value={mirror.clientTypes} />
+          <InfoTile icon={<BiotechOutlined />} label="Пробирки" value={mirror.instruments} />
+          <InfoTile
+            icon={<SyncOutlined />}
+            label="Последнее обновление"
+            value={mirror.lastSyncedAt ? formatDateRu(mirror.lastSyncedAt) : "не было"}
+            active={!!mirror.lastSyncedAt}
+          />
+        </Box>
+      )}
+    </Stack>
+  );
 
   return (
     <SettingsLayout>
@@ -179,6 +250,10 @@ const LabSettingsPage: React.FC = () => {
 
         {form && (
           <>
+            {config?.configured && (<>
+              {catalogControls}
+              <Divider />
+            </>)}
             <Accordion disableGutters elevation={0} sx={{ maxWidth: 760 }}>
               <AccordionSummary expandIcon={<ExpandMoreOutlined />}>
                 <Typography component="span" variant="subtitle2">Общая учётная запись — необязательно</Typography>
@@ -353,69 +428,10 @@ const LabSettingsPage: React.FC = () => {
               </Button>
             </Box>
 
-            <Divider />
-
-            <Box>
-              <Typography variant="subtitle2" fontWeight={600}>
-                Зеркало каталога ЛИС
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Анализы, цены, пробирки, памятки, врачи и типы клиента — копия справочников
-                лаборатории. Обновляется сама раз в неделю; кнопкой — когда лаборатория
-                поменяла прайс. Полный проход идёт в фоне до часа, страницу можно закрыть.
-              </Typography>
-            </Box>
-
-            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Button
-                variant="outlined"
-                onClick={handleSync}
-                disabled={busy || syncBusy || syncRunning || !config?.configured}
-                startIcon={
-                  syncBusy || syncRunning ? (
-                    <CircularProgress size={16} />
-                  ) : (
-                    <SyncOutlined />
-                  )
-                }
-              >
-                {syncRunning ? "Обновление идёт…" : "Обновить каталог"}
-              </Button>
-              {sync && sync.state !== "idle" && (
-                <Typography variant="body2" color="text.secondary">
-                  {syncRunning
-                    ? `начато ${dayjs(sync.startedAt).format("DD.MM.YYYY HH:mm")}`
-                    : sync.state === "ok"
-                      ? `последнее обновление ${dayjs(sync.finishedAt).format("DD.MM.YYYY HH:mm")}`
-                      : ""}
-                </Typography>
-              )}
-            </Stack>
-            {sync?.state === "failed" && sync.error && (
-              <Alert severity="error">Лаборатория отказала: {sync.error}</Alert>
-            )}
-            {syncError && <Alert severity="error">{syncError}</Alert>}
-            {mirror && (
-              <Box
-                sx={{
-                  display: "grid",
-                  gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(5, minmax(0, 1fr))" },
-                  gap: 1.25,
-                  maxWidth: 960,
-                }}
-              >
-                <InfoTile icon={<ScienceOutlined />} label="Анализы" value={mirror.tests} />
-                <InfoTile icon={<GroupsOutlined />} label="Врачи ЛИС" value={mirror.doctors} />
-                <InfoTile icon={<LocalOfferOutlined />} label="Типы клиента" value={mirror.clientTypes} />
-                <InfoTile icon={<BiotechOutlined />} label="Пробирки" value={mirror.instruments} />
-                <InfoTile
-                  icon={<SyncOutlined />}
-                  label="Последний синк"
-                  value={mirror.lastSyncedAt ? formatDateRu(mirror.lastSyncedAt) : "не было"}
-                  active={!!mirror.lastSyncedAt}
-                />
-              </Box>
-            )}
+            {!config?.configured && (<>
+              <Divider />
+              {catalogControls}
+            </>)}
           </>
         )}
       </Stack>
