@@ -100,11 +100,3 @@ export function getEcommerceOrders(signal?: AbortSignal) {
   return apiRequest<Array<{ id: number; branchId: number; clientId: number | null; status: string; totalAmount: string; createdAt: string }>>("/ecommerce/orders/", { signal });
 }
 
-export type PnlReport = { dateFrom: string; dateTo: string; revenue: string; cost: string; grossMargin: string; expenses: string; incomes: string; netResult: string };
-
-export function getPnlReport(dateFrom?: string, dateTo?: string, signal?: AbortSignal) {
-  const query = new URLSearchParams();
-  if (dateFrom) query.set("dateFrom", dateFrom);
-  if (dateTo) query.set("dateTo", dateTo);
-  return apiRequest<PnlReport>(`/v2/retail/reports/pnl/${query.size ? `?${query}` : ""}`, { signal });
-}

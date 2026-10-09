@@ -58,6 +58,9 @@ export const PAGE_PERMISSIONS = {
   conclusionPrint: "medical.conclusions.print",
   clients: "clients.view",
   pos: "pos.view",
+  // «Аналитика магазина»: выручка, маржа и сезонные отчёты. Не pos.view —
+  // касса есть у продавца, а маржа магазина ему не положена.
+  retailAnalytics: "retail.view",
   // Подарочные сертификаты: реестр, карточка и отчёт по филиалам бэк отдаёт
   // по promotions.view или promotions.manage; аннулирование и срок по
   // умолчанию — только promotions.manage (страница проверяет сама).
