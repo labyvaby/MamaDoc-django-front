@@ -272,9 +272,22 @@ export function getClientDebtSummary(
  * QR, комментарий. Филиал — активный филиал сессии (`branchId` нужен только в
  * орг-режиме); деньги ложатся в открытую смену кассы филиала.
  */
-export interface RepayClientDebtPayload {
-  amount: string;
+export interface RepayClientDebtPart {
   method: ClientDebtPaymentMethod;
+  amount: string;
+  cashlessMethodId?: number | null;
+  reference?: string;
+}
+
+/**
+ * Одним способом — `amount` + `method`; частями (наличные + карта + QR за
+ * один раз) — `parts`, тогда `amount`/`method` не нужны. Каждая часть —
+ * своя строка хронологии, все в одной транзакции.
+ */
+export interface RepayClientDebtPayload {
+  amount?: string;
+  method?: ClientDebtPaymentMethod;
+  parts?: RepayClientDebtPart[];
   cashlessMethodId?: number | null;
   branchId?: number | null;
   reference?: string;

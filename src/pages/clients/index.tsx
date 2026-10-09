@@ -187,6 +187,7 @@ export default function ClientsPage() {
       metrics={metrics.data ?? null}
       metricsLoading={metrics.isLoading}
       metricsError={metrics.isError}
+      debtsOutstanding={canViewDebts ? (debts.data ?? []).filter((debt) => debt.status === "open").reduce((sum, debt) => sum + Number(debt.outstanding), 0) : null}
     />
   );
   const historyNode = (

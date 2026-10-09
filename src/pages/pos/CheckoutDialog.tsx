@@ -4,6 +4,7 @@ import CardGiftcardOutlined from "@mui/icons-material/CardGiftcardOutlined";
 import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
+import LockOutlined from "@mui/icons-material/LockOutlined";
 import EventOutlined from "@mui/icons-material/EventOutlined";
 import HandshakeOutlined from "@mui/icons-material/HandshakeOutlined";
 import MailOutlineOutlined from "@mui/icons-material/MailOutlineOutlined";
@@ -16,6 +17,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import dayjs from "dayjs";
 import type { PosBootstrap, PosClientCertificate, PosDebtTerms, PosTender } from "../../api/pos";
 import { DUE_QUICK_DAYS, debtPayments, debtState, emptyDebtDraft, type DebtDraft } from "./debtPayment";
+import { moneyAccessNote } from "./paymentAccess";
 import { certificateExpiryLabel } from "../certificates/certificateMeta";
 import { payableCertificates } from "./certificateCart";
 import { showMinus } from "./format";
@@ -112,6 +114,13 @@ export function CheckoutDialog({ open, due, bootstrap, lines, subtotal, discount
     ...(certificate && bootstrap.actions.certificate ? (["certificate"] as const) : []),
     ...(debt?.enabled ? (["debt"] as const) : []),
   ];
+  // Наличные, карта и QR — отдельные права роли. Нет ни одного — говорим об
+  // этом прямо, иначе окно выглядит так, будто обычная оплата пропала.
+  const accessNote = moneyAccessNote({
+    ...bootstrap.actions,
+    debt: methods.includes("debt"),
+    certificate: methods.includes("certificate"),
+  });
   const amount = parseAmountCents(due);
   const [method, setMethod] = React.useState<Method | "">(methods[0] ?? "");
   const [received, setReceived] = React.useState(due);
@@ -172,6 +181,8 @@ export function CheckoutDialog({ open, due, bootstrap, lines, subtotal, discount
     ? "Сохраняем…"
     : recalculating
       ? "Пересчитываем…"
+      : !methods.length && amount > 0
+        ? "Нет доступного способа оплаты"
       : method === "certificate" && amount > 0
         ? (certificate?.applied ? "Выберите способ" : "Выберите сертификат")
         : method === "debt" && !debtAllowed
@@ -215,7 +226,17 @@ export function CheckoutDialog({ open, due, bootstrap, lines, subtotal, discount
           <Stack direction="row" alignItems="center" justifyContent="space-between"><Typography sx={{ fontSize: { xs: 18, md: 14 }, fontWeight: 800 }}>Оплата</Typography><IconButton onClick={onClose} disabled={pending} aria-label="Закрыть" sx={{ width: 44, height: 44, color: c.textDim }}><CloseOutlined fontSize="small" /></IconButton></Stack>
           <Box role="tablist" aria-label="Способ оплаты" sx={{ mt: "2px", display: "flex", flexWrap: "wrap", gap: "7px" }}>{methods.map((value) => <MethodButton key={value} active={method === value} disabled={pending} onClick={() => setMethod(value)} label={METHOD_LABELS[value]} icon={value === "certificate" ? <CardGiftcardOutlined sx={{ fontSize: 15 }} /> : value === "debt" ? <HandshakeOutlined sx={{ fontSize: 15 }} /> : null} />)}</Box>
 
-          {method === "debt" && debt ? (
+          {accessNote ? (
+            <Stack direction="row" gap="10px" role="note" sx={{ mt: "12px", p: "12px", borderRadius: `${POS_RADIUS.card}px`, bgcolor: c.dangerBg, border: `1px solid ${c.danger}` }}>
+              <LockOutlined sx={{ fontSize: 18, mt: "1px", color: c.danger, flexShrink: 0 }} />
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 800, color: c.text, lineHeight: 1.3 }}>{accessNote.title}</Typography>
+                <Typography sx={{ mt: "2px", fontSize: 12, color: c.textSoft, lineHeight: 1.4 }}>{accessNote.text}</Typography>
+              </Box>
+            </Stack>
+          ) : null}
+
+          {!methods.length ? null : method === "debt" && debt ? (
             <DebtPanel
               options={debt}
               due={amount}
@@ -495,12 +516,25 @@ function DebtPanel({ options, due, draft, state, kinds, terminals, disabled, onC
         <Metric label="Вносит сейчас" value={state.paidNow / 100} />
         <Metric label="В долг" value={state.debt / 100} color={state.ready ? c.danger : undefined} icon={state.ready ? <HandshakeOutlined sx={{ fontSize: 18 }} /> : null} />
       </Box>
-      <Typography aria-live="polite" sx={{ mt: "8px", fontSize: 13, fontWeight: 700, color: state.ready ? c.textSoft : c.danger }}>
-        {state.ready
-          ? `${options.clientName} должен ${formatCents(state.debt)} · вернуть ${dueLabel}`
-          : state.problem}
-      </Typography>
+      {state.ready ? (
+        // Не «оплата»: явно говорим, что чек уходит в долг и на кого.
+        <Stack direction="row" gap="10px" aria-live="polite" sx={{ mt: "10px", p: "12px", borderRadius: `${POS_RADIUS.card}px`, bgcolor: c.dangerBg, border: `1px solid ${c.danger}` }}>
+          <HandshakeOutlined sx={{ fontSize: 20, mt: "1px", color: c.danger, flexShrink: 0 }} />
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontSize: 14, fontWeight: 800, color: c.text, lineHeight: 1.3 }}>
+              Это продажа в долг: {formatCents(state.debt)} не оплачено
+            </Typography>
+            <Typography sx={{ mt: "2px", fontSize: 12, color: c.textSoft, lineHeight: 1.4, overflowWrap: "anywhere" }}>
+              Товар отдаётся сейчас. {options.clientName} должен вернуть {formatCents(state.debt)} {draft.dueDate ? `до ${dueLabel}` : "— срок не указан"}
+              {state.paidNow > 0 ? `, сейчас вносит ${formatCents(state.paidNow)}.` : ", сейчас ничего не вносит."}
+            </Typography>
+          </Box>
+        </Stack>
+      ) : (
+        <Typography aria-live="polite" sx={{ mt: "8px", fontSize: 13, fontWeight: 700, color: c.danger }}>{state.problem}</Typography>
+      )}
 
+      {kinds.length > 0 && (<>
       <Typography sx={{ mt: "14px", mb: "6px", fontSize: 12, fontWeight: 700, color: c.textSoft }}>Вносит сейчас (необязательно)</Typography>
       <Box sx={{ p: "10px 12px", borderRadius: `${POS_RADIUS.card}px`, bgcolor: paidFilled ? c.accentBg : c.card, border: `1px solid ${paidFilled ? c.accent : c.hairline}` }}>
         <Stack direction={{ xs: "column", md: "row" }} gap="8px">
@@ -526,6 +560,7 @@ function DebtPanel({ options, due, draft, state, kinds, terminals, disabled, onC
         </Stack>
         {paidFilled && draft.paidMethod !== "cash" && <TerminalPicker compact terminals={terminals} value={draft.cashlessMethodId} onChange={(id) => patch({ cashlessMethodId: id })} disabled={disabled} title={draft.paidMethod === "card" ? "Терминал" : "QR банка"} />}
       </Box>
+      </>)}
 
       <Typography sx={{ mt: "14px", mb: "6px", fontSize: 12, fontWeight: 700, color: c.textSoft }}>Вернуть до</Typography>
       <Stack direction={{ xs: "column", sm: "row" }} gap="6px" alignItems={{ sm: "center" }}>
