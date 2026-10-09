@@ -29,6 +29,7 @@ import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import RemoveCircleOutline from "@mui/icons-material/RemoveCircleOutline";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import { useNotification } from "@refinedev/core";
 
 import { PageHeader } from "../../../components/ui";
@@ -72,6 +73,9 @@ import { findProductByScanCode, productScanCodes, scrollRowIntoView } from "../.
 import { playScanFeedback, useBarcodeScanner } from "../../pos/barcodeScanner";
 import { StockBulkDialog, type StockBulkSubmit } from "./StockBulkDialog";
 import { exportStockXlsx } from "./exportStockXlsx";
+import { PrintLabelsDialog, type LabelPrintItem } from "../../../components/products/PrintLabelsDialog";
+import { priceTagFromProduct } from "../../../utility/productLabels";
+import { PRINTFORMS_PERMISSIONS } from "../../../api/printforms";
 
 /**
  * Страница «Остатки» — объединяет бывшие «Склад» и «Движение товара»:
@@ -85,6 +89,7 @@ const DjangoWarehousesPage: React.FC = () => {
     const { open: notify } = useNotification();
     const canView = useCan("warehouse.view");
     const canManage = useCan("warehouse.manage");
+    const canPrintLabels = useCan(PRINTFORMS_PERMISSIONS.print);
     const { activeBranch, loading: permLoading } = usePermissions();
     // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту: иначе склады
     // и товары приходят из организации, определённой бэком по сессии.
@@ -130,6 +135,7 @@ const DjangoWarehousesPage: React.FC = () => {
     const [checkedIds, setCheckedIds] = React.useState<Set<number>>(() => new Set());
     const [bulkMenuAnchor, setBulkMenuAnchor] = React.useState<HTMLElement | null>(null);
     const [bulkDialog, setBulkDialog] = React.useState<"transfer" | "writeoff" | null>(null);
+    const [labelItems, setLabelItems] = React.useState<LabelPrintItem[] | null>(null);
     const [bulkProgress, setBulkProgress] = React.useState<{ label: string; done: number; total: number } | null>(null);
 
     // All Products for Selector (for adding new items)
@@ -551,7 +557,7 @@ const DjangoWarehousesPage: React.FC = () => {
     useBarcodeScanner(
         handleScan,
         !loadingStock && !bulkBusy && !movementDrawerOpen && !warehouseDrawerOpen && !manageOpen
-            && !documentsOpen && !transferOpen && bulkDialog === null,
+            && !documentsOpen && !transferOpen && bulkDialog === null && labelItems === null,
     );
     const transferTargets = React.useMemo(
         () => warehouseOptions.filter((w) => w.id !== selectedWarehouseId).map((w) => ({ id: w.id, label: w.label })),
@@ -634,6 +640,35 @@ const DjangoWarehousesPage: React.FC = () => {
         }
     };
 
+    // Превью — по карточке каталога; позиция без неё (каталог ещё грузится) —
+    // по строке склада. На печать уходят данные сервера.
+    const handleBulkLabels = () => {
+        setBulkMenuAnchor(null);
+        const byId = new Map(catalogProducts.map((p) => [p.id, p]));
+        setLabelItems(
+            checkedItems.map((item) => {
+                const product = byId.get(item.productId);
+                return {
+                    productId: item.productId,
+                    stock: item.quantity,
+                    preview: product
+                        ? priceTagFromProduct(product)
+                        : {
+                            productId: item.productId,
+                            name: item.productName,
+                            sku: "",
+                            barcode: item.productBarcode ?? "",
+                            unit: item.productUnit ?? "",
+                            category: item.productCategory ?? "",
+                            attributes: [],
+                            price: String(productPrices.get(item.productId) ?? 0),
+                            copies: 1,
+                        },
+                };
+            }),
+        );
+    };
+
     const selectionBar = (
         <>
             <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -702,6 +737,12 @@ const DjangoWarehousesPage: React.FC = () => {
                     >
                         <ListItemIcon><RemoveCircleOutline fontSize="small" /></ListItemIcon>
                         <ListItemText>Списать</ListItemText>
+                    </MenuItem>
+                )}
+                {canPrintLabels && (
+                    <MenuItem onClick={handleBulkLabels}>
+                        <ListItemIcon><PrintOutlined fontSize="small" /></ListItemIcon>
+                        <ListItemText>Печать этикеток</ListItemText>
                     </MenuItem>
                 )}
                 <MenuItem onClick={() => void handleBulkExport()}>
@@ -1032,6 +1073,13 @@ const DjangoWarehousesPage: React.FC = () => {
                 targets={transferTargets}
                 onClose={() => setBulkDialog(null)}
                 onSubmit={handleBulkSubmit}
+            />
+            <PrintLabelsDialog
+                open={labelItems !== null}
+                items={labelItems ?? []}
+                branchId={selectedWarehouse?.branchId ?? null}
+                stockHint={selectedWarehouse ? `остаток склада «${selectedWarehouse.name}»` : undefined}
+                onClose={() => setLabelItems(null)}
             />
 
             {/* Stock Details Drawer (Mobile only) */}
