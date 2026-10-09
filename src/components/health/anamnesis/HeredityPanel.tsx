@@ -24,7 +24,7 @@ const KILDIYAROVA_STEPS = (() => {
 })();
 
 /** «3 болезни ÷ 7 родственников = 0,43» и ступени шкалы. */
-export const GenealogyCalc: React.FC<{ genealogy: GenealogicalAssessment; explain?: boolean }> = ({ genealogy, explain = true }) => {
+export const GenealogyCalc: React.FC<{ genealogy: GenealogicalAssessment }> = ({ genealogy }) => {
   const theme = useTheme();
   const g = genealogy;
   const tone = g.level ? levelTone(g.level) : "muted";
@@ -86,18 +86,6 @@ export const GenealogyCalc: React.FC<{ genealogy: GenealogicalAssessment; explai
           ))}
         </Stack>
       )}
-      {explain && (
-        <>
-          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-            Индекс отягощённости — болезни кровных родственников, делённые на число родственников, о здоровье которых что-то известно;
-            сам ребёнок не считается. Меньше трёх поколений или меньше шести человек — индекс серый, «мало сведений». По каждой группе
-            болезней индекс считается отдельно: больше 0,4 — направленность отягощённости.
-          </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-            Закрашено — есть болезнь. Стрелка — ребёнок. Рисунок строится сам из «Паспорта семьи».
-          </Typography>
-        </>
-      )}
     </Stack>
   );
 };
@@ -108,19 +96,24 @@ interface HeredityPanelProps {
   onNode?: (node: PedigreeNode) => void;
 }
 
-/** «Наследственность»: родословная и расчёт рядом (ТЗ §4.2, п. 6). */
+/**
+ * «Наследственность»: родословная (ТЗ §4.2, п. 6). Индекс — на карточке
+ * «Генеалогический» вверху обзора, полный расчёт — на вкладке «Наследственность».
+ */
 export const HeredityPanel: React.FC<HeredityPanelProps> = ({ genealogy, layout, onNode }) => (
   <Panel title="Наследственность" caption={`родословная · ${generationsLabel(layout.rows.length)}`}>
-    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 1.25fr) minmax(0, 1fr)" }, gap: 2, alignItems: "center" }}>
-      <Box sx={{ minWidth: 0 }}>
-        <PedigreeChart layout={layout} onNode={onNode} />
-        {layout.nonBlood.length > 0 && (
-          <Typography variant="caption" color="text.secondary">
-            Не кровные: {layout.nonBlood.join(", ")}
-          </Typography>
-        )}
-      </Box>
-      <GenealogyCalc genealogy={genealogy} />
-    </Box>
+    <PedigreeChart layout={layout} onNode={onNode} />
+    {layout.nonBlood.length > 0 && (
+      <Typography variant="caption" color="text.secondary">
+        Не кровные: {layout.nonBlood.join(", ")}
+      </Typography>
+    )}
+    {genealogy.directions.length > 0 && (
+      <Stack direction="row" gap={0.75} flexWrap="wrap">
+        {genealogy.directions.map((item) => (
+          <ToneChip key={item.group} label={`направленность: ${directionLabel(item.group)}`} tone="warn" dot dense />
+        ))}
+      </Stack>
+    )}
   </Panel>
 );

@@ -3,7 +3,7 @@ import { Box, Stack, Typography, useTheme } from "@mui/material";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import { useSnackbar } from "notistack";
 
-import { AppButton } from "../../ui";
+import { AppButton, InfoHint } from "../../ui";
 import type { LifeAnamnesisParagraph } from "./anamnesisParagraph";
 import { sunkBg } from "./anamnesisTone";
 import { Caption } from "./anamnesisUi";
@@ -35,16 +35,61 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 const PREFIX = "Заключение по анамнезу";
+/** Свёрнутый абзац — три строки. */
+const LINES = 3;
+
+interface ParagraphBlockProps {
+  paragraph: LifeAnamnesisParagraph;
+  /** Текст раскрыт целиком; держит раздел — кнопка «Абзац для заключения» в шапке раскрывает его. */
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+}
 
 /**
- * «Абзац для заключения» (ТЗ §4.2, п. 7): текст §3.7 с подписью «собран из
- * полей · врач правит перед вставкой» и кнопкой «Скопировать». Вставляет его
- * кнопка в окне заключения — книжка не знает, какое заключение пишет врач.
+ * «Абзац для заключения» (ТЗ §4.2, п. 7): текст §3.7 (свёрнут до трёх строк)
+ * и кнопка «Скопировать». Вставляет его кнопка в окне заключения — книжка не
+ * знает, какое заключение пишет врач.
  */
-export const ParagraphBlock = React.forwardRef<HTMLDivElement, { paragraph: LifeAnamnesisParagraph }>(({ paragraph }, ref) => {
+export const ParagraphBlock = React.forwardRef<HTMLDivElement, ParagraphBlockProps>(({ paragraph, expanded, onExpandedChange }, ref) => {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
+  const bodyRef = React.useRef<HTMLParagraphElement>(null);
+  // Обрезан ли текст — по факту, а не по числу знаков: ширина карточки разная.
+  const [clamped, setClamped] = React.useState(false);
+  React.useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const measure = () => {
+      if (!expanded) {
+        setClamped(el.scrollHeight > el.clientHeight + 1);
+        return;
+      }
+      const line = parseFloat(window.getComputedStyle(el).lineHeight);
+      if (Number.isFinite(line)) setClamped(el.scrollHeight > line * LINES + 1);
+    };
+    measure();
+    // Шрифт догружается позже: высота свёрнутых трёх строк та же, а текст уже не влезает.
+    let alive = true;
+    void document.fonts?.ready.then(() => {
+      if (alive) measure();
+    });
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => {
+        alive = false;
+        window.removeEventListener("resize", measure);
+      };
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => {
+      alive = false;
+      observer.disconnect();
+    };
+  }, [paragraph.body, expanded]);
   const copy = async () => {
+    // Копируется весь текст — пусть врач видит его целиком.
+    if (!expanded && clamped) onExpandedChange(true);
     const ok = await copyText(paragraph.text);
     enqueueSnackbar(ok ? "Абзац скопирован — вставьте его в поле «Анамнез» заключения" : "Не удалось скопировать: выделите текст вручную", {
       variant: ok ? "success" : "warning",
@@ -69,10 +114,10 @@ export const ParagraphBlock = React.forwardRef<HTMLDivElement, { paragraph: Life
       }}
     >
       <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
-        <Stack direction={{ xs: "column", md: "row" }} gap={{ xs: 0, md: 1.5 }}>
-          <Caption>Абзац для заключения</Caption>
-          <Caption sx={{ fontWeight: 500 }}>собран из полей · врач правит перед вставкой</Caption>
-        </Stack>
+        <Caption>
+          Абзац для заключения
+          <InfoHint text="Собран из полей медкарты. Врач правит текст перед вставкой в заключение." />
+        </Caption>
         <AppButton size="small" variant="outlined" startIcon={<ContentCopyOutlined />} disabled={paragraph.empty} onClick={() => void copy()}>
           Скопировать
         </AppButton>
@@ -84,7 +129,22 @@ export const ParagraphBlock = React.forwardRef<HTMLDivElement, { paragraph: Life
       ) : (
         <>
           {paragraph.body && (
-            <Typography sx={{ fontSize: 13.5, lineHeight: 1.6, userSelect: "text" }}>{paragraph.body}</Typography>
+            <Typography
+              ref={bodyRef}
+              sx={{
+                fontSize: 13.5,
+                lineHeight: 1.6,
+                userSelect: "text",
+                ...(!expanded && { display: "-webkit-box", WebkitLineClamp: LINES, WebkitBoxOrient: "vertical", overflow: "hidden" }),
+              }}
+            >
+              {paragraph.body}
+            </Typography>
+          )}
+          {paragraph.body && clamped && (
+            <AppButton size="small" variant="text" onClick={() => onExpandedChange(!expanded)} sx={{ alignSelf: "flex-start" }}>
+              {expanded ? "Свернуть" : "Показать полностью"}
+            </AppButton>
           )}
           {paragraph.conclusion && (
             <Typography sx={{ fontSize: 13.5, lineHeight: 1.6, userSelect: "text" }}>

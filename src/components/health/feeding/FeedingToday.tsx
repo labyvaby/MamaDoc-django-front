@@ -59,7 +59,7 @@ interface FeedingTodayProps {
 export const FeedingToday: React.FC<FeedingTodayProps> = ({ plan, ageText, canManage, onPick }) => {
   const theme = useTheme();
   return (
-    <FeedingPanel title={`Сегодня · ${ageText}`} caption="рекомендация, врач подтверждает">
+    <FeedingPanel title={`Сегодня · ${ageText}`}>
       {plan.kind === "suggest" && plan.main ? (
         <Stack gap={1}>
           <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">

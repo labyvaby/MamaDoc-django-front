@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, ButtonBase, Popover, Stack, Typography, alpha, useTheme } from "@mui/material";
+import { Box, ButtonBase, Collapse, Popover, Stack, Typography, alpha, useTheme } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
@@ -22,7 +22,7 @@ import type { Gestation } from "../../pages/patient-program/growth/growthData";
 import { AppButton } from "../ui";
 import { AllergyDrawer } from "./AllergyDrawer";
 import { FeedingBanners } from "./feeding/FeedingBanners";
-import { FeedingHowTo, FeedingNoGive } from "./feeding/FeedingHowTo";
+import { FeedingHowTo, FeedingNoGive, Toggle } from "./feeding/FeedingHowTo";
 import { FeedingNorms } from "./feeding/FeedingNormsPanel";
 import { NoticeLine } from "./feeding/FeedingParts";
 import { FeedingToday } from "./feeding/FeedingToday";
@@ -90,67 +90,100 @@ interface FoodDrawerState {
 
 const FOOD_CLOSED: FoodDrawerState = { open: false, entry: null, preset: null };
 
-/** Периоды вскармливания чипами: вид, с какого числа, причина перевода. */
+/**
+ * Периоды вскармливания чипами: вид, с какого числа, причина перевода.
+ * `compact` — периоды уже нарисованы на ленте: одна строка с текущим
+ * периодом, плитки (вход в правку периода) — под «все периоды».
+ */
 const FeedingPeriods: React.FC<{
   feeding: ReadonlyArray<FeedingPeriod>;
   birthDate: string | null;
   canManage: boolean;
+  compact?: boolean;
   onEdit: (period: FeedingPeriod) => void;
-}> = ({ feeding, birthDate, canManage, onEdit }) => {
+}> = ({ feeding, birthDate, canManage, compact = false, onEdit }) => {
   const theme = useTheme();
+  const [open, setOpen] = React.useState(false);
   const current = feeding[feeding.length - 1] ?? null;
+  const folded = compact && current != null;
   const tone = (type: FeedingType) =>
     type === "breast" ? theme.palette.success.main : type === "general" ? theme.palette.info.main : theme.palette.warning.main;
+  const tiles = (
+    <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="stretch">
+      {feeding.map((period) => {
+        const color = tone(period.feedingType);
+        const age = ageLabel(birthDate, period.startedOn);
+        return (
+          <ButtonBase
+            key={period.id}
+            disabled={!canManage}
+            onClick={() => onEdit(period)}
+            sx={{
+              display: "block",
+              textAlign: "left",
+              px: 1.25,
+              py: 0.75,
+              borderRadius: "10px",
+              border: 1,
+              borderColor: alpha(color, 0.4),
+              bgcolor: alpha(color, period === current ? 0.16 : 0.06),
+            }}
+          >
+            <Typography variant="body2" fontWeight={700} sx={{ color }}>
+              {optionLabel(FEEDING_TYPES, period.feedingType)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block">
+              с {formatDate(period.startedOn)}
+              {age ? ` · ${age}` : ""}
+            </Typography>
+            {period.switchReason && (
+              <Typography variant="caption" color="warning.main" display="block">
+                {optionLabel(FEEDING_SWITCH_REASONS, period.switchReason)}
+              </Typography>
+            )}
+          </ButtonBase>
+        );
+      })}
+    </Stack>
+  );
   return (
     <Box>
-      <Stack direction="row" alignItems="baseline" columnGap={1} flexWrap="wrap" sx={{ mb: 1 }}>
+      <Stack direction="row" alignItems={folded ? "center" : "baseline"} columnGap={1} rowGap={0.5} flexWrap="wrap" sx={{ mb: folded ? 0 : 1 }}>
         <Typography variant="subtitle2" fontWeight={700} sx={{ whiteSpace: "nowrap" }}>
           Периоды вскармливания
         </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {current
-            ? `сейчас ${optionLabel(FEEDING_TYPES, current.feedingType).toLowerCase()} с ${formatDate(current.startedOn)}`
-            : "не отмечены"}
-        </Typography>
+        {!current && (
+          <Typography variant="caption" color="text.secondary">
+            не отмечены
+          </Typography>
+        )}
+        {folded && !open && (
+          <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+            <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: tone(current.feedingType), flexShrink: 0 }} />
+            <Typography variant="body2" color="text.secondary">
+              {optionLabel(FEEDING_TYPES, current.feedingType)} с {formatDate(current.startedOn)}
+              {current.switchReason && (
+                <Box component="span" sx={{ color: "warning.main" }}>
+                  {` · ${optionLabel(FEEDING_SWITCH_REASONS, current.switchReason).toLowerCase()}`}
+                </Box>
+              )}
+            </Typography>
+          </Stack>
+        )}
+        {folded && (
+          <Toggle open={open} onClick={() => setOpen((value) => !value)}>
+            все периоды
+          </Toggle>
+        )}
       </Stack>
-      {feeding.length > 0 && (
-        <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="stretch">
-          {feeding.map((period) => {
-            const color = tone(period.feedingType);
-            const age = ageLabel(birthDate, period.startedOn);
-            return (
-              <ButtonBase
-                key={period.id}
-                disabled={!canManage}
-                onClick={() => onEdit(period)}
-                sx={{
-                  display: "block",
-                  textAlign: "left",
-                  px: 1.25,
-                  py: 0.75,
-                  borderRadius: "10px",
-                  border: 1,
-                  borderColor: alpha(color, 0.4),
-                  bgcolor: alpha(color, period === current ? 0.16 : 0.06),
-                }}
-              >
-                <Typography variant="body2" fontWeight={700} sx={{ color }}>
-                  {optionLabel(FEEDING_TYPES, period.feedingType)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" display="block">
-                  с {formatDate(period.startedOn)}
-                  {age ? ` · ${age}` : ""}
-                </Typography>
-                {period.switchReason && (
-                  <Typography variant="caption" color="warning.main" display="block">
-                    {optionLabel(FEEDING_SWITCH_REASONS, period.switchReason)}
-                  </Typography>
-                )}
-              </ButtonBase>
-            );
-          })}
-        </Stack>
-      )}
+      {feeding.length > 0 &&
+        (folded ? (
+          <Collapse in={open} unmountOnExit>
+            <Box sx={{ pt: 1 }}>{tiles}</Box>
+          </Collapse>
+        ) : (
+          tiles
+        ))}
     </Box>
   );
 };
@@ -328,7 +361,13 @@ export const FeedingSection: React.FC<FeedingSectionProps> = ({
     />
   );
   const periods = (
-    <FeedingPeriods feeding={feeding} birthDate={birthDate} canManage={canManage} onEdit={(period) => setPeriodDrawer({ open: true, period })} />
+    <FeedingPeriods
+      feeding={feeding}
+      birthDate={birthDate}
+      canManage={canManage}
+      compact={mode === "full"}
+      onEdit={(period) => setPeriodDrawer({ open: true, period })}
+    />
   );
   const ageCaption = age ? feedingAgeText(age) : "";
   const todayPanel = <FeedingToday plan={plan} ageText={ageCaption} canManage={canManage} onPick={(product) => openNew(product)} />;

@@ -4,7 +4,7 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 
 import type { FamilyMember } from "../../../api/health";
-import { AppButton } from "../../ui";
+import { AppButton, InfoHint } from "../../ui";
 import { pedigreeClick, type AnamnesisActions, type AnamnesisModel } from "./anamnesisModel";
 import { RELATION_META, relationTitle } from "./anamnesisTypes";
 import { toneText } from "./anamnesisTone";
@@ -84,8 +84,15 @@ export const HeredityTab: React.FC<{ model: AnamnesisModel; actions: AnamnesisAc
         </Typography>
       </Panel>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "repeat(2, minmax(0, 1fr))" }, gap: 1.5 }}>
-        <Panel title="Индекс отягощённости">
-          <GenealogyCalc genealogy={genealogy} explain={false} />
+        <Panel
+          title={
+            <>
+              Индекс отягощённости
+              <InfoHint text="Индекс отягощённости — болезни кровных родственников, делённые на число родственников, о здоровье которых что-то известно; сам ребёнок не считается. Меньше трёх поколений или меньше шести человек — индекс серый, «мало сведений». По каждой группе болезней индекс считается отдельно: больше 0,4 — направленность отягощённости." />
+            </>
+          }
+        >
+          <GenealogyCalc genealogy={genealogy} />
           {genealogy.groups.length > 0 && (
             <Box sx={{ display: "grid", gap: 0.25 }}>
               {genealogy.groups.map((group) => (

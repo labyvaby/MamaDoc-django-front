@@ -16,10 +16,13 @@ interface OverviewTabProps {
   model: AnamnesisModel;
   actions: AnamnesisActions;
   paragraphRef: React.Ref<HTMLDivElement>;
+  /** Абзац для заключения раскрыт целиком. */
+  paragraphOpen: boolean;
+  onParagraphOpenChange: (open: boolean) => void;
 }
 
 /** «Обзор» как в макете (ТЗ §4.2). */
-export const OverviewTab: React.FC<OverviewTabProps> = ({ model, actions, paragraphRef }) => {
+export const OverviewTab: React.FC<OverviewTabProps> = ({ model, actions, paragraphRef, paragraphOpen, onParagraphOpenChange }) => {
   const summary = birthSummaryLine(model.input);
   return (
     <Stack gap={2}>
@@ -75,7 +78,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ model, actions, paragr
         <FamilyLifePanel input={model.input} at={model.at} />
       </Box>
       <HeredityPanel genealogy={model.genealogy} layout={model.pedigree} onNode={actions.canManage ? pedigreeClick(actions, model) : undefined} />
-      <ParagraphBlock ref={paragraphRef} paragraph={model.paragraph} />
+      <ParagraphBlock ref={paragraphRef} paragraph={model.paragraph} expanded={paragraphOpen} onExpandedChange={onParagraphOpenChange} />
     </Stack>
   );
 };

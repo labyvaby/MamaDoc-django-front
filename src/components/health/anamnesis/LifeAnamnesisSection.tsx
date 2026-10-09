@@ -70,6 +70,7 @@ export const LifeAnamnesisSection: React.FC<LifeAnamnesisSectionProps> = ({ pati
   const [drawer, setDrawer] = React.useState<DrawerState | null>(null);
   const [missingAnchor, setMissingAnchor] = React.useState<HTMLElement | null>(null);
   const paragraphRef = React.useRef<HTMLDivElement>(null);
+  const [paragraphOpen, setParagraphOpen] = React.useState(false);
   const canSeeSensitive = access.canSeeSensitive && Boolean(life?.sensitiveAccess);
 
   const model = React.useMemo(
@@ -125,6 +126,8 @@ export const LifeAnamnesisSection: React.FC<LifeAnamnesisSectionProps> = ({ pati
 
   const showParagraph = () => {
     setTab("overview");
+    // Кнопка в шапке ведёт к полному тексту, а не к трём строкам.
+    setParagraphOpen(true);
     window.setTimeout(() => paragraphRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
   };
 
@@ -208,7 +211,15 @@ export const LifeAnamnesisSection: React.FC<LifeAnamnesisSectionProps> = ({ pati
             <Tab key={item.key} value={item.key} label={item.label} />
           ))}
         </Tabs>
-        {tab === "overview" && <OverviewTab model={model} actions={actions} paragraphRef={paragraphRef} />}
+        {tab === "overview" && (
+          <OverviewTab
+            model={model}
+            actions={actions}
+            paragraphRef={paragraphRef}
+            paragraphOpen={paragraphOpen}
+            onParagraphOpenChange={setParagraphOpen}
+          />
+        )}
         {tab === "pregnancy" && <PregnancyTab model={model} actions={actions} />}
         {tab === "newborn" && <NewbornTab model={model} actions={actions} />}
         {tab === "heredity" && <HeredityTab model={model} actions={actions} />}

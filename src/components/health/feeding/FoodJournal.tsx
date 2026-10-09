@@ -7,7 +7,7 @@ import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 
 import type { FoodIntroduction } from "../../../api/health";
 import { subtleBorder } from "../../../theme/uiHelpers";
-import { AppButton } from "../../ui";
+import { AppButton, ROW_ACTIONS_CLASS, ShowAllButton, rowActionSx, rowActionsHostSx } from "../../ui";
 import { ALLERGY_STATUSES, optionLabel } from "../healthMeta";
 import type { Gestation } from "../../../pages/patient-program/growth/growthData";
 import { feedingAge, feedingAgeText, foodGroupOf, formatDay, groupLower, journalItems, reactionText, type JournalItem } from "./feedingAdvice";
@@ -30,6 +30,11 @@ const Row: React.FC<{
   const group = foodGroupOf(food);
   const reaction = reactionText(food);
   const allergy = food.allergy;
+  const date = (
+    <Typography variant="body2" fontWeight={600} component="span" sx={{ fontVariantNumeric: "tabular-nums", mr: 0.75 }}>
+      {formatDay(food.givenOn)}
+    </Typography>
+  );
   return (
     <Box
       sx={{
@@ -40,12 +45,17 @@ const Row: React.FC<{
         alignItems: "start",
         py: 1.1,
         borderTop: `1px solid ${subtleBorder(theme)}`,
+        ...rowActionsHostSx,
       }}
     >
       <Box sx={{ gridColumn: { xs: "1 / 2", md: "auto" }, minWidth: 0 }}>
-        <Typography variant="body2" fontWeight={600} component="span" sx={{ fontVariantNumeric: "tabular-nums", mr: 0.75 }}>
-          {formatDay(food.givenOn)}
-        </Typography>
+        {food.createdBy ? (
+          <Tooltip title={`Кто отметил: ${food.createdBy.fullName}`} arrow describeChild enterTouchDelay={0}>
+            {date}
+          </Tooltip>
+        ) : (
+          date
+        )}
         {age && (
           <Typography variant="caption" color="text.secondary" component="span" sx={{ display: { xs: "inline", md: "block" } }}>
             {feedingAgeText(age)}
@@ -83,11 +93,6 @@ const Row: React.FC<{
             {food.notes}
           </Typography>
         )}
-        {food.createdBy && (
-          <Typography variant="caption" color="text.disabled">
-            {food.createdBy.fullName}
-          </Typography>
-        )}
       </Box>
       {canManage && (
         <Stack direction="row" gap={0.5} alignItems="center" sx={{ gridColumn: { xs: "2 / 3", md: "auto" }, gridRow: { xs: 1, md: "auto" } }}>
@@ -97,7 +102,13 @@ const Row: React.FC<{
             </AppButton>
           )}
           <Tooltip title="Исправить отметку">
-            <IconButton size="small" aria-label={`Исправить отметку «${food.productName}»`} onClick={() => onEdit(food)}>
+            <IconButton
+              size="small"
+              className={ROW_ACTIONS_CLASS}
+              aria-label={`Исправить отметку «${food.productName}»`}
+              onClick={() => onEdit(food)}
+              sx={rowActionSx}
+            >
               <EditOutlined fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -185,11 +196,7 @@ export const FoodJournal: React.FC<FoodJournalProps> = ({
                 onRepeat={onRepeat}
               />
             ))}
-            {items.length > PAGE && (
-              <AppButton size="small" variant="text" onClick={() => setAll((value) => !value)} sx={{ mt: 0.5 }}>
-                {all ? "Свернуть" : `Показать все (${items.length})`}
-              </AppButton>
-            )}
+            <ShowAllButton total={items.length} limit={PAGE} expanded={all} onToggle={() => setAll((value) => !value)} />
           </Box>
         )}
       </Collapse>
