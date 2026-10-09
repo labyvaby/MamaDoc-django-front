@@ -3,7 +3,7 @@ import { Box, ButtonBase, Collapse, Divider, Popover, Stack, Typography } from "
 import AddOutlined from "@mui/icons-material/AddOutlined";
 
 import type { RiskGroupRecord } from "../../../api/health";
-import { AppButton } from "../../ui";
+import { AppButton, InfoHint } from "../../ui";
 import { factorText, type Factor } from "./anamnesisFactors";
 import type { RiskSuggestion } from "./anamnesisRules";
 import { RISK_GROUP_META, RISK_GROUP_ORDER, RISK_STATUS_LABELS } from "./anamnesisTypes";
@@ -54,7 +54,10 @@ export const RiskGroupsBlock: React.FC<RiskGroupsBlockProps> = ({
   return (
     <Box>
       <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="center">
-        <Caption sx={{ mr: 0.5 }}>Группы риска</Caption>
+        <Caption sx={{ mr: 0.5 }}>
+          Группы риска
+          <InfoHint text="Предлагает система, ставит и снимает врач. Пунктир — предложение системы." />
+        </Caption>
         {visible.map((record) => {
           const chip = recordChip(record, birthDate, at, frequentIll);
           return <ToneChip key={record.id} label={chip.label} tone={chip.tone} dot={chip.tone !== "neutral"} onClick={() => onOpenRecord(record)} />;
@@ -73,9 +76,6 @@ export const RiskGroupsBlock: React.FC<RiskGroupsBlockProps> = ({
             не установлены
           </Typography>
         )}
-        <Typography variant="caption" color="text.secondary" sx={{ alignSelf: "center" }}>
-          предлагает система, ставит и снимает врач
-        </Typography>
         {canManage && (
           <AppButton size="small" variant="text" startIcon={<AddOutlined />} onClick={onAdd}>
             Группа риска

@@ -1,6 +1,5 @@
 import React from "react";
 import { Box, Button, Collapse, Stack, Typography, alpha, useTheme } from "@mui/material";
-import ChecklistOutlined from "@mui/icons-material/ChecklistOutlined";
 import ErrorOutlineOutlined from "@mui/icons-material/ErrorOutlineOutlined";
 import ReportProblemOutlined from "@mui/icons-material/ReportProblemOutlined";
 import dayjs from "dayjs";
@@ -9,12 +8,7 @@ import { signalText, signalTitle, type Banner, type Signal } from "./neuroSignal
 import { LevelDot } from "./NeuroControls";
 import { levelColor, levelTextColor } from "./neuroUi";
 
-const SignalLine: React.FC<{ signal: Signal; canManage: boolean; onMarkMilestones: () => void; dot?: boolean }> = ({
-  signal,
-  canManage,
-  onMarkMilestones,
-  dot = false,
-}) => {
+const SignalLine: React.FC<{ signal: Signal; dot?: boolean }> = ({ signal, dot = false }) => {
   const date = signal.date ? dayjs(signal.date).format("DD.MM.YYYY") : "";
   return (
     <Stack direction="row" gap={1} alignItems="flex-start" sx={{ minWidth: 0 }}>
@@ -28,19 +22,10 @@ const SignalLine: React.FC<{ signal: Signal; canManage: boolean; onMarkMilestone
           {signalTitle(signal)}
         </Typography>
         <Typography variant="body2">{signalText(signal)}</Typography>
-        {(date || (signal.milestone && canManage)) && (
-          <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap" sx={{ mt: 0.25 }}>
-            {date && (
-              <Typography variant="caption" color="text.secondary">
-                {signal.milestone ? `отмечено ${date}` : `осмотр ${date}`}
-              </Typography>
-            )}
-            {signal.milestone && canManage && (
-              <Button size="small" startIcon={<ChecklistOutlined />} onClick={onMarkMilestones} sx={{ textTransform: "none", py: 0, minHeight: 0 }}>
-                Отметить вехи
-              </Button>
-            )}
-          </Stack>
+        {date && (
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.25 }}>
+            {signal.milestone ? `отмечено ${date}` : `осмотр ${date}`}
+          </Typography>
         )}
       </Box>
     </Stack>
@@ -52,7 +37,7 @@ const SignalLine: React.FC<{ signal: Signal; canManage: boolean; onMarkMilestone
  * — самый высокий из сигналов, до трёх строк этого уровня; «ещё N» раскрывает
  * все сигналы всех уровней.
  */
-export const NeuroBanner: React.FC<{ banner: Banner; canManage: boolean; onMarkMilestones: () => void }> = ({ banner, canManage, onMarkMilestones }) => {
+export const NeuroBanner: React.FC<{ banner: Banner }> = ({ banner }) => {
   const theme = useTheme();
   const [open, setOpen] = React.useState(false);
   const color = levelColor(theme, banner.level);
@@ -77,14 +62,14 @@ export const NeuroBanner: React.FC<{ banner: Banner; canManage: boolean; onMarkM
             </Typography>
           )}
           {banner.top.map((signal) => (
-            <SignalLine key={signal.key} signal={signal} canManage={canManage} onMarkMilestones={onMarkMilestones} />
+            <SignalLine key={signal.key} signal={signal} />
           ))}
           {banner.rest.length > 0 && (
             <>
               <Collapse in={open} unmountOnExit>
                 <Stack gap={1.25}>
                   {banner.rest.map((signal) => (
-                    <SignalLine key={signal.key} signal={signal} canManage={canManage} onMarkMilestones={onMarkMilestones} dot />
+                    <SignalLine key={signal.key} signal={signal} dot />
                   ))}
                 </Stack>
               </Collapse>

@@ -30,7 +30,8 @@ import {
   type ProgramNotificationStatus,
 } from "../../api/programs";
 import { djangoQueryKeys } from "../../api/queryKeys";
-import { AppButton, AppCard, CustomDateTimePicker, ListEmptyState } from "../../components/ui";
+import { HealthSectionCard } from "../../components/health/HealthSectionCard";
+import { AppButton, CustomDateTimePicker, ShowAllButton } from "../../components/ui";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { subtleBg } from "../../theme/uiHelpers";
 
@@ -194,6 +195,7 @@ export const UpcomingEvents: React.FC<UpcomingEventsProps> = ({
   const queryClient = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   const [selectedEvent, setSelectedEvent] = React.useState<ProgramModuleRecord | null>(null);
+  const [all, setAll] = React.useState(false);
   const upcomingKey = djangoQueryKeys.programs.upcoming(enrollmentId, scope);
   const notificationsKey = djangoQueryKeys.programs.notifications(enrollmentId, scope);
   const upcomingQuery = useQuery({
@@ -251,26 +253,14 @@ export const UpcomingEvents: React.FC<UpcomingEventsProps> = ({
   const events = upcomingQuery.data?.results ?? [];
   return (
     <>
-      <AppCard variant="outlined">
-        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" gap={1} sx={{ mb: 1.5 }}>
-          <Box>
-            <Typography variant="h6" fontWeight={700}>Предстоящие события</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Осмотры, вакцинации и другие запланированные действия
-            </Typography>
-          </Box>
-          {events.length > 0 && <Chip size="small" variant="outlined" label={`${events.length} запланировано`} />}
-        </Stack>
-        {upcomingQuery.error && <Alert severity="error">{upcomingQuery.error.message}</Alert>}
+      <HealthSectionCard title={events.length ? `Предстоящие события · ${events.length}` : "Предстоящие события"}>
+        {upcomingQuery.error && <Alert severity="error" sx={{ mb: 1.5 }}>{upcomingQuery.error.message}</Alert>}
         {!upcomingQuery.isLoading && events.length === 0 ? (
-          <ListEmptyState
-            icon={<CalendarMonthOutlined />}
-            title="Нет запланированных событий"
-            description="События со статусом «Запланировано» появятся здесь автоматически."
-          />
+          <Typography variant="body2" color="text.secondary">Запланированных событий нет.</Typography>
         ) : (
           <Stack gap={1}>
-            {events.map((event) => {
+            {/* Список от ранних к поздним, просроченные — первыми: три, остальное — по «Показать все». */}
+            {(all ? events : events.slice(0, 3)).map((event) => {
               const notification = notificationsByRecord.get(event.id);
               const canCancel = notification?.status === "pending";
               const canRetry = notification?.status === "failed";
@@ -322,7 +312,7 @@ export const UpcomingEvents: React.FC<UpcomingEventsProps> = ({
                         {(!notification || notification.status === "cancelled") && (
                           <AppButton
                             size="small"
-                            variant="contained"
+                            variant="outlined"
                             startIcon={<NotificationsActiveOutlined />}
                             onClick={() => setSelectedEvent(event)}
                           >
@@ -335,9 +325,10 @@ export const UpcomingEvents: React.FC<UpcomingEventsProps> = ({
                 </Box>
               );
             })}
+            <ShowAllButton total={events.length} limit={3} expanded={all} onToggle={() => setAll((value) => !value)} sx={{ mt: 0 }} />
           </Stack>
         )}
-      </AppCard>
+      </HealthSectionCard>
 
       {canNotify && (
         <ReminderDrawer

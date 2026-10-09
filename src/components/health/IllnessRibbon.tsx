@@ -258,7 +258,8 @@ const EpisodeRow: React.FC<{
         </Box>
         <Stack direction="row" gap={0.5} alignItems="center" flexWrap="wrap" justifyContent="flex-end" sx={{ flexShrink: 0, maxWidth: "45%" }}>
           {episode.isChronic && <Tag tone="warning">хроническое</Tag>}
-          <Tag tone={manual ? "primary" : "neutral"}>{SOURCE_LABELS[episode.source]}</Tag>
+          {/* «из приёма» / «из архива» уже сказаны подписью «1 приём · …» и точкой */}
+          {manual && <Tag tone="primary">{SOURCE_LABELS.manual}</Tag>}
           {expandable && (
             <ExpandMoreOutlined
               fontSize="small"
@@ -367,7 +368,6 @@ const StayRibbonRow: React.FC<{ row: Hospitalization; top: Segment; bottom: Segm
             {[diagnosis, docs].filter(Boolean).join(" · ") || "Диагноз не указан"}
           </Typography>
         </Box>
-        <Tag tone="error">стационар</Tag>
       </Stack>
     </>
   );

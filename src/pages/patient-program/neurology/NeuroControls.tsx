@@ -16,7 +16,7 @@ export const LevelDot: React.FC<{ level: NeuroLevel; size?: number }> = ({ level
   return <Box component="span" sx={{ width: size, height: size, borderRadius: "50%", bgcolor: levelColor(theme, level), flexShrink: 0, display: "inline-block" }} />;
 };
 
-/** Метка с точкой; «срочно» — красная с пометкой; дата — мелко, если метка не из последнего осмотра. */
+/** Метка с точкой; норма — серая с зелёной точкой; «срочно» — красная с пометкой; дата — мелко, если метка не из последнего осмотра. */
 export const LevelChip: React.FC<{ level: NeuroLevel; label: string; date?: string | null; title?: string }> = ({ level, label, date, title }) => {
   const theme = useTheme();
   const color = levelColor(theme, level);
@@ -49,8 +49,8 @@ export const LevelChip: React.FC<{ level: NeuroLevel; label: string; date?: stri
         borderRadius: "999px",
         fontWeight: 500,
         maxWidth: "100%",
-        bgcolor: level === "unknown" ? alpha(theme.palette.text.primary, 0.05) : alpha(color, level === "warn" ? 0.16 : 0.12),
-        color: level === "unknown" ? theme.palette.text.secondary : levelTextColor(theme, level),
+        bgcolor: level === "unknown" || level === "ok" ? alpha(theme.palette.text.primary, 0.05) : alpha(color, level === "warn" ? 0.16 : 0.12),
+        color: level === "unknown" ? theme.palette.text.secondary : level === "ok" ? theme.palette.text.primary : levelTextColor(theme, level),
         "& .MuiChip-label": { whiteSpace: "normal" },
       }}
     />

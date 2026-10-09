@@ -1,8 +1,9 @@
 import React from "react";
-import { Alert, Box, Chip, Stack, Typography, alpha, useTheme } from "@mui/material";
+import { Alert, Box, Chip, Stack, Tooltip, Typography, alpha, useTheme } from "@mui/material";
 import TipsAndUpdatesOutlined from "@mui/icons-material/TipsAndUpdatesOutlined";
 
 import type { ProgramModuleRecord } from "../../../api/programs";
+import { AppButton, InfoHint } from "../../../components/ui";
 import { NextCheckLine } from "../vision/VisionLatest";
 import { BackView, FootPrints, Heels, HipUltrasound, Legs, PostureStrip } from "./art";
 import { HIP_RISKS, MOBILITY, optionLabel } from "./orthoCatalog";
@@ -30,12 +31,11 @@ import {
 import { orthoColor, orthoTextColor } from "./orthoUi";
 import dayjs from "dayjs";
 
-const fmt = (value: number): string => String(value).replace(".", ",");
-
-/** Чип статуса с точкой — как в проекте раздела. */
+/** Чип статуса с точкой — как в проекте раздела. Норма без заливки: цвет только у точки. */
 export const StatusChip: React.FC<{ status: OrthoStatus; label: string }> = ({ status, label }) => {
   const theme = useTheme();
   const color = orthoColor(theme, status);
+  const neutral = status === "unknown" || status === "ok";
   return (
     <Chip
       size="small"
@@ -45,11 +45,46 @@ export const StatusChip: React.FC<{ status: OrthoStatus; label: string }> = ({ s
         height: 26,
         borderRadius: "999px",
         fontWeight: 500,
-        bgcolor: status === "unknown" ? alpha(theme.palette.text.primary, 0.05) : alpha(color, 0.12),
-        color: status === "unknown" ? theme.palette.text.secondary : orthoTextColor(theme, status),
+        bgcolor: neutral ? alpha(theme.palette.text.primary, 0.05) : alpha(color, 0.12),
+        color: status === "unknown" ? theme.palette.text.secondary : status === "ok" ? theme.palette.text.primary : orthoTextColor(theme, status),
         maxWidth: "100%",
       }}
     />
+  );
+};
+
+const SUMMARY_RANK: Record<OrthoStatus, number> = { bad: 0, warn: 1, unknown: 2, ok: 3 };
+
+/**
+ * Находки осмотра чипами: на виду отклонения (красные, потом жёлтые) и
+ * неоценённое, всё в норме — одним чипом «В норме: N» с перечнем в подсказке.
+ * `max` — сколько чипов показать, остальное — «+ ещё N» с подсказкой.
+ */
+export const SummaryChips: React.FC<{ items: ReadonlyArray<{ status: OrthoStatus; text: string }>; max?: number }> = ({ items, max }) => {
+  const visible = items.filter((item) => item.status !== "ok").sort((a, b) => SUMMARY_RANK[a.status] - SUMMARY_RANK[b.status]);
+  const ok = items.filter((item) => item.status === "ok");
+  const shown = max ? visible.slice(0, max) : visible;
+  const rest = visible.slice(shown.length);
+  return (
+    <Stack direction="row" gap={0.5} flexWrap="wrap" alignItems="center">
+      {shown.map((item, index) => (
+        <StatusChip key={`${item.text}-${index}`} status={item.status} label={item.text} />
+      ))}
+      {ok.length > 0 && (
+        <Tooltip title={ok.map((item) => item.text).join(", ")} arrow enterTouchDelay={0}>
+          <Box component="span" tabIndex={0} sx={{ display: "inline-flex" }}>
+            <StatusChip status="ok" label={visible.length ? `В норме: ${ok.length}` : "Без отклонений"} />
+          </Box>
+        </Tooltip>
+      )}
+      {rest.length > 0 && (
+        <Tooltip title={`Ещё: ${rest.map((item) => item.text).join("; ")}`} arrow enterTouchDelay={0}>
+          <Typography component="span" variant="caption" color="text.secondary" tabIndex={0} sx={{ cursor: "help" }}>
+            + ещё {rest.length}
+          </Typography>
+        </Tooltip>
+      )}
+    </Stack>
   );
 };
 
@@ -60,6 +95,8 @@ const whenTwoColumns = `@container ${PANELS} (min-width: 520px)`;
 const Panel: React.FC<{
   title: string;
   caption?: string;
+  /** Как читать рисунок — в значок ⓘ у названия, а не строкой под рисунком. */
+  hint?: string;
   status: OrthoStatus;
   /** Рисунок: занимает свободную высоту панели, подписи прижаты к низу. */
   art?: React.ReactNode;
@@ -70,9 +107,11 @@ const Panel: React.FC<{
   double?: boolean;
   /** Последняя панель без пары: на всю строку, рисунок слева, подписи справа. */
   fill?: boolean;
-}> = ({ title, caption, status, art, children, wide = false, double = false, fill = false }) => {
+}> = ({ title, caption, hint, status, art, children, wide = false, double = false, fill = false }) => {
   const theme = useTheme();
   const color = orthoColor(theme, status);
+  // без текста одиночная панель просто центрирует рисунок
+  const fillRow = fill && Boolean(children);
   return (
     <Box
       sx={{
@@ -88,9 +127,12 @@ const Panel: React.FC<{
       }}
     >
       <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={1}>
-        <Typography variant="subtitle2" fontWeight={700}>
-          {title}
-        </Typography>
+        <Stack direction="row" alignItems="center">
+          <Typography variant="subtitle2" fontWeight={700}>
+            {title}
+          </Typography>
+          {hint && <InfoHint text={hint} />}
+        </Stack>
         {caption && (
           <Typography variant="caption" color="text.secondary" sx={{ textAlign: "right" }}>
             {caption}
@@ -103,7 +145,7 @@ const Panel: React.FC<{
           display: "flex",
           flexDirection: "column",
           gap: 1,
-          ...(fill ? { [whenTwoColumns]: { flexDirection: "row", alignItems: "center", gap: 3 } } : {}),
+          ...(fillRow ? { [whenTwoColumns]: { flexDirection: "row", alignItems: "center", gap: 3 } } : {}),
         }}
       >
         {art && (
@@ -113,14 +155,14 @@ const Panel: React.FC<{
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              ...(fill ? { [whenTwoColumns]: { flex: "0 1 300px" } } : {}),
+              ...(fillRow ? { [whenTwoColumns]: { flex: "0 1 300px" } } : {}),
             }}
           >
             {art}
           </Box>
         )}
         {children && (
-          <Stack gap={1} sx={{ minWidth: 0, ...(fill ? { [whenTwoColumns]: { flex: 1 } } : {}) }}>
+          <Stack gap={1} sx={{ minWidth: 0, ...(fillRow ? { [whenTwoColumns]: { flex: 1 } } : {}) }}>
             {children}
           </Stack>
         )}
@@ -134,6 +176,8 @@ const Verdict: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     {children}
   </Typography>
 );
+
+const ATR_RULE = "Ротация по сколиометру: до 3° — норма, 4–6° — повтор через 4–12 мес, от 7° — снимок и ортопед.";
 
 const Art: React.FC<{ children: React.ReactNode; maxWidth?: number }> = ({ children, maxWidth = 280 }) => (
   <Box sx={{ width: "100%", maxWidth, mx: "auto" }}>{children}</Box>
@@ -177,17 +221,26 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
   const footAge = footExam ? ageOn(footExam) : age;
   const legsAge = legsExam ? ageOn(legsExam) : age;
   const months = footAge.months;
-  const since = (exam: OrthoExam | null): string =>
-    exam && exam !== latest ? ` · на ${dayjs(exam.record.occurredAt).format("DD.MM.YYYY")}` : "";
+  const sinceDate = (exam: OrthoExam | null): string | undefined =>
+    exam && exam !== latest ? `на ${dayjs(exam.record.occurredAt).format("DD.MM.YYYY")}` : undefined;
+  const [hipsOpen, setHipsOpen] = React.useState(false);
 
   const usSides = hips?.us ? [hipSide("L", hips.us.left, hipsAge.weeks), hipSide("R", hips.us.right, hipsAge.weeks)] : [];
   const hasUs = usSides.some((side) => side.alpha != null || side.typeLabel);
+  // чипы УЗИ — только где есть что сказать сверх рисунка: подсказка системы или подтверждённое отклонение
+  const usChips = usSides.filter((side) => (side.alpha != null || side.typeLabel) && (!side.confirmed || side.status !== "ok"));
+  // «Тип IIa допустим до 12 недель» на виду, только когда это про этого ребёнка
+  const iiaRelevant = usSides.some((side) => side.typeLabel.includes("IIa")) || (hipsAge.weeks != null && hipsAge.weeks < 16);
+  // старое УЗИ с нормой с обеих сторон — одной строкой, рисунок по кнопке; факторы риска остаются на виду
+  const hipsCompact = hips != null && hipsExam !== latest && usSides.every((side) => side.status === "ok") && hipsStatus(hips, hipsAge) === "ok";
   const hasArch = foot != null && (foot.arch.left != null || foot.arch.right != null);
   const hasHeel = foot != null && (foot.heel.left != null || foot.heel.right != null);
   const hasLegs = legs?.axis != null;
   const adams = spine?.adams ?? null;
   const shoulder = spine?.asymmetries.find((item) => item.code === "shoulder") ?? null;
   const hasBack = adams != null || (spine?.asymmetries.length ?? 0) > 0;
+  // правило про ротацию на виду, только когда ротация не в норме; иначе — в ⓘ
+  const atrOff = adams?.atr != null && atrStatus(adams.atr) !== "ok";
   const physiological = foot
     ? flatfootPhysiological([foot.arch.left, foot.arch.right], foot.mobility, foot.complaints, months)
     : false;
@@ -202,13 +255,7 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
   // «Последний осмотр» и дата — в шапке раздела; здесь сразу сводка
   return (
     <Stack gap={1.75} sx={{ containerType: "inline-size", containerName: PANELS }}>
-      {summary.length > 0 && (
-        <Stack direction="row" gap={0.75} flexWrap="wrap">
-          {summary.map((item, index) => (
-            <StatusChip key={`${item.text}-${index}`} status={item.status} label={item.text} />
-          ))}
-        </Stack>
-      )}
+      {summary.length > 0 && <SummaryChips items={summary} />}
 
       {hasLegacy && (
         <Box
@@ -243,18 +290,41 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
             </>
           )}
           <Typography variant="caption" color="text.secondary" sx={{ gridColumn: "1 / -1", mt: 0.5 }}>
-            Запись в прежнем виде — текстом, без рисунков. Рисунки строятся по осмотрам, внесённым кнопками «Осмотр ортопеда»
-            и «Скрининг педиатра».
+            Запись в прежнем виде, без рисунков
+            <InfoHint text="Рисунки строятся по осмотрам, внесённым кнопками «Осмотр ортопеда» и «Скрининг педиатра»." />
           </Typography>
         </Box>
       )}
 
       {(hasUs || hasArch || hasHeel || hasLegs || hasBack) && (
         <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: "minmax(0, 1fr)", [whenTwoColumns]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } }}>
-          {hasUs && hips && (
+          {hasUs && hips && hipsExam && hipsCompact && !hipsOpen && (
+            <Stack
+              direction="row"
+              alignItems="center"
+              flexWrap="wrap"
+              columnGap={1}
+              rowGap={0.5}
+              sx={{ gridColumn: "1 / -1", minWidth: 0, border: 1, borderColor: "divider", borderRadius: "14px", px: 1.5, py: 0.5 }}
+            >
+              <Box component="span" sx={(theme) => ({ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, bgcolor: orthoColor(theme, "ok") })} />
+              <Typography variant="body2" sx={{ minWidth: 0, py: 0.5 }}>
+                УЗИ суставов {dayjs(hipsExam.record.occurredAt).format("DD.MM.YYYY")}:{" "}
+                {usSides.map((side) => `${side.typeLabel}${side.confirmed ? "" : " (подсказка)"}`).join(" / ")} — норма
+              </Typography>
+              {hips.risks.map((risk) => (
+                <Chip key={risk} size="small" label={`Риск: ${optionLabel(HIP_RISKS, risk).toLowerCase()}`} sx={{ height: 24, borderRadius: "999px" }} />
+              ))}
+              <AppButton size="small" variant="text" onClick={() => setHipsOpen(true)} sx={{ ml: "auto" }}>
+                Показать рисунок
+              </AppButton>
+            </Stack>
+          )}
+          {hasUs && hips && (!hipsCompact || hipsOpen) && (
             <Panel
               title="Тазобедренные суставы"
-              caption={`УЗИ по Графу${since(hipsExam)}`}
+              caption={["УЗИ по Графу", sinceDate(hipsExam)].filter(Boolean).join(" · ")}
+              hint={`Белая линия — подвздошная кость, цветная — костная крыша, серая — хрящевая.${iiaRelevant ? "" : " Тип IIa допустим до 12 недель."} Тип система подсказывает по углам и возрасту, врач подтверждает.`}
               status={hipsStatus(hips, hipsAge)}
               double
               art={
@@ -266,31 +336,38 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
                 </Art>
               }
             >
-              <Stack direction="row" gap={0.5} flexWrap="wrap">
-                {usSides
-                  .filter((side) => side.alpha != null || side.typeLabel)
-                  .map((side) => (
-                    <StatusChip
-                      key={side.side}
-                      status={side.status}
-                      label={`${side.side === "L" ? "Л" : "П"}: ${side.typeLabel}${side.alpha != null ? ` · α ${side.alpha}°` : ""}${side.beta != null ? ` · β ${side.beta}°` : ""}${side.confirmed ? "" : " (подсказка)"}`}
-                    />
-                  ))}
-                {hips.risks.map((risk) => (
-                  <Chip key={risk} size="small" label={`Риск: ${optionLabel(HIP_RISKS, risk).toLowerCase()}`} sx={{ height: 24, borderRadius: "999px" }} />
-                ))}
-              </Stack>
-              <Verdict>
-                Белая линия — подвздошная кость, цветная — костная крыша, серая — хрящевая. Тип IIa допустим до 12 недель. Тип
-                система подсказывает по углам и возрасту, врач подтверждает.
-              </Verdict>
+              {usChips.length > 0 || hips.risks.length > 0 || iiaRelevant || hipsCompact ? (
+                <>
+                  {(usChips.length > 0 || hips.risks.length > 0) && (
+                    <Stack direction="row" gap={0.5} flexWrap="wrap">
+                      {usChips.map((side) => (
+                        <StatusChip
+                          key={side.side}
+                          status={side.status}
+                          label={`${side.side === "L" ? "Л" : "П"}: ${side.typeLabel}${side.alpha != null ? ` · α ${side.alpha}°` : ""}${side.beta != null ? ` · β ${side.beta}°` : ""}${side.confirmed ? "" : " (подсказка)"}`}
+                        />
+                      ))}
+                      {hips.risks.map((risk) => (
+                        <Chip key={risk} size="small" label={`Риск: ${optionLabel(HIP_RISKS, risk).toLowerCase()}`} sx={{ height: 24, borderRadius: "999px" }} />
+                      ))}
+                    </Stack>
+                  )}
+                  {iiaRelevant && <Verdict>Тип IIa допустим до 12 недель.</Verdict>}
+                  {hipsCompact && (
+                    <AppButton size="small" variant="text" onClick={() => setHipsOpen(false)} sx={{ alignSelf: "flex-start" }}>
+                      Свернуть
+                    </AppButton>
+                  )}
+                </>
+              ) : null}
             </Panel>
           )}
 
           {hasArch && foot && (
             <Panel
               title="Стопы"
-              caption={`отпечаток стоя${since(footExam)}`}
+              caption={sinceDate(footExam)}
+              hint="Отпечаток стоя. Тонкая линия — контур стопы, заливка — отпечаток."
               status={footArchStatus(foot, footAge)}
               fill={fillKey === "feet"}
               art={
@@ -307,14 +384,15 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
                 <Chip size="small" label={foot.complaints ? "Есть жалобы" : "Жалоб нет"} sx={{ height: 24, borderRadius: "999px" }} />
                 {physiological && <StatusChip status="ok" label="Физиологично до 7–10 лет" />}
               </Stack>
-              <Verdict>Тонкая линия — контур стопы, заливка — отпечаток. Мобильное плоскостопие без жалоб у детей не лечат.</Verdict>
+              <Verdict>Мобильное плоскостопие без жалоб у детей не лечат.</Verdict>
             </Panel>
           )}
 
           {hasHeel && foot && (
             <Panel
               title="Пятки"
-              caption={`вид сзади${since(footExam)}`}
+              caption={sinceDate(footExam)}
+              hint="Вид сзади. Угол между осью голени и осью пятки."
               status={heelsStatus(foot, footAge)}
               fill={fillKey === "heels"}
               art={
@@ -326,17 +404,15 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
                 </Art>
               }
             >
-              <Verdict>
-                Угол между осью голени и осью пятки. {olderThan7 ? "С 7 лет норма до 5°" : "До 7 лет норма до 10°"}, до 15° —
-                пограничное.
-              </Verdict>
+              <Verdict>{olderThan7 ? "С 7 лет норма до 5°" : "До 7 лет норма до 10°"}, до 15° — пограничное.</Verdict>
             </Panel>
           )}
 
           {hasLegs && legs && (
             <Panel
               title="Ноги"
-              caption={`вид спереди${since(legsExam)}`}
+              caption={sinceDate(legsExam)}
+              hint="Вид спереди."
               status={legsAxisStatus(legs, legsAge)}
               fill={fillKey === "legs"}
               art={
@@ -351,10 +427,11 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
               }
             >
               <Verdict>
+                {/* измеренное расстояние подписано на рисунке — здесь только норма */}
                 {legs.axis === "varus"
-                  ? `Расстояние между коленями${legs.distance != null ? ` ${fmt(legs.distance)} см` : " не измерено"}. До 2 лет норма до 5 см.`
+                  ? `${legs.distance != null ? "" : "Расстояние между коленями не измерено. "}До 2 лет норма до 5 см.`
                   : legs.axis === "valgus"
-                    ? `Расстояние между лодыжками${legs.distance != null ? ` ${fmt(legs.distance)} см` : " не измерено"}. До 8 лет норма до 7 см.`
+                    ? `${legs.distance != null ? "" : "Расстояние между лодыжками не измерено. "}До 8 лет норма до 7 см.`
                     : "Ноги прямые."}
               </Verdict>
             </Panel>
@@ -363,7 +440,8 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
           {hasBack && spine && (
             <Panel
               title="Спина"
-              caption={`${adams ? "вид сзади и наклон вперёд" : "вид сзади"}${since(spineExam)}`}
+              caption={sinceDate(spineExam)}
+              hint={`${adams ? "Вид сзади и наклон вперёд." : "Вид сзади."}${atrOff ? "" : ` ${ATR_RULE}`}`}
               status={spineStatus(spine)}
               fill={fillKey === "back"}
               art={
@@ -379,18 +457,23 @@ export const OrthoLatest: React.FC<OrthoLatestProps> = ({ exams, birthDate, next
                 </Art>
               }
             >
-              <Verdict>Ротация по сколиометру: до 3° — норма, 4–6° — повтор через 4–12 мес, от 7° — снимок и ортопед.</Verdict>
+              {atrOff && <Verdict>{ATR_RULE}</Verdict>}
             </Panel>
           )}
 
           {spine?.posture && (
-            <Panel title="Осанка" caption={`позвоночник сбоку${since(spineExam)}`} status={postureStatus(spine)} wide>
+            <Panel
+              title="Осанка"
+              caption={sinceDate(spineExam)}
+              hint="Позвоночник сбоку. Пунктир — нормальные изгибы для сравнения, линия от уха — отвес."
+              status={postureStatus(spine)}
+              wide
+            >
               <Box sx={{ overflowX: "auto", scrollbarWidth: "thin" }}>
                 <Box sx={{ minWidth: 600 }}>
                   <PostureStrip selected={spine.posture} status={postureStatus(spine)} />
                 </Box>
               </Box>
-              <Verdict>Пунктир — нормальные изгибы для сравнения, линия от уха — отвес.</Verdict>
             </Panel>
           )}
         </Box>

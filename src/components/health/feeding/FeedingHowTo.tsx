@@ -6,7 +6,8 @@ import { activeNoGive } from "./feedingCatalog";
 import { NORMAL_THINGS, type HowToFeed } from "./feedingNorms";
 import { FeedingPanel, NoticeLine, Pill } from "./FeedingParts";
 
-const Toggle: React.FC<{ open: boolean; onClick: () => void; children: React.ReactNode }> = ({ open, onClick, children }) => (
+/** Стрелка с подписью, которая раскрывает свёрнутый блок. */
+export const Toggle: React.FC<{ open: boolean; onClick: () => void; children: React.ReactNode }> = ({ open, onClick, children }) => (
   <ButtonBase
     onClick={onClick}
     aria-expanded={open}
@@ -25,38 +26,53 @@ interface FeedingHowToProps {
   hideReadiness: boolean;
 }
 
-/** «Как кормить сейчас» (§3.5): столбец возраста ребёнка чипами, общие правила, «Это нормально». */
+/** «Как кормить сейчас» (§3.5): столбец возраста ребёнка строками, общие правила и «Это нормально» — свёрнуты. */
 export const FeedingHowTo: React.FC<FeedingHowToProps> = ({ howTo, hideReadiness }) => {
+  const [rulesOpen, setRulesOpen] = React.useState(false);
   const [normalOpen, setNormalOpen] = React.useState(false);
   return (
     <FeedingPanel title="Как кормить сейчас" caption={howTo.caption}>
       {howTo.readiness && !hideReadiness && <NoticeLine tone="on">{howTo.readiness}</NoticeLine>}
-      <Stack direction="row" gap={0.75} flexWrap="wrap">
+      <Stack gap={0.5}>
         {howTo.items.map((item) => (
           <React.Fragment key={item.key}>
-            <Pill tone="on">
-              <b>{item.label}:</b> {item.text}
-            </Pill>
+            <Typography variant="body2">
+              <Box component="span" sx={{ color: "text.secondary" }}>
+                {item.label}:
+              </Box>{" "}
+              {item.text}
+            </Typography>
             {item.alert && (
-              <Pill tone="warn" dot>
-                {item.alert}
-              </Pill>
+              <Box sx={{ alignSelf: "flex-start", maxWidth: "100%" }}>
+                <Pill tone="warn" dot>
+                  {item.alert}
+                </Pill>
+              </Box>
             )}
           </React.Fragment>
         ))}
       </Stack>
+      <Stack direction="row" gap={1.5} flexWrap="wrap">
+        {howTo.always.length > 0 && (
+          <Toggle open={rulesOpen} onClick={() => setRulesOpen((value) => !value)}>
+            Общие правила
+          </Toggle>
+        )}
+        <Toggle open={normalOpen} onClick={() => setNormalOpen((value) => !value)}>
+          Это нормально
+        </Toggle>
+      </Stack>
       {howTo.always.length > 0 && (
-        <Stack gap={0.5}>
-          {howTo.always.map((item) => (
-            <NoticeLine key={item.key} tone="muted">
-              {item.text}
-            </NoticeLine>
-          ))}
-        </Stack>
+        <Collapse in={rulesOpen} unmountOnExit>
+          <Stack gap={0.5}>
+            {howTo.always.map((item) => (
+              <NoticeLine key={item.key} tone="muted">
+                {item.text}
+              </NoticeLine>
+            ))}
+          </Stack>
+        </Collapse>
       )}
-      <Toggle open={normalOpen} onClick={() => setNormalOpen((value) => !value)}>
-        Это нормально
-      </Toggle>
       <Collapse in={normalOpen} unmountOnExit>
         <Box component="ul" sx={{ m: 0, pl: 3, color: "text.secondary", typography: "body2" }}>
           {NORMAL_THINGS.map((item) => (

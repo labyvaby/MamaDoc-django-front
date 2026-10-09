@@ -92,7 +92,9 @@ const SurgeryCard: React.FC<{ row: Surgery; birthDate: string | null; canManage:
   const stay = stayLabel(row);
   const treatments = row.kind === "injury" ? treatmentsLabel(row.treatments) : "";
   const complications = row.complications.trim();
+  // вид — первым словом вместо отдельной метки: «травма · 18.07.2026 · 1 год 3 мес. · Травмпункт»
   const facts = [
+    SURGERY_KIND_TAGS[row.kind],
     formatPrecisionDate(row.performedOn, row.datePrecision),
     precisionAge(row.performedOn, row.datePrecision, birthDate),
     row.facility.trim(),
@@ -126,10 +128,11 @@ const SurgeryCard: React.FC<{ row: Surgery; birthDate: string | null; canManage:
           >
             {row.title}
           </Typography>
-          <Stack direction="row" gap={0.5} sx={{ flexShrink: 0 }}>
-            {refuted && <Tag>ошибочно внесена</Tag>}
-            <Tag tone={tone}>{SURGERY_KIND_TAGS[row.kind]}</Tag>
-          </Stack>
+          {refuted && (
+            <Box sx={{ flexShrink: 0 }}>
+              <Tag>ошибочно внесена</Tag>
+            </Box>
+          )}
         </Stack>
         <Typography variant="caption" color="text.secondary" component="div" sx={{ fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
           {facts.join(" · ")}
@@ -141,10 +144,11 @@ const SurgeryCard: React.FC<{ row: Surgery; birthDate: string | null; canManage:
         )}
         {(anesthesia || outcome || stay) && (
           <Stack direction="row" gap={0.5} flexWrap="wrap" sx={{ mt: 0.75 }}>
+            {/* норма («без осложнений», «выздоровление») — без цвета */}
             {anesthesia && (
-              <Tag tone={anesthesia.tone === "error" ? "error" : anesthesia.tone === "success" ? "success" : "neutral"}>{anesthesia.label}</Tag>
+              <Tag tone={anesthesia.tone === "error" ? "error" : "neutral"}>{anesthesia.label}</Tag>
             )}
-            {outcome && <Tag tone={outcome.tone === "success" ? "success" : outcome.tone === "warning" ? "warning" : "info"}>{outcome.label}</Tag>}
+            {outcome && <Tag tone={outcome.tone === "warning" ? "warning" : outcome.tone === "success" ? "neutral" : "info"}>{outcome.label}</Tag>}
             {stay && <Tag tone="error">{stay}</Tag>}
           </Stack>
         )}

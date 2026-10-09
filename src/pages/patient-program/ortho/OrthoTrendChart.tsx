@@ -1,11 +1,15 @@
 import React from "react";
 import { Box, Stack, Typography, alpha, useTheme } from "@mui/material";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import dayjs from "dayjs";
 
-import { SegmentedTabs } from "../../../components/ui";
-import type { OrthoTrend, TrendMetric } from "./orthoTrend";
+import { AppButton, SegmentedTabs } from "../../../components/ui";
+import type { OrthoTrend, OrthoTrendPoint, TrendMetric } from "./orthoTrend";
 
 const TITLES: Record<TrendMetric, string> = { atr: "Ротация", cobb: "Угол Кобба", alpha: "Угол α по Графу" };
+
+const hasValue = (point: OrthoTrendPoint, metric: TrendMetric): boolean =>
+  metric === "atr" ? point.atr != null : metric === "cobb" ? point.cobb != null : point.alphaL != null || point.alphaR != null;
 
 /**
  * Динамика (ТЗ §4.5): ротация по сколиометру (полосы 3° и 7°), угол Кобба
@@ -14,17 +18,32 @@ const TITLES: Record<TrendMetric, string> = { atr: "Ротация", cobb: "Уг
 export const OrthoTrendChart: React.FC<{ trend: OrthoTrend }> = ({ trend }) => {
   const theme = useTheme();
   const [metric, setMetric] = React.useState<TrendMetric>(trend.metrics[0] ?? "atr");
+  const [open, setOpen] = React.useState(false);
   React.useEffect(() => {
     if (!trend.metrics.includes(metric) && trend.metrics.length) setMetric(trend.metrics[0]);
   }, [trend.metrics, metric]);
   if (!trend.metrics.length) return null;
+  // все точки графика старше года — график свёрнут в одну строку, развернуть по кнопке
+  const charted = trend.points.filter((point) => trend.metrics.some((key) => hasValue(point, key)));
+  const yearAgo = dayjs().subtract(12, "month");
+  const stale = charted.length > 0 && charted.every((point) => dayjs(point.at).isBefore(yearAgo));
+  if (stale && !open) {
+    const first = charted[0].label;
+    const last = charted[charted.length - 1].label;
+    return (
+      <Stack direction="row" alignItems="center" flexWrap="wrap" columnGap={1}>
+        <Typography variant="subtitle2">Динамика · {first === last ? first : `${first}–${last}`}</Typography>
+        <AppButton size="small" variant="text" onClick={() => setOpen(true)}>
+          Показать график
+        </AppButton>
+      </Stack>
+    );
+  }
   const tick = { fontSize: 12, fill: theme.palette.text.secondary };
   const ok = alpha(theme.palette.success.main, 0.09);
   const warn = alpha(theme.palette.warning.main, 0.12);
   const bad = alpha(theme.palette.error.main, 0.09);
-  const data = trend.points.filter((point) =>
-    metric === "atr" ? point.atr != null : metric === "cobb" ? point.cobb != null : point.alphaL != null || point.alphaR != null,
-  );
+  const data = trend.points.filter((point) => hasValue(point, metric));
   const values = data.flatMap((point) =>
     metric === "atr" ? [point.atr ?? 0] : metric === "cobb" ? [point.cobb ?? 0] : [point.alphaL ?? 60, point.alphaR ?? 60],
   );
@@ -37,7 +56,14 @@ export const OrthoTrendChart: React.FC<{ trend: OrthoTrend }> = ({ trend }) => {
   return (
     <Box>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ md: "center" }} gap={1} sx={{ mb: 0.75 }}>
-        <Typography variant="subtitle2">Динамика</Typography>
+        <Stack direction="row" alignItems="center" gap={1}>
+          <Typography variant="subtitle2">Динамика</Typography>
+          {stale && (
+            <AppButton size="small" variant="text" onClick={() => setOpen(false)}>
+              Свернуть
+            </AppButton>
+          )}
+        </Stack>
         {trend.metrics.length > 1 && (
           <SegmentedTabs<TrendMetric>
             layoutId="ortho-trend-metric"

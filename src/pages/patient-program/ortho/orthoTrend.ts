@@ -4,6 +4,8 @@ import type { OrthoExam } from "./orthoData";
 
 /** Точка динамики: ротация, угол Кобба и углы α по Графу на дату осмотра. */
 export interface OrthoTrendPoint {
+  /** Дата осмотра — чтобы свернуть график, если все точки старые. */
+  at: string;
   label: string;
   atr: number | null;
   cobb: number | null;
@@ -24,6 +26,7 @@ export function orthoTrend(exams: ReadonlyArray<OrthoExam>): OrthoTrend {
   const points = [...exams]
     .sort((a, b) => dayjs(a.record.occurredAt).valueOf() - dayjs(b.record.occurredAt).valueOf())
     .map((exam) => ({
+      at: exam.record.occurredAt,
       label: dayjs(exam.record.occurredAt).format("MM.YYYY"),
       atr: exam.spine?.adams?.atr ?? null,
       cobb: exam.spine?.cobb ?? null,

@@ -26,7 +26,7 @@ export const NewbornPanel: React.FC<{ input: AnamnesisInput }> = ({ input }) => 
       {chips.length > 0 ? (
         <Stack direction="row" gap={0.75} flexWrap="wrap">
           {chips.map((chip) => (
-            <ToneChip key={chip.label} label={chip.label} tone={chip.tone} dot={chip.tone === "ok" || chip.tone === "warn" || chip.tone === "bad"} />
+            <ToneChip key={chip.label} label={chip.label} tone={chip.tone === "ok" ? "neutral" : chip.tone} dot={chip.tone === "warn" || chip.tone === "bad"} />
           ))}
         </Stack>
       ) : (
@@ -41,13 +41,16 @@ export const NewbornPanel: React.FC<{ input: AnamnesisInput }> = ({ input }) => 
 /** «Семья и быт» и ниже «Болезни и аллергии» из других разделов. */
 export const FamilyLifePanel: React.FC<{ input: AnamnesisInput; at: string }> = ({ input, at }) => {
   const chips = familyChips(input, at);
-  const facts = illnessFacts(input, at);
+  const allFacts = illnessFacts(input, at);
+  // «Нет …» — одной серой строкой под списком, а не меткой на каждый пункт.
+  const noFacts = allFacts.filter((fact) => fact.chip.label === "Нет");
+  const facts = allFacts.filter((fact) => fact.chip.label !== "Нет");
   return (
     <Panel title="Семья и быт">
       {chips.length ? (
         <Stack direction="row" gap={0.75} flexWrap="wrap">
           {chips.map((chip) => (
-            <ToneChip key={chip.label} label={chip.label} tone={chip.tone} dot={chip.tone === "warn" || chip.tone === "bad"} />
+            <ToneChip key={chip.label} label={chip.label} tone={chip.tone === "accent" ? "neutral" : chip.tone} dot={chip.tone === "warn" || chip.tone === "bad"} />
           ))}
         </Stack>
       ) : (
@@ -61,21 +64,30 @@ export const FamilyLifePanel: React.FC<{ input: AnamnesisInput; at: string }> = 
           из других разделов
         </Typography>
       </Typography>
-      {facts.length ? (
-        <Stack component="ul" gap={0.75} sx={{ listStyle: "none", m: 0, p: 0 }}>
-          {facts.map((fact) => (
-            <Box
-              component="li"
-              key={`${fact.chip.label}${fact.text}`}
-              sx={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", columnGap: 1, alignItems: "baseline" }}
-            >
-              <ToneChip label={fact.chip.label} tone={fact.chip.tone} dot={fact.chip.tone === "bad" || fact.chip.tone === "warn"} dense />
-              <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
-                {fact.text}
-              </Typography>
-            </Box>
-          ))}
-        </Stack>
+      {allFacts.length ? (
+        <>
+          {facts.length > 0 && (
+            <Stack component="ul" gap={0.75} sx={{ listStyle: "none", m: 0, p: 0 }}>
+              {facts.map((fact) => (
+                <Box
+                  component="li"
+                  key={`${fact.chip.label}${fact.text}`}
+                  sx={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", columnGap: 1, alignItems: "baseline" }}
+                >
+                  <ToneChip label={fact.chip.label} tone={fact.chip.tone} dot={fact.chip.tone === "bad" || fact.chip.tone === "warn"} dense />
+                  <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                    {fact.text}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
+          )}
+          {noFacts.length > 0 && (
+            <Typography variant="body2" color="text.secondary">
+              {`Нет: ${noFacts.map((fact) => fact.text).join(", ")}`}
+            </Typography>
+          )}
+        </>
       ) : (
         <Typography variant="body2" color="text.secondary">
           Нет сведений

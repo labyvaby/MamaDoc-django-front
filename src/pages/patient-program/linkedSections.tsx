@@ -9,6 +9,7 @@ import { djangoQueryKeys } from "../../api/queryKeys";
 import { AllergiesSection } from "../../components/health/AllergiesSection";
 import { BirthHistorySection } from "../../components/health/BirthHistorySection";
 import { FamilySection } from "../../components/health/FamilySection";
+import { HealthSectionCard } from "../../components/health/HealthSectionCard";
 import { IllnessHistorySection } from "../../components/health/IllnessHistorySection";
 import { LifeAnamnesisSection } from "../../components/health/anamnesis/LifeAnamnesisSection";
 import { MedicationsSection } from "../../components/health/MedicationsSection";
@@ -136,6 +137,10 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
       break;
     default:
       content = <Alert severity="info">Раздел «{module.name}» появится на следующих этапах.</Alert>;
+  }
+  // Прививки — в той же карточке с заголовком, что и другие разделы; сама панель общая с карточкой пациента.
+  if (type === "vaccination") {
+    content = <HealthSectionCard title={module.name}>{content}</HealthSectionCard>;
   }
   return (
     <Stack gap={1.5}>

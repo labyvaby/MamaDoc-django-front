@@ -1,17 +1,11 @@
 import React from "react";
-import { Box, Stack, Tooltip, Typography, alpha, useTheme } from "@mui/material";
+import { Box, Stack, Typography, alpha, useTheme } from "@mui/material";
 import dayjs, { type Dayjs } from "dayjs";
 
 import { UserAvatar } from "../../../components/ui";
-import { pluralRu } from "../../../utility/amountInWords";
-import { monthYearGenitive, relativeDay, type Visit, type VisitSummary } from "./visitsData";
+import { relativeDay, type Visit, type VisitSummary } from "./visitsData";
 
-const Tile: React.FC<{ label: string; accent?: boolean; wide?: boolean; children: React.ReactNode }> = ({
-  label,
-  accent = false,
-  wide = false,
-  children,
-}) => {
+const Tile: React.FC<{ label: string; accent?: boolean; children: React.ReactNode }> = ({ label, accent = false, children }) => {
   const theme = useTheme();
   const color = accent ? theme.palette.primary.main : theme.palette.text.secondary;
   return (
@@ -25,8 +19,6 @@ const Tile: React.FC<{ label: string; accent?: boolean; wide?: boolean; children
         display: "flex",
         flexDirection: "column",
         gap: 0.5,
-        // На планшете третья плитка — во всю ширину под первыми двумя.
-        gridColumn: wide ? { md: "1 / -1", lg: "auto" } : undefined,
       }}
     >
       <Typography variant="caption" sx={{ color: accent ? "primary.main" : "text.secondary", fontWeight: 600 }}>
@@ -71,66 +63,18 @@ const VisitTileBody: React.FC<{ visit: Visit; now: Dayjs }> = ({ visit, now }) =
   );
 };
 
-/** Приёмы по месяцам за год: высота столбика — сколько было приёмов. */
-const MonthBars: React.FC<{ summary: VisitSummary }> = ({ summary }) => {
-  const theme = useTheme();
-  const max = Math.max(1, ...summary.months.map((month) => month.count));
-  return (
-    <Box
-      aria-label="Приёмы по месяцам за последний год"
-      sx={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 0.5, mt: { xs: 1, md: 0, lg: 1 }, alignItems: "end", maxWidth: 320 }}
-    >
-      {summary.months.map((month, index) => {
-        const share = month.count / max;
-        const current = index === summary.months.length - 1;
-        return (
-          <Tooltip key={month.key} title={month.title} arrow>
-            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.25 }}>
-              <Box
-                sx={{
-                  width: "100%",
-                  maxWidth: 14,
-                  height: 4 + Math.round(share * 26),
-                  borderRadius: "4px",
-                  bgcolor: month.count
-                    ? alpha(theme.palette.primary.main, 0.35 + share * 0.65)
-                    : alpha(theme.palette.text.primary, 0.08),
-                }}
-              />
-              <Typography
-                sx={{ fontSize: 10, lineHeight: 1, color: current ? "primary.main" : "text.disabled", fontWeight: current ? 700 : 500 }}
-              >
-                {month.label}
-              </Typography>
-            </Box>
-          </Tooltip>
-        );
-      })}
-    </Box>
-  );
-};
-
 interface VisitSummaryTilesProps {
   summary: VisitSummary;
   now: Dayjs;
 }
 
 /**
- * Три плитки над лентой: ближайший приём, последний, итог за всё время.
+ * Две плитки над лентой: ближайший приём и последний.
  * Брейкпоинты темы свои (sm = 360px), поэтому колонки — с md.
  */
 export const VisitSummaryTiles: React.FC<VisitSummaryTilesProps> = ({ summary, now }) => {
-  const facts = [
-    summary.firstAt ? `с ${monthYearGenitive(summary.firstAt)}` : "",
-    summary.doctorsCount ? `${summary.doctorsCount} ${pluralRu(summary.doctorsCount, ["врач", "врача", "врачей"])}` : "",
-    summary.withConclusion ? `${summary.withConclusion} с заключением` : "",
-  ].filter(Boolean);
-  const missed = [
-    summary.cancelledCount ? `отменено ${summary.cancelledCount}` : "",
-    summary.noShowCount ? `не пришли ${summary.noShowCount}` : "",
-  ].filter(Boolean);
   return (
-    <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))", lg: "repeat(3, minmax(0, 1fr))" } }}>
+    <Box sx={{ display: "grid", gap: 1.25, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" } }}>
       <Tile label="Ближайший приём" accent={!!summary.next}>
         {summary.next ? (
           <VisitTileBody visit={summary.next} now={now} />
@@ -154,29 +98,6 @@ export const VisitSummaryTiles: React.FC<VisitSummaryTilesProps> = ({ summary, n
             </Typography>
           </>
         )}
-      </Tile>
-      <Tile label="За всё время" wide>
-        {/* Во всю ширину (планшет) столбики встают справа от цифр, в узкой плитке — под ними. */}
-        <Box sx={{ display: "grid", gap: 1, alignItems: "end", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 280px", lg: "1fr" } }}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontSize: 26, fontWeight: 700, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>
-              {summary.pastCount}
-              <Typography component="span" sx={{ fontSize: 16, fontWeight: 600, color: "text.secondary", ml: 0.75 }}>
-                {pluralRu(summary.pastCount, ["приём", "приёма", "приёмов"])}
-              </Typography>
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {facts.join(" · ") || "Приёмов ещё не было"}
-              {missed.length > 0 && (
-                <Box component="span" sx={{ color: "text.disabled" }}>
-                  {facts.length ? " · " : ""}
-                  {missed.join(", ")}
-                </Box>
-              )}
-            </Typography>
-          </Box>
-          <MonthBars summary={summary} />
-        </Box>
       </Tile>
     </Box>
   );

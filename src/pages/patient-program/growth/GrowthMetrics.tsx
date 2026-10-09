@@ -22,13 +22,15 @@ const Metric: React.FC<MetricProps> = ({ label, value, unit, digits, assessment,
   const shown = useCountUp(value, animate);
   const status = assessment?.status ?? "unknown";
   const color = growthColor(theme, status);
+  // Рамка и фон цветные только у отклонения; норму отмечает чип центиля.
+  const off = status === "borderline" || status === "attention";
   return (
     <Box
       sx={{
         p: 1.5,
         borderRadius: "14px",
-        border: `1px solid ${alpha(color, status === "unknown" ? 0.35 : 0.45)}`,
-        bgcolor: alpha(color, 0.05),
+        border: off ? `1px solid ${alpha(color, 0.45)}` : `1px solid ${theme.palette.divider}`,
+        bgcolor: off ? alpha(color, 0.05) : "transparent",
         minWidth: 0,
       }}
     >
@@ -73,7 +75,7 @@ interface GrowthMetricsProps {
 const ROWS: ReadonlyArray<{ key: MeasureKey; label: string; unit: string; digits: number }> = [
   { key: "heightCm", label: "Рост", unit: "см", digits: 1 },
   { key: "weightKg", label: "Вес", unit: "кг", digits: 1 },
-  { key: "bmi", label: "Индекс массы тела", unit: "", digits: 1 },
+  { key: "bmi", label: "ИМТ", unit: "", digits: 1 },
   { key: "headCm", label: "Окружность головы", unit: "см", digits: 1 },
 ];
 

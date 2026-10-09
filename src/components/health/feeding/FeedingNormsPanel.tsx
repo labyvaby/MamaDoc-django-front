@@ -197,7 +197,7 @@ export const FeedingNorms: React.FC<FeedingNormsProps> = ({ snapshot, months }) 
   return (
     <FeedingPanel
       title={afterYear ? "Норма на день" : `Норма на день в ${NORM_COLUMNS.find((item) => item.key === column)?.label ?? ""}`}
-      caption="программа РФ 2019, г или мл"
+      caption="г или мл"
       sx={{ containerType: "inline-size", containerName: "feeding-norms" }}
     >
       {afterYear ? (
