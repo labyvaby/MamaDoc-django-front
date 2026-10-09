@@ -39,6 +39,7 @@ import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
 import SellOutlined from "@mui/icons-material/SellOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import dayjs from "dayjs";
 
 import { PageHeader, AppBottomSheet, AppCard, ListLoadingSkeleton, ListEmptyState, InfoTile, SelectionMark, selectionHintHoverSx } from "../../../components/ui";
@@ -77,6 +78,9 @@ import { describeFailures, runBulk, toggleSelection, type BulkResult } from "../
 import { GroupSelectButton } from "../../../components/storage/GroupSelectButton";
 import { BulkCategoryDialog, BulkPriceDialog, type CategoryChoice } from "./BulkProductDialogs";
 import { exportProductsXlsx } from "./exportProductsXlsx";
+import { PrintLabelsDialog, type LabelPrintItem } from "../../../components/products/PrintLabelsDialog";
+import { priceTagFromProduct } from "../../../utility/productLabels";
+import { PRINTFORMS_PERMISSIONS } from "../../../api/printforms";
 import { useLongPress } from "../../../hooks/useLongPress";
 import { hapticTap } from "../../../utility/haptics";
 
@@ -115,13 +119,14 @@ const DjangoProductsPage: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { open: notify } = useNotification();
   const { confirm, ConfirmDialog } = useConfirmDialog();
-  const { loading: permLoading, activeOrganization } = usePermissions();
+  const { loading: permLoading, activeOrganization, activeBranch } = usePermissions();
   const isRetail = activeOrganization?.vertical === "retail";
   // Орг-контекст обязателен суперпользователю/мультиорг-аккаунту.
   const orgId = useApiOrgId();
   const canView = useCan(["warehouse.view", "warehouse.sales.view"]);
   const canManage = useCan("warehouse.manage");
   const canViewCost = useCan("procurement.view");
+  const canPrintLabels = useCan(PRINTFORMS_PERMISSIONS.print);
 
   // Drawers
   const [formDrawerOpen, setFormDrawerOpen] = React.useState(false);
@@ -157,6 +162,8 @@ const DjangoProductsPage: React.FC = () => {
   const [categoryDialogOpen, setCategoryDialogOpen] = React.useState(false);
   const [priceDialogOpen, setPriceDialogOpen] = React.useState(false);
   const [categoryTree, setCategoryTree] = React.useState<DjangoProductCategoryNode[] | null>(null);
+  // Этикетки: одна карточка или выбранные строки; null — окно закрыто.
+  const [labelItems, setLabelItems] = React.useState<LabelPrintItem[] | null>(null);
 
   const productsAbortRef = React.useRef<AbortController | null>(null);
   const fetchProducts = React.useCallback(async () => {
@@ -559,6 +566,17 @@ const DjangoProductsPage: React.FC = () => {
     }
   };
 
+  const toLabelItem = (p: DjangoProduct): LabelPrintItem => ({
+    productId: p.id,
+    stock: p.stock || 0,
+    preview: priceTagFromProduct(p),
+  });
+
+  const handleBulkLabels = () => {
+    setBulkMenuAnchor(null);
+    setLabelItems(checkedProducts.map(toLabelItem));
+  };
+
   const handleBulkDelete = async () => {
     setBulkMenuAnchor(null);
     const ids = checkedProducts.map((p) => p.id);
@@ -775,6 +793,12 @@ const DjangoProductsPage: React.FC = () => {
                       <ListItemText>Изменить цену</ListItemText>
                     </MenuItem>,
                   ]}
+                  {canPrintLabels && (
+                    <MenuItem onClick={handleBulkLabels}>
+                      <ListItemIcon><PrintOutlined fontSize="small" /></ListItemIcon>
+                      <ListItemText>Печать этикеток</ListItemText>
+                    </MenuItem>
+                  )}
                   <MenuItem onClick={() => void handleBulkExport()}>
                     <ListItemIcon><FileDownloadOutlined fontSize="small" /></ListItemIcon>
                     <ListItemText>Выгрузить в Excel</ListItemText>
@@ -1087,6 +1111,7 @@ const DjangoProductsPage: React.FC = () => {
                 onDelete={() => selectedProduct && handleDelete(selectedProduct)}
                 readOnly={!canManage}
                 canViewCost={canViewCost}
+                onPrintLabels={canPrintLabels ? () => selectedProduct && setLabelItems([toLabelItem(selectedProduct)]) : undefined}
               />
             </Grid2>
           )}
@@ -1124,6 +1149,7 @@ const DjangoProductsPage: React.FC = () => {
                 onDelete={() => handleDelete(selectedProduct)}
                 readOnly={!canManage}
                 canViewCost={canViewCost}
+                onPrintLabels={canPrintLabels ? () => selectedProduct && setLabelItems([toLabelItem(selectedProduct)]) : undefined}
               />
             </Box>
           )}
@@ -1137,6 +1163,13 @@ const DjangoProductsPage: React.FC = () => {
         legacyCategories={availableCategories}
         onClose={() => setCategoryDialogOpen(false)}
         onSubmit={handleBulkCategory}
+      />
+      <PrintLabelsDialog
+        open={labelItems !== null}
+        items={labelItems ?? []}
+        branchId={activeBranch?.id ?? null}
+        stockHint="остаток как в списке товаров"
+        onClose={() => setLabelItems(null)}
       />
       <BulkPriceDialog
         open={priceDialogOpen}
@@ -1159,7 +1192,9 @@ const ProductDetailCard: React.FC<{
   onDelete?: () => void;
   readOnly?: boolean;
   canViewCost?: boolean;
-}> = ({ product, onEdit, onDelete, readOnly, canViewCost = false }) => {
+  /** Есть только у тех, кому можно печатать (`printforms.print`). */
+  onPrintLabels?: () => void;
+}> = ({ product, onEdit, onDelete, readOnly, canViewCost = false, onPrintLabels }) => {
   const [expanded, setExpanded] = React.useState(false);
 
   // История цен — ленивая подгрузка при выборе товара.
@@ -1296,7 +1331,7 @@ const ProductDetailCard: React.FC<{
                 Карточка товара
               </Typography>
             </Stack>
-            {!readOnly && (
+            {(!readOnly || onPrintLabels) && (
               <Stack
                 direction="row"
                 spacing={{ xs: 0.5, sm: 1 }}
@@ -1304,23 +1339,37 @@ const ProductDetailCard: React.FC<{
                 flexWrap="wrap"
                 sx={{ gap: { xs: 0.5, sm: 1 } }}
               >
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<EditOutlined />}
-                  onClick={onEdit}
-                >
-                  Редактировать
-                </Button>
-                <Tooltip title="Удалить товар">
-                  <IconButton
-                    color="error"
+                {onPrintLabels && (
+                  <Button
+                    variant="outlined"
                     size="small"
-                    onClick={onDelete}
+                    startIcon={<PrintOutlined />}
+                    onClick={onPrintLabels}
                   >
-                    <DeleteOutlineOutlined fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                    Этикетка
+                  </Button>
+                )}
+                {!readOnly && (
+                  <>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<EditOutlined />}
+                      onClick={onEdit}
+                    >
+                      Редактировать
+                    </Button>
+                    <Tooltip title="Удалить товар">
+                      <IconButton
+                        color="error"
+                        size="small"
+                        onClick={onDelete}
+                      >
+                        <DeleteOutlineOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </>
+                )}
               </Stack>
             )}
           </Stack>
