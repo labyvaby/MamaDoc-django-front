@@ -8,12 +8,8 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  InputAdornment,
-  MenuItem,
   Stack,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
@@ -27,7 +23,6 @@ import CreditCardOutlined from "@mui/icons-material/CreditCardOutlined";
 import QrCode2Outlined from "@mui/icons-material/QrCode2Outlined";
 import KeyboardReturnOutlined from "@mui/icons-material/KeyboardReturnOutlined";
 import DoNotDisturbOnOutlined from "@mui/icons-material/DoNotDisturbOnOutlined";
-import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AppCard, ListEmptyState, ListLoadingSkeleton, TonedChip } from "../../components/ui";
@@ -35,14 +30,13 @@ import { subtleBg } from "../../theme/uiHelpers";
 import {
   cancelClientDebt,
   getClientDebts,
-  repayClientDebt,
   type ClientDebt,
   type ClientDebtPayment,
-  type ClientDebtPaymentMethod,
 } from "../../api/clients";
-import { getCashlessMethods, type DjangoCashlessMethod } from "../../api/cashlessMethods";
+import { getCashlessMethods } from "../../api/cashlessMethods";
 import { PosAmount } from "../pos/ui";
 import { debtStatusMeta, debtsQueryKey, paymentRowLabel } from "./debtsMeta";
+import RepayDebtDialog from "./RepayDebtDialog";
 
 /**
  * «Долги» в карточке клиента: что взял в долг на кассе, сколько осталось, до
@@ -281,120 +275,6 @@ function HistoryRow({ row }: { row: ClientDebtPayment }) {
         −<PosAmount value={Number(row.amount)} />
       </Typography>
     </Stack>
-  );
-}
-
-/** Принять погашение: сумма (по умолчанию весь остаток), способ, терминал, заметка. */
-function RepayDebtDialog({ debt, clientId, organizationId, terminals, onClose, onDone }: {
-  debt: ClientDebt | null; clientId: number; organizationId: number; terminals: DjangoCashlessMethod[];
-  onClose: () => void; onDone: () => void;
-}) {
-  const [amount, setAmount] = React.useState("");
-  const [method, setMethod] = React.useState<ClientDebtPaymentMethod>("cash");
-  const [terminalId, setTerminalId] = React.useState<number | "">("");
-  const [comment, setComment] = React.useState("");
-  const [reference, setReference] = React.useState("");
-  const activeTerminals = React.useMemo(() => terminals.filter((item) => item.isActive !== false), [terminals]);
-  React.useEffect(() => {
-    if (!debt) return;
-    setAmount(debt.outstanding);
-    setMethod("cash");
-    setComment("");
-    setReference("");
-    setTerminalId(activeTerminals.find((item) => item.isDefault)?.id ?? activeTerminals[0]?.id ?? "");
-  }, [debt, activeTerminals]);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      repayClientDebt(clientId, debt!.id, organizationId, {
-        amount: amount.replace(",", ".").trim(),
-        method,
-        ...(method !== "cash" && terminalId !== "" ? { cashlessMethodId: Number(terminalId) } : {}),
-        ...(comment.trim() ? { comment: comment.trim() } : {}),
-        ...(reference.trim() ? { reference: reference.trim() } : {}),
-      }),
-    onSuccess: () => {
-      onDone();
-      onClose();
-    },
-  });
-
-  const value = Number(amount.replace(",", "."));
-  const outstanding = Number(debt?.outstanding ?? 0);
-  const amountError = !amount.trim()
-    ? "Введите сумму"
-    : !Number.isFinite(value) || value <= 0
-      ? "Сумма должна быть больше нуля"
-      : value > outstanding + 1e-9
-        ? "Больше остатка долга"
-        : null;
-  const needTerminal = method !== "cash" && activeTerminals.length > 0 && terminalId === "";
-  const rest = Math.max(0, Math.round((outstanding - (Number.isFinite(value) ? value : 0)) * 100) / 100);
-  const errorMessage = mutation.error instanceof Error ? mutation.error.message : mutation.isError ? "Не удалось принять оплату" : null;
-
-  return (
-    <Dialog open={Boolean(debt)} onClose={mutation.isPending ? undefined : onClose} fullWidth maxWidth="xs">
-      <DialogTitle>Принять оплату долга</DialogTitle>
-      <DialogContent>
-        {debt && (
-          <Stack spacing={2} sx={{ pt: 0.5 }}>
-            <Alert icon={<ReceiptLongOutlined fontSize="inherit" />} severity="info" variant="outlined" sx={{ borderRadius: "10px" }}>
-              Остаток долга <b><PosAmount value={outstanding} /></b>
-              {debt.dueDate ? ` · вернуть до ${dayjs(debt.dueDate).format("DD.MM.YYYY")}` : ""}
-              . Деньги попадут в кассу и в открытую смену филиала.
-            </Alert>
-            <TextField
-              label="Сумма"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              error={Boolean(amountError) && amount.trim() !== ""}
-              helperText={amountError && amount.trim() !== "" ? amountError : rest > 0 ? `Останется ${rest.toLocaleString("ru-RU")} сом` : "Долг будет закрыт полностью"}
-              inputProps={{ inputMode: "decimal", "aria-label": "Сумма погашения" }}
-              InputProps={{ endAdornment: <InputAdornment position="end">сом</InputAdornment> }}
-              autoFocus
-              fullWidth
-            />
-            <Box>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>Чем оплатил</Typography>
-              <ToggleButtonGroup
-                exclusive
-                fullWidth
-                size="small"
-                value={method}
-                onChange={(_event, next: ClientDebtPaymentMethod | null) => { if (next) setMethod(next); }}
-                aria-label="Способ оплаты"
-              >
-                <ToggleButton value="cash"><PaymentsOutlined sx={{ fontSize: 18, mr: 0.75 }} />Наличные</ToggleButton>
-                <ToggleButton value="card"><CreditCardOutlined sx={{ fontSize: 18, mr: 0.75 }} />Карта</ToggleButton>
-                <ToggleButton value="cashless"><QrCode2Outlined sx={{ fontSize: 18, mr: 0.75 }} />QR</ToggleButton>
-              </ToggleButtonGroup>
-            </Box>
-            {method !== "cash" && activeTerminals.length > 0 && (
-              <TextField
-                select
-                label={method === "card" ? "Терминал" : "QR банка"}
-                value={terminalId}
-                onChange={(event) => setTerminalId(event.target.value === "" ? "" : Number(event.target.value))}
-                fullWidth
-              >
-                {activeTerminals.map((item) => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}
-              </TextField>
-            )}
-            {method !== "cash" && (
-              <TextField label="Номер транзакции (необязательно)" value={reference} onChange={(event) => setReference(event.target.value)} fullWidth />
-            )}
-            <TextField label="Комментарий" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="«принесла часть», «перевёл муж»…" fullWidth />
-            {errorMessage && <Alert severity="error" sx={{ borderRadius: "10px" }}>{errorMessage}</Alert>}
-          </Stack>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={mutation.isPending}>Отмена</Button>
-        <Button variant="contained" onClick={() => mutation.mutate()} disabled={Boolean(amountError) || needTerminal || mutation.isPending}>
-          {mutation.isPending ? "Сохраняем…" : "Принять"}
-        </Button>
-      </DialogActions>
-    </Dialog>
   );
 }
 

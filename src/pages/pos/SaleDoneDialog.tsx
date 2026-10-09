@@ -6,6 +6,7 @@ import dayjs from "dayjs";
 import CheckCircleRounded from "@mui/icons-material/CheckCircleRounded";
 import CloseRounded from "@mui/icons-material/CloseRounded";
 import DownloadRounded from "@mui/icons-material/DownloadRounded";
+import HandshakeOutlined from "@mui/icons-material/HandshakeOutlined";
 import PauseCircleRounded from "@mui/icons-material/PauseCircleRounded";
 import PrintRounded from "@mui/icons-material/PrintRounded";
 import QrCode2Rounded from "@mui/icons-material/QrCode2Rounded";
@@ -18,6 +19,7 @@ import { showMinus } from "./format";
 import { GiftCard } from "./GiftCard";
 import { paymentLabelWithTerminal } from "./historyMeta";
 import { posColors } from "./layout";
+import { saleDebtSummary } from "./saleDebt";
 
 const money = (value: string | number) => `${Number(value).toLocaleString("ru-RU")} сом`;
 /** «Оплата: наличными» на плашке — как кассир говорит это вслух. */
@@ -78,17 +80,18 @@ export function SaleDoneDialog({
   // Частями — ниже отдельный блок: каждая часть своей строкой с терминалом и суммой.
   const parts = payments.length > 1 ? payments : [];
   const title = receipt ? `Чек №${receipt.number.slice(0, 8)}` : certificates.length === 1 ? `Сертификат ${certificates[0].code}` : `Сертификатов: ${certificates.length}`;
+  // Продано в долг: часть (или весь чек) не оплачена — зелёное «Оплата
+  // прошла» здесь врало бы. Сумма долга — из ответа checkout, а у чека,
+  // открытого из истории, — из его строки оплаты «в долг».
+  const credit = held ? null : saleDebtSummary(receipt, sale?.debt ?? null);
   const debt = sale?.debt ?? null;
   const facts = [
     { label: "Позиций", value: `${(receipt?.lines.length ?? 0) + certificates.length} шт.` },
     held
       ? { label: "Оплата", value: "Не принята" }
       : { label: "Способ оплаты", value: parts.length ? "Частями" : methods.length ? methods.join(", ") : "—" },
-    ...(debt
-      ? [{
-          label: "В долг",
-          value: `${money(debt.outstanding)}${debt.dueDate ? ` · до ${dayjs(debt.dueDate).format("DD.MM.YYYY")}` : " · без срока"}`,
-        }]
+    ...(credit
+      ? [{ label: "Вернуть до", value: credit.dueDate ? dayjs(credit.dueDate).format("DD.MM.YYYY") : credit.dueDate === null ? "Без срока" : "В карточке клиента" }]
       : []),
     { label: "Клиент", value: receipt?.clientName || (receipt?.clientId ? `#${receipt.clientId}` : certificates[0]?.buyerName || "Без клиента") },
     { label: "Кассир", value: cashier },
@@ -107,7 +110,7 @@ export function SaleDoneDialog({
         <>
           <DialogTitle sx={{ px: { xs: 2, sm: 3 }, py: 1.5, borderBottom: `1px solid ${c.hairline}`, bgcolor: c.card }}>
             <Stack direction="row" alignItems="center" gap={1}>
-              <Typography fontWeight={800}>Оплата</Typography>
+              <Typography fontWeight={800}>{credit ? "Продажа в долг" : "Оплата"}</Typography>
               <Typography variant="caption" color="text.secondary" noWrap>
                 {receipt ? `${receipt.lines.length} товаров` : ""}
                 {receipt && certificates.length ? " · " : ""}
@@ -130,7 +133,7 @@ export function SaleDoneDialog({
                   id="pos-print"
                   sx={{ bgcolor: "#fff", color: "#141722", p: { xs: 2, sm: 2.5 }, borderRadius: 1.5, boxShadow: "0 18px 50px rgba(0,0,0,.35)", minHeight: { md: 470 }, maxHeight: { md: 560 }, overflowY: { md: "auto" } }}
                 >
-                  {receipt ? <ReceiptPrint receipt={receipt} organizationName={organizationName} branchName={branchName} cashlessMethods={cashlessMethods} /> : null}
+                  {receipt ? <ReceiptPrint receipt={receipt} organizationName={organizationName} branchName={branchName} cashlessMethods={cashlessMethods} onCredit={Boolean(credit)} dueDate={credit?.dueDate} /> : null}
                   {certificates.map((certificate, index) => (
                     <CertificatePrint
                       key={certificate.id ?? certificate.code}
@@ -143,6 +146,16 @@ export function SaleDoneDialog({
                 </Box>
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
+                {credit ? (
+                  <CreditHeader
+                    credit={credit}
+                    total={Number(receipt?.totalAmount ?? 0)}
+                    title={title}
+                    createdAt={createdAt}
+                    clientName={receipt?.clientName ?? null}
+                    comment={debt?.comment ?? ""}
+                  />
+                ) : (
                 <Box sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2.5, bgcolor: held ? alpha(theme.palette.warning.main, 0.1) : theme.palette.success.lighter, border: `1px solid ${alpha(held ? theme.palette.warning.main : theme.palette.success.main, 0.35)}` }}>
                   <Stack direction="row" gap={1.25} alignItems="flex-start">
                     {held ? <PauseCircleRounded sx={{ color: theme.palette.warning.main, fontSize: 28 }} /> : <CheckCircleRounded sx={{ color: c.positive, fontSize: 28 }} />}
@@ -171,6 +184,7 @@ export function SaleDoneDialog({
                     </Box>
                   </Stack>
                 </Box>
+                )}
 
                 {certificates.length > 0 && (
                   <Stack gap={1.5} sx={{ mt: 1.5 }}>
@@ -200,7 +214,7 @@ export function SaleDoneDialog({
                 </Box>
                 {parts.length > 0 && !held ? (
                   <Box sx={{ mt: 1, p: 1.25, borderRadius: 1.5, bgcolor: c.card, border: `1px solid ${c.hairline}` }}>
-                    <Typography variant="caption" color={c.textDim} component="div">Из чего сложилась оплата</Typography>
+                    <Typography variant="caption" color={c.textDim} component="div">{credit ? "Как оформлен чек" : "Из чего сложилась оплата"}</Typography>
                     <Stack component="ul" gap={0.5} sx={{ m: 0, mt: 0.5, p: 0, listStyle: "none" }}>
                       {parts.map((payment, index) => (
                         <Stack component="li" key={`${payment.method}-${index}`} direction="row" justifyContent="space-between" alignItems="baseline" gap={1.5}>
@@ -234,7 +248,13 @@ export function SaleDoneDialog({
   );
 }
 
-function ReceiptPrint({ receipt, organizationName, branchName, cashlessMethods }: { receipt: PosSavedReceipt; organizationName: string; branchName: string; cashlessMethods: Terminals }) {
+function ReceiptPrint({ receipt, organizationName, branchName, cashlessMethods, onCredit = false, dueDate }: {
+  receipt: PosSavedReceipt; organizationName: string; branchName: string; cashlessMethods: Terminals;
+  /** Чек продан в долг (целиком или частью). */
+  onCredit?: boolean;
+  /** Срок возврата: null — без срока; undefined — неизвестен (чек из истории). */
+  dueDate?: string | null;
+}) {
   return (
     <>
       <Stack alignItems="center" gap={0.25} mb={2}>
@@ -276,6 +296,12 @@ function ReceiptPrint({ receipt, organizationName, branchName, cashlessMethods }
               <Typography variant="caption" whiteSpace="nowrap">{money(payment.amount)}</Typography>
             </Stack>
           ))}
+          {onCredit ? (
+            <Box sx={{ mt: 0.75, p: 0.75, border: "1px solid #141722", borderRadius: 0.5, textAlign: "center" }}>
+              <Typography fontSize={11} fontWeight={800}>ПРОДАНО В ДОЛГ</Typography>
+              <Typography fontSize={10}>{dueDate ? `Вернуть до ${dayjs(dueDate).format("DD.MM.YYYY")}` : dueDate === null ? "Без срока возврата" : "Срок — в карточке клиента"}</Typography>
+            </Box>
+          ) : null}
         </Stack>
       ) : null}
       <Stack alignItems="center" mt={2}>
@@ -283,6 +309,62 @@ function ReceiptPrint({ receipt, organizationName, branchName, cashlessMethods }
         <Typography fontSize={9} color="#777">Проверить чек</Typography>
       </Stack>
     </>
+  );
+}
+
+/** Шапка «Продано в долг»: сколько не оплачено, сколько внесли сейчас, срок. */
+function CreditHeader({ credit, total, title, createdAt, clientName, comment }: {
+  credit: NonNullable<ReturnType<typeof saleDebtSummary>>;
+  total: number;
+  title: string;
+  createdAt: string;
+  clientName: string | null;
+  comment: string;
+}) {
+  const theme = useTheme();
+  const c = posColors(theme);
+  const tone = theme.palette.warning;
+  const share = total > 0 ? Math.min(100, (credit.paidNow / total) * 100) : 0;
+  return (
+    <Box sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2.5, bgcolor: alpha(tone.main, 0.1), border: `1px solid ${alpha(tone.main, 0.45)}` }}>
+      <Stack direction="row" gap={1.25} alignItems="flex-start">
+        <HandshakeOutlined sx={{ color: tone.main, fontSize: 28 }} />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Stack direction="row" justifyContent="space-between" gap={1} flexWrap="wrap">
+            <Box sx={{ minWidth: 0 }}>
+              <Typography fontWeight={800} sx={{ color: theme.palette.mode === "dark" ? tone.light : tone.dark }}>
+                {credit.paidNow > 0 ? "Продано частично в долг" : "Продано в долг — оплата не получена"}
+              </Typography>
+              <Typography variant="caption" color={c.textDim}>
+                {title} · {new Date(createdAt).toLocaleString("ru-RU")}
+              </Typography>
+            </Box>
+            <Chip size="small" label={credit.paidNow > 0 ? "Часть в долг" : "Весь чек в долг"} sx={{ bgcolor: alpha(tone.main, 0.18), color: theme.palette.mode === "dark" ? tone.light : tone.dark, fontSize: 10, fontWeight: 800 }} />
+          </Stack>
+          <Typography variant="caption" color={c.textDim} component="div" sx={{ mt: 1.25 }}>
+            {clientName ? `${clientName} должен` : "Покупатель должен"}
+          </Typography>
+          <Typography variant="h4" fontWeight={900} sx={{ color: c.danger, lineHeight: 1.15 }}>
+            {money(credit.debt)}
+          </Typography>
+          <Box sx={{ mt: 1.25, height: 8, borderRadius: 4, overflow: "hidden", bgcolor: alpha(c.danger, 0.25) }}>
+            <Box sx={{ width: `${share}%`, height: "100%", bgcolor: c.positive }} />
+          </Box>
+          <Stack direction="row" justifyContent="space-between" gap={1} flexWrap="wrap" sx={{ mt: 0.75 }}>
+            <Typography variant="caption" color={c.textDim}>
+              Получено сейчас <Box component="b" sx={{ color: c.text }}>{money(credit.paidNow)}</Box> из {money(total)}
+            </Typography>
+            <Typography variant="caption" fontWeight={700} sx={{ color: c.text }}>
+              {credit.dueDate ? `Вернуть до ${dayjs(credit.dueDate).format("DD.MM.YYYY")}` : credit.dueDate === null ? "Без срока возврата" : "Срок — в карточке клиента"}
+            </Typography>
+          </Stack>
+          {comment ? <Typography variant="caption" component="div" sx={{ mt: 0.5, color: c.textDim, overflowWrap: "anywhere" }}>«{comment}»</Typography> : null}
+          <Typography variant="caption" component="div" sx={{ mt: 1, color: c.textDim }}>
+            Долг записан в карточку клиента — там его гасят частями.
+          </Typography>
+        </Box>
+      </Stack>
+    </Box>
   );
 }
 
