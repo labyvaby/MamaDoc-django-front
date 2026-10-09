@@ -12,14 +12,16 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { CollectionsTab } from "./analytics/CollectionsTab";
 import { MatrixGapsTab } from "./analytics/MatrixGapsTab";
 import { OverviewTab } from "./analytics/OverviewTab";
+import { SalesTab } from "./analytics/SalesTab";
 import { SellThroughTab } from "./analytics/SellThroughTab";
 import { SizeGridTab } from "./analytics/SizeGridTab";
 import { retailKeys } from "./analytics/keys";
 
-type TabKey = "overview" | "sell-through" | "sizes" | "matrix" | "collections";
+type TabKey = "overview" | "sales" | "sell-through" | "sizes" | "matrix" | "collections";
 
 const TABS: SegmentedTab<TabKey>[] = [
   { key: "overview", label: "Обзор" },
+  { key: "sales", label: "Продажи" },
   { key: "sell-through", label: "Sell-through" },
   { key: "sizes", label: "Размеры" },
   { key: "matrix", label: "Матрица" },
@@ -74,6 +76,9 @@ export default function RetailAnalyticsPage() {
         ) : (
           <>
             {tab === "overview" && <OverviewTab enabled={ready} organizationId={scope.organizationId} />}
+            {tab === "sales" && (
+              <SalesTab enabled={ready} organizationId={scope.organizationId} collections={collections.data ?? []} />
+            )}
             {tab === "sell-through" && (
               <SellThroughTab enabled={ready} organizationId={scope.organizationId} collections={collections.data ?? []} />
             )}

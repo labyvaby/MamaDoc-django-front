@@ -136,3 +136,125 @@ export type MatrixGaps = {
 export function getMatrixGaps(modelId: number, signal?: AbortSignal) {
   return apiRequest<MatrixGaps>(`${BASE}/reports/matrix-gaps/${qs({ modelId })}`, { signal });
 }
+
+// ── Отчёт о продажах ─────────────────────────────────────────────────────────
+
+/**
+ * Деньги строки, варианта или всего отчёта. Нал/карта/прочее — доля оплат
+ * чека, разнесённая по строкам пропорционально их сумме (как в 1С); возвраты —
+ * по дате возврата.
+ */
+export type SalesMoney = {
+  quantity: string;
+  gross: string;
+  discount: string;
+  revenue: string;
+  cash: string;
+  card: string;
+  other: string;
+  receipts: number;
+  returnedQuantity: string;
+  returnedAmount: string;
+  returnedCash: string;
+  returnedCard: string;
+  returnedOther: string;
+  returns: number;
+  netQuantity: string;
+  netRevenue: string;
+};
+
+export type SalesVariant = {
+  productId: number;
+  name: string;
+  sku: string;
+  color: string;
+  size: string;
+  money: SalesMoney;
+};
+
+export type SalesRow = {
+  /** Модель с размерами; у товара вне модели — null и есть productId. */
+  modelId: number | null;
+  productId: number | null;
+  name: string;
+  sku: string;
+  category: string;
+  season: string;
+  money: SalesMoney;
+  variants: SalesVariant[];
+};
+
+export type SalesReport = {
+  dateFrom: string;
+  dateTo: string;
+  total: SalesMoney;
+  averageReceipt: string | null;
+  rows: SalesRow[];
+  sellers: Array<{ id: number; name: string }>;
+  categories: Array<{ id: number; name: string }>;
+};
+
+export type SalesPaymentFilter = "cash" | "card" | "other";
+
+export type SalesFilters = {
+  dateFrom: string;
+  dateTo: string;
+  sellerId?: number;
+  categoryId?: number;
+  /** Сезон коллекции; `__none__` — товары без сезона. */
+  season?: string;
+  search?: string;
+  payment?: SalesPaymentFilter;
+};
+
+export function getSalesReport(params: SalesFilters, signal?: AbortSignal) {
+  return apiRequest<SalesReport>(`${BASE}/reports/sales/${qs(params)}`, { signal });
+}
+
+export type SalesDetailSale = {
+  receiptId: number;
+  receiptNumber: string;
+  receiptComment: string;
+  completedAt: string | null;
+  branch: string;
+  seller: string | null;
+  client: string | null;
+  productName: string;
+  quantity: string;
+  unitPrice: string;
+  discount: string;
+  revenue: string;
+  paymentMethods: string[];
+};
+
+export type SalesDetailReturn = {
+  returnId: number;
+  receiptId: number;
+  receiptNumber: string;
+  receiptComment: string;
+  createdAt: string;
+  productName: string;
+  quantity: string;
+  amount: string;
+  reason: string;
+};
+
+export type SalesDetail = {
+  sales: SalesDetailSale[];
+  salesTotal: number;
+  returns: SalesDetailReturn[];
+  returnsTotal: number;
+  daily: Array<{ date: string; quantity: string; revenue: string; returned: string }>;
+};
+
+export function getSalesDetail(
+  params: SalesFilters & { modelId?: number; productId?: number },
+  signal?: AbortSignal,
+) {
+  return apiRequest<SalesDetail>(`${BASE}/reports/sales/detail/${qs(params)}`, { signal });
+}
+
+/** Один чек кассы — для карточки чека из детализации. */
+export function getPosReceipt(id: number, signal?: AbortSignal) {
+  return apiRequest<PosSavedReceipt>(`/v2/pos/receipts/${id}/`, { signal });
+}
