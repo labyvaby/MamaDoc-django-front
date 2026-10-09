@@ -33,10 +33,31 @@ export type PosBootstrap = {
    */
   activePromotionsCount?: number;
 };
+/**
+ * Одна оплата чека. `debt` — «в долг»: эта часть не оплачена, бэк открывает
+ * долг на покупателя чека (docs/client-debts-contract.md). Терминала у долга
+ * нет; сдачи при продаже в долг не бывает — суммы должны сойтись ровно.
+ */
 export type PosTender = {
-  method: "cash" | "card" | "cashless";
+  method: "cash" | "card" | "cashless" | "debt";
   amount: string;
   cashlessMethodId?: number;
+};
+/** Условия долга при оплате «в долг»: срок возврата и заметка о договорённости. */
+export type PosDebtTerms = {
+  /** Последний день возврата, YYYY-MM-DD; пусто — без срока. */
+  debtDueDate?: string | null;
+  debtComment?: string;
+};
+/** Долг, который открыл чек (ответ checkout/ при оплате «в долг»). */
+export type PosReceiptDebt = {
+  id: number;
+  clientId: number;
+  amount: string;
+  outstanding: string;
+  status: "open" | "paid" | "canceled" | string;
+  dueDate: string | null;
+  comment: string;
 };
 /**
  * Подарочный сертификат, который продаётся строкой чека (сертификаты v2).
@@ -215,7 +236,7 @@ export const quotePosCart = (
 export const checkoutPosCart = (
   scope: PosScope,
   cart: PosCart,
-  data: {
+  data: PosDebtTerms & {
     expectedTotal: string;
     payments: PosTender[];
     idempotencyKey: string;
@@ -237,6 +258,8 @@ export type PosCheckoutResponse = Partial<Omit<PosSavedReceipt, "id">> & {
   id?: number | null;
   receipt?: PosSavedReceipt | null;
   soldCertificates?: GiftCertificateDetail[];
+  /** Долг, открытый этим чеком; null — чек оплачен полностью. Нет поля — старый бэк. */
+  debt?: PosReceiptDebt | null;
 };
 
 /** Страница истории — 25 чеков, размер задаёт бэк. */
