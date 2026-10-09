@@ -122,7 +122,8 @@ export const NeurologyModule: React.FC<NeurologyModuleProps> = ({
   const age = neuroAge(ages, today);
   const latest = done[0] ?? null;
   const planned = records.planned[0] ?? null;
-  const late = lateMilestones(views);
+  // Отдельной строкой — только красные (ВОЗ — позже 99 % детей, остальные — позже тревожного срока); жёлтые видны на ленте и в «Вехах по сферам».
+  const late = lateMilestones(views).filter((view) => view.level === "bad");
   const order = nextOrderCheck(birthDate, dayjs(today).subtract(1, "day").format("YYYY-MM-DD"), {
     questionnairePositive: latest?.questionnaire === "positive",
   });
@@ -236,7 +237,7 @@ export const NeurologyModule: React.FC<NeurologyModuleProps> = ({
           />
         ) : (
           <Stack gap={2}>
-            {banner && <NeuroBanner banner={banner} canManage={canManage} onMarkMilestones={() => openMilestones()} />}
+            {banner && <NeuroBanner banner={banner} />}
             <SegmentedTabs<Tab> tabs={tabs} value={current} onChange={setTab} layoutId={`neuro-tabs-${module.id}`} />
             {current === "development" && (
               <Stack gap={2.5}>

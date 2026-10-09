@@ -41,7 +41,7 @@ const MilestoneLine: React.FC<{ view: MilestoneView; birthDate: string | null; s
             maxWidth: "45%",
             textAlign: "right",
             fontWeight: signal ? 700 : 500,
-            color: view.level === "unknown" ? theme.palette.text.secondary : levelTextColor(theme, view.level),
+            color: signal ? levelTextColor(theme, view.level) : theme.palette.text.secondary,
           }}
         >
           {stateText(view, birthDate, sex)}
@@ -60,8 +60,9 @@ interface MilestoneSpheresProps {
 }
 
 /**
- * Вехи по сферам (ТЗ §4): освоенные, «ещё нет» и вехи возраста без отметки,
- * цвет по §3.3–3.4; «Все вехи» раскрывает остальные. Подсказка — норма и источник.
+ * Вехи по сферам (ТЗ §4): по умолчанию — вехи возраста и всё, что требует
+ * внимания; освоенные вовремя — под «Все вехи». Цвет по §3.3–3.4 только у
+ * отклонений, точка слева — всегда. Подсказка — норма и источник.
  */
 export const MilestoneSpheres: React.FC<MilestoneSpheresProps> = ({ views, todayAge, birthDate, sex }) => {
   const [all, setAll] = React.useState(false);
@@ -69,7 +70,11 @@ export const MilestoneSpheres: React.FC<MilestoneSpheresProps> = ({ views, today
     const list = sphereMilestones(sphere.value)
       .map((def) => views.get(def.code))
       .filter((view): view is MilestoneView => view != null);
-    const shown = list.filter((view) => view.state !== "none" || inWindow(view.def, todayAge));
+    const shown = list.filter((view) => {
+      // Освоена вовремя и без пояснения («проверьте дату», «уточните…») — под «Все вехи».
+      const onTime = view.state === "yes" && view.level === "ok" && !view.note;
+      return inWindow(view.def, todayAge) || (view.state !== "none" && !onTime);
+    });
     return { sphere, list, shown };
   });
   const hidden = groups.reduce((sum, group) => sum + group.list.length - group.shown.length, 0);
