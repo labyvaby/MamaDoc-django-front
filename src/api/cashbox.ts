@@ -59,8 +59,26 @@ export interface CashlessMethodBreakdownRow {
    */
   certificateIncome?: string;
   certificateRefunds?: string;
+  /**
+   * Погашения долгов клиентов через этот терминал. Деньги ящика, но не выручка:
+   * выручкой был чек, проданный в долг (docs/client-debts-contract.md).
+   */
+  debtIncome?: string;
   /** Операции всех видов: оплаты + возвраты + расходы + закупки. */
   count: number;
+}
+
+/**
+ * Погашения долгов клиентов в сводке кассы и смены. Реальные деньги ящика —
+ * бэк включает их в `netCashFlow` и `expectedCash`, — но не выручка: чек,
+ * проданный в долг, уже был выручкой в день продажи. Старый бэк полей не отдаёт.
+ */
+export interface DebtRepaymentCashFields {
+  debtRepaymentCashIncome?: string;
+  debtRepaymentCardIncome?: string;
+  /** Нал + безнал. */
+  debtRepaymentTotal?: string;
+  debtRepaymentCount?: number;
 }
 
 /**
@@ -81,7 +99,7 @@ export interface CertificateCashFields {
   certificateRefundCount?: number;
 }
 
-export interface CashboxSummary extends CertificateCashFields {
+export interface CashboxSummary extends CertificateCashFields, DebtRepaymentCashFields {
   dateFrom: string;
   dateTo: string;
   organizationId: number | null;
@@ -104,7 +122,7 @@ export interface CashboxSummary extends CertificateCashFields {
   cashExpenses: string;
   cardExpenses: string;
   totalExpenses: string;
-  /** netIncome + salesTotal + certificateTotal − totalExpenses − supplyTotal */
+  /** netIncome + salesTotal + debtRepaymentTotal − totalExpenses − supplyTotal */
   netCashFlow: string;
   expenseCount: number;
   // Продажи товаров (приход кассы)
@@ -168,9 +186,11 @@ export interface CashboxEntry {
    * денег при его аннулировании (`refund`, причина — в `reason`). У разных
    * источников id могут совпасть — ключ строки строится и по нему.
    */
-  source?: "certificate" | string;
+  source?: "certificate" | "debt" | string;
   certificateId?: number | null;
   certificateCode?: string | null;
+  /** `source: "debt"` — погашение долга клиента (`payment`); долг — `debtId`. */
+  debtId?: number | null;
 }
 
 export interface CashboxEntriesResponse {

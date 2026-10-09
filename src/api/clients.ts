@@ -159,6 +159,182 @@ export function getClientMetrics(
   });
 }
 
+// ── Долги клиента (docs/client-debts-contract.md) ─────────────────────────────
+
+export type ClientDebtStatus = "open" | "paid" | "canceled";
+/** Операция хронологии: деньги, возврат товара (долг уменьшен) или списание. */
+export type ClientDebtPaymentKind = "repayment" | "return" | "write_off";
+export type ClientDebtPaymentMethod = "cash" | "card" | "cashless";
+
+/** Одна строка хронологии долга — кто, чем, когда и сколько. */
+export interface ClientDebtPayment {
+  id: number;
+  kind: ClientDebtPaymentKind | string;
+  /** `cash | card | cashless` у погашения; пусто у возврата и списания. */
+  method: ClientDebtPaymentMethod | "" | string;
+  amount: string;
+  comment: string;
+  reference: string;
+  createdAt: string;
+  branchId: number | null;
+  branchName: string | null;
+  cashlessMethodId: number | null;
+  cashlessMethodName: string | null;
+  cashboxShiftId: number | null;
+  createdById: number | null;
+  createdByName: string | null;
+  referenceType?: string;
+  referenceId?: number | null;
+}
+
+/**
+ * Долг клиента — документ со своим сроком. `paidAmount` — всё, что закрыло
+ * часть долга (деньги и возвраты товара), `repaidAmount` — только деньги,
+ * `outstanding` — что ещё должен (0 у погашенного и списанного).
+ */
+export interface ClientDebt {
+  id: number;
+  organizationId: number;
+  clientId: number;
+  amount: string;
+  paidAmount: string;
+  outstanding: string;
+  status: ClientDebtStatus | string;
+  referenceType: string;
+  comment: string;
+  createdAt: string;
+  branchId: number | null;
+  dueDate: string | null;
+  referenceId: number | null;
+  repaidAmount?: string;
+  returnedAmount?: string;
+  /** Открыт и срок возврата уже прошёл. */
+  overdue?: boolean;
+  branchName?: string | null;
+  createdById?: number | null;
+  createdByName?: string | null;
+  clientName?: string | null;
+  clientPhone?: string | null;
+  /** Короткий номер чека кассы, который открыл долг. */
+  receiptNumber?: string | null;
+  payments?: ClientDebtPayment[];
+}
+
+export interface ClientDebtSummary {
+  clientId: number;
+  outstanding: string;
+  openCount?: number;
+  overdueCount?: number;
+}
+
+export interface ClientDebtPage {
+  items: ClientDebt[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  /** Открытый остаток по всем долгам фильтра, не только по странице. */
+  outstandingTotal: string;
+  overdueCount: number;
+}
+
+const orgHeaders = (organizationId: number) => ({ "X-Organization-Id": String(organizationId) });
+
+/** GET /api/v2/clients/<id>/debts/ — долги клиента с хронологией, новые сверху. */
+export function getClientDebts(
+  clientId: number,
+  organizationId: number,
+  params: { status?: ClientDebtStatus } = {},
+  signal?: AbortSignal,
+): Promise<ClientDebt[]> {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  const qs = query.toString();
+  return apiRequest<ClientDebt[]>(`/v2/clients/${clientId}/debts/${qs ? `?${qs}` : ""}`, {
+    signal,
+    headers: orgHeaders(organizationId),
+  });
+}
+
+export function getClientDebtSummary(
+  clientId: number,
+  organizationId: number,
+  signal?: AbortSignal,
+): Promise<ClientDebtSummary> {
+  return apiRequest<ClientDebtSummary>(`/v2/clients/${clientId}/debts/summary/`, {
+    signal,
+    headers: orgHeaders(organizationId),
+  });
+}
+
+/**
+ * Принять погашение: сумма, способ (`cash` по умолчанию), терминал для карты и
+ * QR, комментарий. Филиал — активный филиал сессии (`branchId` нужен только в
+ * орг-режиме); деньги ложатся в открытую смену кассы филиала.
+ */
+export interface RepayClientDebtPayload {
+  amount: string;
+  method: ClientDebtPaymentMethod;
+  cashlessMethodId?: number | null;
+  branchId?: number | null;
+  reference?: string;
+  comment?: string;
+}
+
+export function repayClientDebt(
+  clientId: number,
+  debtId: number,
+  organizationId: number,
+  payload: RepayClientDebtPayload,
+): Promise<ClientDebt> {
+  return apiRequest<ClientDebt>(`/v2/clients/${clientId}/debts/${debtId}/repay/`, {
+    method: "POST",
+    body: payload,
+    headers: orgHeaders(organizationId),
+  });
+}
+
+/** Списать остаток долга — причина обязательна, это прощённые деньги. */
+export function cancelClientDebt(
+  clientId: number,
+  debtId: number,
+  organizationId: number,
+  reason: string,
+): Promise<ClientDebt> {
+  return apiRequest<ClientDebt>(`/v2/clients/${clientId}/debts/${debtId}/cancel/`, {
+    method: "POST",
+    body: { reason },
+    headers: orgHeaders(organizationId),
+  });
+}
+
+/** GET /api/v2/clients/debts/ — реестр долгов организации страницами. */
+export function getClientDebtPage(
+  organizationId: number,
+  params: {
+    status?: ClientDebtStatus | "all";
+    overdue?: boolean;
+    search?: string;
+    branchId?: number | null;
+    limit?: number;
+    offset?: number;
+  } = {},
+  signal?: AbortSignal,
+): Promise<ClientDebtPage> {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  if (params.overdue) query.set("overdue", "1");
+  if (params.search?.trim()) query.set("search", params.search.trim());
+  if (params.branchId != null) query.set("branchId", String(params.branchId));
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  return apiRequest<ClientDebtPage>(`/v2/clients/debts/${qs ? `?${qs}` : ""}`, {
+    signal,
+    headers: orgHeaders(organizationId),
+  });
+}
+
 export function getClientStatuses(
   organizationId: number,
   signal?: AbortSignal,

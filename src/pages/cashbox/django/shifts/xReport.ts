@@ -139,6 +139,17 @@ export function buildXReport(summary: CashboxShiftSummary): XReport {
       // строка остаётся без разреза (см. salesIncome в разрезе кассы).
       methodRows(b, (r) => r.salesIncome ?? 0, 1),
     ),
+    // Погашения долгов клиентов: деньги ящика (входят в движение смены и в
+    // expectedCash), но не выручка — выручкой был чек, проданный в долг.
+    row(
+      "debts",
+      "Погашение долгов",
+      num(summary.debtRepaymentCashIncome),
+      num(summary.debtRepaymentCardIncome),
+      0,
+      summary.debtRepaymentCount ?? 0,
+      methodRows(b, (r) => num(r.debtIncome), 1),
+    ),
     // Деньги за подарочные сертификаты: показываем справочно, но в движение
     // смены и в expectedCash они не входят — магазин откладывает их отдельно.
     // Нетто — продано минус возвращено при аннулировании.

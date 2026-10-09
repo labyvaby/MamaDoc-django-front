@@ -108,6 +108,9 @@ const ShiftSummaryDialog: React.FC<Props> = ({ open, shift, onClose }) => {
             <Row label="Приход" value={`+ ${fmt(s.cashIncome)} с`} color="success.main" />
             <Row label="Возвраты" value={`− ${fmt(s.cashRefunds)} с`} color="success.main" />
             <Row label="Расходы" value={`− ${fmt(s.cashExpenses)} с`} color="success.main" />
+            {parseFloat(s.debtRepaymentCashIncome ?? "0") !== 0 && (
+              <Row label="Погашение долгов" value={`+ ${fmt(s.debtRepaymentCashIncome)} с`} color="success.main" />
+            )}
             {/* Сертификаты откладывают отдельно: не входят в «Ожидается в кассе». */}
             {(parseFloat(s.certificateCashIncome ?? "0") !== 0 || parseFloat(s.certificateCashRefunds ?? "0") !== 0) && (
               <Row
@@ -148,6 +151,9 @@ const ShiftSummaryDialog: React.FC<Props> = ({ open, shift, onClose }) => {
             <Row label="Карта приход" value={`${fmt(s.cardIncome)} с`} color="primary.main" />
             <Row label="Карта возвраты" value={`− ${fmt(s.cardRefunds)} с`} color="primary.main" />
             <Row label="Карта расходы" value={`− ${fmt(s.cardExpenses)} с`} color="primary.main" />
+            {parseFloat(s.debtRepaymentCardIncome ?? "0") !== 0 && (
+              <Row label="Погашение долгов безналом (не выручка)" value={`+ ${fmt(s.debtRepaymentCardIncome)} с`} color="primary.main" />
+            )}
             {(parseFloat(s.certificateCardIncome ?? "0") !== 0 || parseFloat(s.certificateCardRefunds ?? "0") !== 0) && (
               <Row
                 label="Сертификаты безналом (не выручка)"

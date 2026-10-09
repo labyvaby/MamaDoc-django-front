@@ -167,4 +167,10 @@ describe("checkout response", () => {
     expect(normalizeCheckoutResult({ receipt, soldCertificates: [] }).receipt).toBe(receipt);
     expect(normalizeCheckoutResult(receipt)).toEqual({ receipt, certificates: [] });
   });
+
+  it("carries the debt a sale on credit opened, and omits it otherwise", () => {
+    const debt = { id: 12, clientId: 14, amount: "3000.00", outstanding: "3000.00", status: "open", dueDate: "2026-10-23", comment: "" };
+    expect(normalizeCheckoutResult({ receipt, soldCertificates: [], debt })).toEqual({ receipt, certificates: [], debt });
+    expect(normalizeCheckoutResult({ receipt, soldCertificates: [], debt: null })).toEqual({ receipt, certificates: [] });
+  });
 });
