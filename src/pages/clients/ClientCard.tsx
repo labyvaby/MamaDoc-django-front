@@ -55,6 +55,8 @@ type Props = {
   metrics?: ClientMetrics | null;
   metricsLoading?: boolean;
   metricsError?: boolean;
+  /** Открытый остаток долгов с кассы («в долг»); null — права на долги нет. */
+  debtsOutstanding?: number | null;
 };
 
 export default function ClientCard({
@@ -66,7 +68,11 @@ export default function ClientCard({
   metrics = null,
   metricsLoading = false,
   metricsError = false,
+  debtsOutstanding = null,
 }: Props) {
+  // «Долг» в счёте — начисления биллинга плюс долги с кассы: иначе карточка
+  // пишет «0 сом», пока на вкладке «Долги» висит остаток.
+  const totalDebt = Number(client?.debt || 0) + (debtsOutstanding ?? 0);
   const isCompany = client?.clientType === "company";
   const daysToBirthday = client && !isCompany ? daysUntilBirthday(client.dob) : null;
   const showDob = Boolean(client?.dob) && !isCompany;
@@ -186,7 +192,7 @@ export default function ClientCard({
                 <FactBlock icon={<AccountBalanceWalletOutlined />} title="Счёт клиента">
                   <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                     <AmountTile icon={<AccountBalanceWalletOutlined />} label="Баланс" value={money(client.balance)} tone="success" />
-                    <AmountTile icon={<ReceiptLongOutlined />} label="Долг" value={money(client.debt)} tone={Number(client.debt) > 0 ? "error" : "neutral"} />
+                    <AmountTile icon={<ReceiptLongOutlined />} label="Долг" value={money(String(totalDebt))} tone={totalDebt > 0 ? "error" : "neutral"} />
                   </Stack>
                 </FactBlock>
               )}
