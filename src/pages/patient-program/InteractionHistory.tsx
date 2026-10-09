@@ -32,8 +32,9 @@ import {
   type PatientInteraction,
 } from "../../api/programs";
 import { djangoQueryKeys } from "../../api/queryKeys";
+import { HealthSectionCard } from "../../components/health/HealthSectionCard";
 import CreateTaskDrawer from "../../components/tasks/CreateTaskDrawer";
-import { AppButton, AppCard, CustomDateTimePicker, ListEmptyState } from "../../components/ui";
+import { AppButton, CustomDateTimePicker, ShowAllButton } from "../../components/ui";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { subtleBg } from "../../theme/uiHelpers";
 
@@ -201,6 +202,7 @@ export const InteractionHistory: React.FC<InteractionHistoryProps> = ({
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [taskOpen, setTaskOpen] = React.useState(false);
   const [pendingInteraction, setPendingInteraction] = React.useState<PatientInteraction | null>(null);
+  const [all, setAll] = React.useState(false);
 
   const queryKey = djangoQueryKeys.programs.interactions(enrollmentId, scope);
   const query = useQuery({
@@ -222,30 +224,21 @@ export const InteractionHistory: React.FC<InteractionHistoryProps> = ({
 
   return (
     <>
-      <AppCard
-        variant="outlined"
+      <HealthSectionCard
+        title="Активность и взаимодействия"
+        actions={canManage ? (
+          <AppButton variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => setDrawerOpen(true)}>
+            Добавить
+          </AppButton>
+        ) : undefined}
       >
-        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ sm: "center" }} gap={1} sx={{ mb: 1.5 }}>
-          <Box>
-            <Typography variant="h6" fontWeight={700}>Активность и взаимодействия</Typography>
-            <Typography variant="body2" color="text.secondary">Единая история контактов с клиентом</Typography>
-          </Box>
-          {canManage && (
-            <AppButton variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => setDrawerOpen(true)}>
-              Добавить
-            </AppButton>
-          )}
-        </Stack>
         {query.error && <Alert severity="error" sx={{ mb: 1.5 }}>{query.error.message}</Alert>}
         {!query.isLoading && interactions.length === 0 ? (
-          <ListEmptyState
-            icon={<ForumOutlined />}
-            title="История пока пуста"
-            description="Добавьте звонок, сообщение или заметку о контакте с клиентом."
-          />
+          <Typography variant="body2" color="text.secondary">Контактов пока не было.</Typography>
         ) : (
           <Stack gap={1}>
-            {interactions.map((interaction) => {
+            {/* Список от новых к старым: последние три, остальное — по «Показать все». */}
+            {(all ? interactions : interactions.slice(0, 3)).map((interaction) => {
               const outcome = OUTCOMES.find((item) => item.value === interaction.outcome);
               const channel = CHANNELS.find((item) => item.value === interaction.channel);
               return (
@@ -278,9 +271,10 @@ export const InteractionHistory: React.FC<InteractionHistoryProps> = ({
                 </Box>
               );
             })}
+            <ShowAllButton total={interactions.length} limit={3} expanded={all} onToggle={() => setAll((value) => !value)} sx={{ mt: 0 }} />
           </Stack>
         )}
-      </AppCard>
+      </HealthSectionCard>
 
       <InteractionDrawer
         open={drawerOpen}

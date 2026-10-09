@@ -7,13 +7,16 @@ import {
   CircularProgress,
   Divider,
   FormControl,
+  IconButton,
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Menu,
   MenuItem,
   Select,
   Skeleton,
   Stack,
+  Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
@@ -27,7 +30,6 @@ import FamilyRestroomOutlined from "@mui/icons-material/FamilyRestroomOutlined";
 import HistoryEduOutlined from "@mui/icons-material/HistoryEduOutlined";
 import MedicationOutlined from "@mui/icons-material/MedicationOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
-import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import EventNoteOutlined from "@mui/icons-material/EventNoteOutlined";
 import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 import FitnessCenterOutlined from "@mui/icons-material/FitnessCenterOutlined";
@@ -35,6 +37,7 @@ import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined
 import HealingOutlined from "@mui/icons-material/HealingOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import MonitorHeartOutlined from "@mui/icons-material/MonitorHeartOutlined";
+import MoreHorizOutlined from "@mui/icons-material/MoreHorizOutlined";
 import PsychologyOutlined from "@mui/icons-material/PsychologyOutlined";
 import RemoveRedEyeOutlined from "@mui/icons-material/RemoveRedEyeOutlined";
 import ScienceOutlined from "@mui/icons-material/ScienceOutlined";
@@ -63,6 +66,7 @@ import { usePageTitle } from "../../hooks/usePageTitle";
 import { usePermissions } from "../../hooks/usePermissions";
 import { subtleBg } from "../../theme/uiHelpers";
 import { HealthOverviewCard } from "../../components/health/HealthOverviewCard";
+import { HealthSectionCard } from "../../components/health/HealthSectionCard";
 import { BookAppointments } from "./BookAppointments";
 import { ConnectProgramDialog } from "./ConnectProgramDialog";
 import { EnrollmentActionsDrawer } from "./EnrollmentActionsDrawer";
@@ -140,7 +144,7 @@ function moduleDescription(module: EffectiveProgramModule): string {
   const description = module.settings.description;
   return typeof description === "string" && description.trim()
     ? description
-    : "Раздел подключён к программе";
+    : "";
 }
 
 /**
@@ -178,47 +182,51 @@ const NavigationItem: React.FC<{
   </ListItemButton>
 );
 
-const ProgramHeader: React.FC<{ enrollment: ProgramEnrollment }> = ({ enrollment }) => (
-  <AppCard variant="outlined" sx={{ mb: 1.75 }}>
-    <Stack direction={{ xs: "column", sm: "row" }} gap={1.5} alignItems={{ sm: "center" }}>
-      <Box
-        sx={(theme) => ({
-          width: 44,
-          height: 44,
-          flexShrink: 0,
-          display: "grid",
-          placeItems: "center",
-          borderRadius: 1.5,
-          color: "primary.main",
-          bgcolor: subtleBg(theme, true),
-        })}
-      >
-        <MenuBookOutlined />
-      </Box>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
+/**
+ * Строка программы под кнопкой «назад»: название, метки и одна серая строка
+ * со сроками. Справа — выбор программы и меню «⋯»; на телефоне они вместе
+ * переносятся под название.
+ */
+const ProgramHeader: React.FC<{
+  enrollment: ProgramEnrollment;
+  /** Имя пациента — на телефоне, где левого меню с именем нет. */
+  patientName?: string;
+  select?: React.ReactNode;
+  actions?: React.ReactNode;
+}> = ({ enrollment, patientName, select, actions }) => {
+  const meta = [
+    patientName ?? "",
+    enrollment.branch.name,
+    enrollment.startsAt ? `с ${formatDate(enrollment.startsAt)}` : "",
+    enrollment.expiresAt ? `до ${formatDate(enrollment.expiresAt)}` : "без срока",
+    enrollment.externalId ? `№ ${enrollment.externalId}` : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1.5} flexWrap="wrap" sx={{ mb: 1.75 }}>
+      <Box sx={{ flex: "1 1 240px", minWidth: 0 }}>
         <Stack direction="row" gap={0.75} alignItems="center" flexWrap="wrap">
           <Typography variant="h6" fontWeight={700}>{enrollment.program.name}</Typography>
           {enrollment.isVip && (
             <Chip size="small" color="warning" icon={<WorkspacePremiumOutlined />} label="VIP" />
           )}
-          <Chip
-            size="small"
-            color={enrollment.isEffectivelyActive ? "success" : "default"}
-            label={STATUS_LABELS[enrollment.status]}
-          />
+          {/* Действующая программа — без метки; метка только у неактивной. */}
+          {(!enrollment.isEffectivelyActive || enrollment.status !== "active") && (
+            <Chip size="small" color="default" label={STATUS_LABELS[enrollment.status]} />
+          )}
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>
-          {enrollment.branch.name} · действует до {formatDate(enrollment.expiresAt)}
+          {meta}
         </Typography>
       </Box>
-      <Stack direction="row" alignItems="center" gap={1}>
-        <Typography variant="caption" color="text.secondary">
-          {enrollment.enabledModules.length} разделов
-        </Typography>
-      </Stack>
+      {(select || actions) && (
+        <Stack direction="row" gap={1} alignItems="center" sx={{ flexShrink: 0, maxWidth: "100%" }}>
+          {select}
+          {actions}
+        </Stack>
+      )}
     </Stack>
-  </AppCard>
-);
+  );
+};
 
 const PatientProgramPage: React.FC = () => {
   const { patientId: rawPatientId } = useParams();
@@ -234,6 +242,7 @@ const PatientProgramPage: React.FC = () => {
   const [connectOpen, setConnectOpen] = React.useState(false);
   const [actionsOpen, setActionsOpen] = React.useState(false);
   const [constructorOpen, setConstructorOpen] = React.useState(false);
+  const [menuAnchor, setMenuAnchor] = React.useState<HTMLElement | null>(null);
   const canManageEnrollments = canAccess("enrollments.manage");
   const canManagePrograms = canAccess("programs.manage");
   const canCreateTask = canAccess("tasks.create");
@@ -310,6 +319,58 @@ const PatientProgramPage: React.FC = () => {
   }
 
   const patient = patientQuery.data;
+  // Редкие действия с программой — в меню «⋯», права те же, что у прежних кнопок.
+  const canOpenEnrollmentActions = canManageEnrollments && !!selectedEnrollment
+    && !["cancelled", "expired"].includes(selectedEnrollment.status);
+  const canConnectAnother = canManageEnrollments && !!selectedEnrollment;
+  const programMenu = canOpenEnrollmentActions || canConnectAnother || canManagePrograms ? (
+    <>
+      <Tooltip title="Управление программой">
+        <IconButton
+          aria-label="Управление программой"
+          onClick={(event) => setMenuAnchor(event.currentTarget)}
+          sx={{ border: 1, borderColor: "divider", borderRadius: "10px" }}
+        >
+          <MoreHorizOutlined />
+        </IconButton>
+      </Tooltip>
+      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
+        {canOpenEnrollmentActions && (
+          <MenuItem
+            onClick={() => {
+              setMenuAnchor(null);
+              setActionsOpen(true);
+            }}
+          >
+            <SettingsOutlined fontSize="small" sx={{ mr: 1.25, color: "text.secondary" }} />
+            Управление подключением
+          </MenuItem>
+        )}
+        {canConnectAnother && (
+          <MenuItem
+            onClick={() => {
+              setMenuAnchor(null);
+              setConnectOpen(true);
+            }}
+          >
+            <AddOutlined fontSize="small" sx={{ mr: 1.25, color: "text.secondary" }} />
+            Подключить другую программу
+          </MenuItem>
+        )}
+        {canManagePrograms && (
+          <MenuItem
+            onClick={() => {
+              setMenuAnchor(null);
+              setConstructorOpen(true);
+            }}
+          >
+            <TuneOutlined fontSize="small" sx={{ mr: 1.25, color: "text.secondary" }} />
+            Конструктор программы
+          </MenuItem>
+        )}
+      </Menu>
+    </>
+  ) : null;
 
   return (
     <Box
@@ -323,78 +384,19 @@ const PatientProgramPage: React.FC = () => {
         WebkitOverflowScrolling: "touch",
       }}
     >
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
-        alignItems={{ sm: "flex-start" }}
-        gap={1.5}
-        sx={{ mb: 1.75 }}
-      >
-        <Box>
-          <AppButton
-            variant="text"
-            size="small"
-            startIcon={<ArrowBackOutlined />}
-            onClick={() => navigate("/patients")}
-            sx={{ ml: -1, mb: 0.25 }}
-          >
-            К списку пациентов
-          </AppButton>
-          <Typography variant="h5" fontWeight={700}>Книжка клиента</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>
-            Программы обслуживания и подключённые разделы
-          </Typography>
-        </Box>
-        {enrollments.length > 1 && selectedEnrollment && (
-          <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 260 } }}>
-            <Select
-              value={selectedEnrollment.id}
-              onChange={(event) => {
-                setSelectedEnrollmentId(Number(event.target.value));
-                setView("overview");
-              }}
-            >
-              {enrollments.map((enrollment) => (
-                <MenuItem key={enrollment.id} value={enrollment.id}>
-                  {enrollment.program.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        )}
-        {(canManageEnrollments || canManagePrograms) && (
-          <Stack direction={{ xs: "column", sm: "row" }} gap={1} sx={{ width: { xs: "100%", sm: "auto" } }}>
-            {canManagePrograms && (
-              <AppButton
-                variant="outlined"
-                startIcon={<TuneOutlined />}
-                onClick={() => setConstructorOpen(true)}
-              >
-                Конструктор
-              </AppButton>
-            )}
-            {canManageEnrollments && (
-              <>
-            {selectedEnrollment && !["cancelled", "expired"].includes(selectedEnrollment.status) && (
-              <AppButton
-                variant="outlined"
-                startIcon={<SettingsOutlined />}
-                onClick={() => setActionsOpen(true)}
-              >
-                Управление
-              </AppButton>
-            )}
-            <AppButton
-              variant={selectedEnrollment ? "outlined" : "contained"}
-              startIcon={<AddOutlined />}
-              onClick={() => setConnectOpen(true)}
-            >
-              Подключить программу
-            </AppButton>
-              </>
-            )}
-          </Stack>
-        )}
+      {/* «Книжка клиента» уже в шапке приложения — здесь только «назад». */}
+      <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1.5} sx={{ mb: 1 }}>
+        <AppButton
+          variant="text"
+          size="small"
+          startIcon={<ArrowBackOutlined />}
+          onClick={() => navigate("/patients")}
+          sx={{ ml: -1 }}
+        >
+          К списку пациентов
+        </AppButton>
+        {/* Без программы строки с названием нет — меню стоит здесь. */}
+        {!selectedEnrollment && programMenu}
       </Stack>
 
       {!selectedEnrollment ? (
@@ -412,14 +414,36 @@ const PatientProgramPage: React.FC = () => {
         </AppCard>
       ) : (
         <Box>
-          <ProgramHeader enrollment={selectedEnrollment} />
+          <ProgramHeader
+            enrollment={selectedEnrollment}
+            patientName={isMobile ? patient.fullName : undefined}
+            select={enrollments.length > 1 ? (
+              <FormControl size="small" sx={{ minWidth: { xs: 160, sm: 240 } }}>
+                <Select
+                  value={selectedEnrollment.id}
+                  onChange={(event) => {
+                    setSelectedEnrollmentId(Number(event.target.value));
+                    setView("overview");
+                  }}
+                >
+                  {enrollments.map((enrollment) => (
+                    <MenuItem key={enrollment.id} value={enrollment.id}>
+                      {enrollment.program.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : undefined}
+            actions={programMenu}
+          />
           {!selectedEnrollment.isEffectivelyActive && (
             <Alert severity="warning" sx={{ mb: 1.75 }}>
               Подключение сейчас неактивно. Разделы временно недоступны, но история программы сохранена.
             </Alert>
           )}
 
-          {isMobile && (
+          {/* На «Обзоре» телефона навигация — плитки разделов, ряд чипов не повторяем. */}
+          {isMobile && (view !== "overview" || modules.length === 0) && (
             <Stack direction="row" gap={0.75} sx={{ mb: 1.5, overflowX: "auto", pb: 0.25 }}>
               <Chip
                 clickable
@@ -503,11 +527,9 @@ const PatientProgramPage: React.FC = () => {
             <Box sx={{ minWidth: 0 }}>
               {view === "overview" && (
                 <Stack gap={1.75}>
-                  <AppCard
-                    variant="outlined"
-                    title="Разделы программы"
-                    subheader="Состав определяется настройками организации, филиала и подключения клиента"
-                  >
+                  {/* На компьютере разделы уже в левом меню — плитки только на телефоне. */}
+                  {(isMobile || modules.length === 0) && (
+                  <HealthSectionCard title="Разделы программы">
                   {modules.length === 0 ? (
                     <ListEmptyState
                       icon={<HealthAndSafetyOutlined />}
@@ -522,10 +544,22 @@ const PatientProgramPage: React.FC = () => {
                         gap: 1.25,
                       }}
                     >
-                      {modules.map((module) => (
+                      {[
+                        // Ряда чипов на «Обзоре» нет — «Приёмы» тоже плиткой, чтобы до них дойти.
+                        ...(showAppointmentsItem
+                          ? [{ key: "appointments", view: "appointments" as ViewKey, icon: <EventNoteOutlined />, name: "Приёмы", description: "" }]
+                          : []),
+                        ...modules.map((module) => ({
+                          key: `module:${module.id}`,
+                          view: `module:${module.id}` as ViewKey,
+                          icon: moduleIcon(module),
+                          name: module.name,
+                          description: moduleDescription(module),
+                        })),
+                      ].map((tile) => (
                         <ButtonBase
-                          key={module.id}
-                          onClick={() => setView(`module:${module.id}`)}
+                          key={tile.key}
+                          onClick={() => setView(tile.view)}
                           sx={(theme) => ({
                             justifyContent: "flex-start",
                             gap: 1.25,
@@ -539,37 +573,23 @@ const PatientProgramPage: React.FC = () => {
                           })}
                         >
                           <Box sx={{ color: "primary.main", display: "flex", "& .MuiSvgIcon-root": { fontSize: 24 } }}>
-                            {moduleIcon(module)}
+                            {tile.icon}
                           </Box>
                           <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography variant="body2" fontWeight={700} noWrap>{module.name}</Typography>
-                            <Typography variant="caption" color="text.secondary" noWrap display="block">
-                              {moduleDescription(module)}
-                            </Typography>
+                            <Typography variant="body2" fontWeight={700} noWrap>{tile.name}</Typography>
+                            {tile.description && (
+                              <Typography variant="caption" color="text.secondary" noWrap display="block">
+                                {tile.description}
+                              </Typography>
+                            )}
                           </Box>
                           <ChevronRightOutlined color="action" fontSize="small" />
                         </ButtonBase>
                       ))}
                     </Box>
                   )}
-
-                  <Divider sx={{ my: 2 }} />
-                  <Stack direction={{ xs: "column", sm: "row" }} gap={2.5}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Начало программы</Typography>
-                      <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 0.4 }}>
-                        <CalendarMonthOutlined fontSize="small" color="primary" />
-                        <Typography variant="body2" fontWeight={600}>{formatDate(selectedEnrollment.startsAt)}</Typography>
-                      </Stack>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Идентификатор</Typography>
-                      <Typography variant="body2" fontWeight={600} sx={{ mt: 0.4 }}>
-                        {selectedEnrollment.externalId || `#${selectedEnrollment.id}`}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                  </AppCard>
+                  </HealthSectionCard>
+                  )}
                   <HealthOverviewCard
                     patientId={patient.id}
                     enrollmentId={selectedEnrollment.id}
