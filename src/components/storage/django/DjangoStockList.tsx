@@ -406,6 +406,7 @@ export const DjangoStockList: React.FC<DjangoStockListProps> = ({
                 <ButtonBase
                   key={`${item.warehouseId}-${item.productId}`}
                   {...(selectable ? longPress.bind(item.productId) : {})}
+                  data-stock-row={item.productId}
                   role={selecting ? "checkbox" : undefined}
                   aria-checked={selecting ? isChecked : undefined}
                   // Shift-клик иначе выделяет текст строк вместо диапазона.

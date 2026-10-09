@@ -67,6 +67,9 @@ import { DjangoWarehouseList } from "../../../components/storage/django/DjangoWa
 import { DjangoAddWarehouseDrawer } from "../../../components/storage/django/DjangoAddWarehouseDrawer";
 import { DjangoWarehouseDocumentsDrawer } from "../../../components/storage/django/DjangoWarehouseDocumentsDrawer";
 import { describeFailures, runBulk } from "../../../utility/bulkSelection";
+import { hapticTap } from "../../../utility/haptics";
+import { findProductByScanCode, productScanCodes, scrollRowIntoView } from "../../../utility/scanLookup";
+import { playScanFeedback, useBarcodeScanner } from "../../pos/barcodeScanner";
 import { StockBulkDialog, type StockBulkSubmit } from "./StockBulkDialog";
 import { exportStockXlsx } from "./exportStockXlsx";
 
@@ -476,13 +479,20 @@ const DjangoWarehousesPage: React.FC = () => {
     );
 
     // Filter
+    // Все коды товара (доп. штрихкоды, артикул) — у позиции склада только основной штрихкод.
+    const productCodes = React.useMemo(
+        () => new Map(catalogProducts.map((p) => [p.id, productScanCodes(p)])),
+        [catalogProducts],
+    );
     const filteredStock = React.useMemo(() => {
         if (!searchQuery) return stock;
         const q = searchQuery.toLowerCase();
         return stock.filter((i) =>
-            i.productName?.toLowerCase().includes(q) || i.productBarcode?.includes(q),
+            i.productName?.toLowerCase().includes(q)
+            || i.productBarcode?.toLowerCase().includes(q)
+            || productCodes.get(i.productId)?.some((code) => code.includes(q)),
         );
-    }, [stock, searchQuery]);
+    }, [stock, searchQuery, productCodes]);
 
     // ── Массовые действия над выбранными позициями ──
     const checkedItems = React.useMemo(() => {
@@ -495,6 +505,54 @@ const DjangoWarehousesPage: React.FC = () => {
         [checkedItems, productPrices],
     );
     const bulkBusy = bulkProgress !== null;
+
+    // ── Сканер штрихкодов ──
+    // Без выбора пик ищет позицию и открывает её; в режиме выбора — сразу
+    // отмечает найденную позицию и прокручивает к ней, поиск не трогает.
+    const [scrollToId, setScrollToId] = React.useState<{ id: number; nonce: number } | null>(null);
+    const handleScan = (code: string) => {
+        const product = findProductByScanCode(catalogProducts, code);
+        const item = product
+            ? stock.find((i) => i.productId === product.id)
+            : findProductByScanCode(stock.map((i) => ({ ...i, barcode: i.productBarcode })), code);
+        const notFound = () => {
+            playScanFeedback(false);
+            notify?.({
+                type: "error",
+                message: product
+                    ? `«${product.name}» нет на складе «${warehouses.find((w) => w.id === selectedWarehouseId)?.name ?? ""}»`
+                    : `Товар со штрихкодом ${code} не найден`,
+            });
+        };
+        if (checkedIds.size === 0) {
+            setSearchQuery(code);
+            if (item) {
+                playScanFeedback(true);
+                handleStockClick(item);
+            } else notFound();
+            return;
+        }
+        if (!item) {
+            notFound();
+            return;
+        }
+        playScanFeedback(true);
+        hapticTap();
+        if (checkedIds.has(item.productId)) {
+            notify?.({ type: "success", message: `«${item.productName}» уже выбран` });
+        } else {
+            setCheckedIds((prev) => new Set(prev).add(item.productId));
+        }
+        setScrollToId({ id: item.productId, nonce: Date.now() });
+    };
+    React.useEffect(() => {
+        if (scrollToId) scrollRowIntoView(`[data-stock-row="${scrollToId.id}"]`);
+    }, [scrollToId]);
+    useBarcodeScanner(
+        handleScan,
+        !loadingStock && !bulkBusy && !movementDrawerOpen && !warehouseDrawerOpen && !manageOpen
+            && !documentsOpen && !transferOpen && bulkDialog === null,
+    );
     const transferTargets = React.useMemo(
         () => warehouseOptions.filter((w) => w.id !== selectedWarehouseId).map((w) => ({ id: w.id, label: w.label })),
         [warehouseOptions, selectedWarehouseId],

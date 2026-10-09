@@ -79,6 +79,8 @@ import { BulkCategoryDialog, BulkPriceDialog, type CategoryChoice } from "./Bulk
 import { exportProductsXlsx } from "./exportProductsXlsx";
 import { useLongPress } from "../../../hooks/useLongPress";
 import { hapticTap } from "../../../utility/haptics";
+import { findProductByScanCode, productScanCodes, scrollRowIntoView } from "../../../utility/scanLookup";
+import { playScanFeedback, useBarcodeScanner } from "../../pos/barcodeScanner";
 
 /**
  * Состояние остатка для бейджа в строке: нет / мало / есть.
@@ -288,7 +290,7 @@ const DjangoProductsPage: React.FC = () => {
       const q = searchQuery.toLowerCase();
       const matchSearch =
         p.name.toLowerCase().includes(q) ||
-        (p.barcode && p.barcode.includes(q)) ||
+        productScanCodes(p).some((code) => code.includes(q)) ||
         (p.category && p.category.toLowerCase().includes(q)) ||
         // Бренд-свойство, а не часть названия — как в поиске кассы.
         (p.attributes ?? []).some(
@@ -463,6 +465,45 @@ const DjangoProductsPage: React.FC = () => {
     setCheckedIds(new Set());
     anchorIdRef.current = null;
   };
+
+  // ── Сканер штрихкодов ──
+  // Без выбора пик ищет товар и открывает его; в режиме выбора — сразу
+  // отмечает найденный товар и прокручивает список к нему, поиск не трогает.
+  const [scrollToId, setScrollToId] = React.useState<{ id: number; nonce: number } | null>(null);
+  const handleScan = (code: string) => {
+    const product = findProductByScanCode(products, code);
+    if (!hasChecked) {
+      setSearchQuery(code);
+      if (product) setSelectedProduct(product);
+      playScanFeedback(Boolean(product));
+      if (!product) notify?.({ type: "error", message: `Товар со штрихкодом ${code} не найден` });
+      return;
+    }
+    if (!product) {
+      playScanFeedback(false);
+      notify?.({ type: "error", message: `Товар со штрихкодом ${code} не найден` });
+      return;
+    }
+    playScanFeedback(true);
+    hapticTap();
+    if (checkedIds.has(product.id)) {
+      notify?.({ type: "success", message: `«${product.name}» уже выбран` });
+    } else {
+      setCheckedIds((prev) => new Set(prev).add(product.id));
+      anchorIdRef.current = product.id;
+    }
+    // Строка может быть ещё не нарисована (порционный рендер) — дорисуем до неё.
+    const index = filteredProducts.findIndex((p) => p.id === product.id);
+    if (index >= renderLimit) setRenderLimit(index + LIST_PAGE);
+    setScrollToId({ id: product.id, nonce: Date.now() });
+  };
+  React.useEffect(() => {
+    if (scrollToId) scrollRowIntoView(`[data-product-row="${scrollToId.id}"]`);
+  }, [scrollToId, renderLimit]);
+  useBarcodeScanner(
+    handleScan,
+    !loading && !bulkBusy && !formDrawerOpen && !filterDrawerOpen && !categoryDialogOpen && !priceDialogOpen,
+  );
 
   const nameOf = (id: number) => products.find((p) => p.id === id)?.name ?? `#${id}`;
 
@@ -958,6 +999,7 @@ const DjangoProductsPage: React.FC = () => {
                           key={p.id}
                           focusRipple
                           {...longPress.bind(p.id)}
+                          data-product-row={p.id}
                           role={hasChecked ? "checkbox" : undefined}
                           aria-checked={hasChecked ? isChecked : undefined}
                           // Shift-клик иначе выделяет текст строк вместо диапазона.
