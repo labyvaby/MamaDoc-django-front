@@ -189,6 +189,7 @@ const AppointmentsPage = lazy(() => import("./pages/appointments/AppointmentsPag
 // (registry/RegistryJournalView), а не рабочий кабинет с навигацией по дням.
 const AllAppointmentsPage = lazy(() => import("./pages/all-appointments"));
 const AllProceduresPage = lazy(() => import("./pages/all-procedures"));
+const AiUsagePage = lazy(() => import("./pages/ai-usage"));
 const LoadAnalyticsPage = lazy(() => import("./pages/admin/load").then(module => ({ default: module.LoadAnalyticsPage })));
 const DoctorProfitPage = lazy(() => import("./pages/doctor-profit"));
 const PnlPage = lazy(() => import("./pages/pnl").then(module => ({ default: module.PnlPage })));
@@ -461,6 +462,11 @@ function App() {
                         name: "load",
                         list: "/load",
                         meta: { label: "Нагрузка" }
+                      },
+                      {
+                        name: "ai-usage",
+                        list: "/ai-usage",
+                        meta: { label: "Расход ИИ" }
                       },
                       {
                         name: "doctor-profit",
@@ -978,6 +984,18 @@ function App() {
                             <RequireSuperAdmin>
                               <Suspense fallback={<LinearProgress />}>
                                 <AltegioSettingsPage />
+                              </Suspense>
+                            </RequireSuperAdmin>
+                          }
+                        />
+                        {/* Расход токенов ИИ-заключений — отчёт платформы, бэк
+                            отдаёт его только суперадмину (frontend-ai-usage.md). */}
+                        <Route
+                          path="ai-usage"
+                          element={
+                            <RequireSuperAdmin>
+                              <Suspense fallback={<LinearProgress />}>
+                                <AiUsagePage />
                               </Suspense>
                             </RequireSuperAdmin>
                           }
