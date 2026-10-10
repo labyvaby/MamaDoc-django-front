@@ -92,6 +92,11 @@ export interface SecuritySummary {
   activeSessions: number;
   sessionsWeb: number;
   sessionsMobile: number;
+  /**
+   * Чьи сессии в счётчиках и списке: `all` — всей организации (право завершать:
+   * integrations.manage или rbac.memberships.update), `own` — только свои (с 09.10.2026).
+   */
+  sessionsScope: "all" | "own";
   /** Резервные копии: `available: false` — показываем `note`, кнопки «Создать копию» нет. */
   backups: { available: boolean; note: string; items: unknown[] };
 }
@@ -351,6 +356,7 @@ const fromRawSecurity = (raw: any): SecuritySummary => ({
   activeSessions: num(raw?.activeSessions),
   sessionsWeb: num(raw?.sessionsWeb),
   sessionsMobile: num(raw?.sessionsMobile),
+  sessionsScope: raw?.sessionsScope === "own" ? "own" : "all",
   backups: { available: Boolean(raw?.backups?.available), note: str(raw?.backups?.note), items: rows(raw?.backups?.items) },
 });
 

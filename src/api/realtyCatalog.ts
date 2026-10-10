@@ -14,9 +14,8 @@ import { fromRawProjectMedia, fromRawUnitMedia, type ProjectMedia, type UnitMedi
  *   акции — `realty.manage`;
  * - удалить ЖК/секцию/планировку с квартирами или сделками → 409
  *   `PROJECT_HAS_DEALS` / `SECTION_HAS_UNITS` / `LAYOUT_HAS_UNITS`.
- * ⚠ Полный список полей `PATCH /projects/<id>/` гайд отсылает в
- * `docs/aivio-api/sales.md` §5, которого у фронта нет: правим поля с теми же
- * именами, что в ответе, и сверяем ответ (см. `unsavedFields`).
+ * - `PATCH /projects/<id>/` — только изменённые поля; незнакомое поле → 400 с
+ *   именем в `details.fields` (с 09.10.2026, список — `frontend-sales.md` §14).
  */
 
 const REALTY_API = "/v2/realty";
@@ -309,21 +308,6 @@ export async function updateCatalogProject(id: number, patch: ProjectPatch, scop
 
 export async function deleteCatalogProject(id: number, scope?: RealtyScope): Promise<void> {
   await realty(scope, `/projects/${id}/`, { method: "DELETE" });
-}
-
-/**
- * Поля правки, которых нет в ответе бэка: полный список полей PATCH гайд не
- * приводит — если бэк поле молча проигнорировал, скажем об этом, а не
- * покажем «Сохранено».
- */
-export function unsavedFields(patch: ProjectPatch, saved: CatalogProject): (keyof ProjectPatch)[] {
-  const norm = (value: unknown) => (value == null ? "" : String(value).trim());
-  return (Object.keys(patch) as (keyof ProjectPatch)[]).filter((key) => {
-    const sent = patch[key];
-    const got = (saved as unknown as Record<string, unknown>)[key];
-    if (key === "pricePerSqm" || key === "defaultReservationAmount") return sent != null && sent !== "" && Number(sent) !== Number(got ?? NaN);
-    return norm(sent) !== norm(got);
-  });
 }
 
 export interface SectionInput {

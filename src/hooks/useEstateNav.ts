@@ -1,7 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { estateAccessKeys, getMyEstateAccess } from "../api/estateAccess";
+import { estateAccessKeys, getMyEstateAccess, type EstateAccess } from "../api/estateAccess";
 import { useRealtyScope } from "./useRealtyScope";
+
+/** Матрица ролей застройщика (`roles-matrix/me`); `undefined` — ещё не пришла или ручка недоступна. */
+export function useEstateAccess(enabled = true): EstateAccess | undefined {
+  const scope = useRealtyScope();
+  return useQuery({
+    queryKey: estateAccessKeys.me(scope),
+    queryFn: ({ signal }) => getMyEstateAccess(scope, signal),
+    enabled: enabled && scope.orgReady !== false,
+    staleTime: 5 * 60_000,
+    retry: false,
+  }).data;
+}
 
 /**
  * Видимость пунктов меню застройщика по матрице ролей бэка (`canSee`).
@@ -9,36 +21,11 @@ import { useRealtyScope } from "./useRealtyScope";
  * правам и модулям, как раньше, чтобы сбой матрицы не прятал всё меню.
  *
  * Экран, которого в матрице нет вовсе, матрица не прячет — решают права.
- * Так было с «Документами CRM»: ключа `documents` в `canSee` нет (test2,
- * 06.10.2026), и пункт пропал из меню у всех ролей, даже у суперадмина.
+ * «Документы CRM» бэк добавил в `canSee` 09.10.2026 (`documents`), запасной
+ * `?? true` оставлен для будущих экранов.
  */
 export function useEstateNav(enabled = true): ((screen: string) => boolean) | null {
-  const scope = useRealtyScope();
-  const access = useQuery({
-    queryKey: estateAccessKeys.me(scope),
-    queryFn: ({ signal }) => getMyEstateAccess(scope, signal),
-    enabled: enabled && scope.orgReady !== false,
-    staleTime: 5 * 60_000,
-    retry: false,
-  }).data;
+  const access = useEstateAccess(enabled);
   if (!access) return null;
   return (screen) => access.canSee[screen] ?? true;
-}
-
-/**
- * Уровень экрана из матрицы ролей (`none / view / edit / approve`); `null` —
- * матрица ещё не пришла или роль без ограничений (`nav = null`). Нужен там,
- * где одного права MamaDoc мало: `salary.manage` есть и у продажника, а
- * кнопки «Зарплаты» положены только при уровне `payroll` ≥ edit (гайд hr-ops §7).
- */
-export function useEstateLevel(screen: string, enabled = true): string | null {
-  const scope = useRealtyScope();
-  const access = useQuery({
-    queryKey: estateAccessKeys.me(scope),
-    queryFn: ({ signal }) => getMyEstateAccess(scope, signal),
-    enabled: enabled && scope.orgReady !== false,
-    staleTime: 5 * 60_000,
-    retry: false,
-  }).data;
-  return access?.levels[screen] ?? null;
 }

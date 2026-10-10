@@ -43,6 +43,8 @@ const time = (value: string | null) => (value ? dayjs(value).format("DD.MM.YYYY 
  */
 export function SecurityTab({ summary }: { summary: SecuritySummary | undefined }) {
   const { t } = useT("estateSettings");
+  // Без права завершать бэк отдаёт только свои сессии — и подписи, и таблица про «мои».
+  const own = summary?.sessionsScope === "own";
   return (
     <Box sx={{ display: "grid", gap: 2 }}>
       <KpiCards
@@ -52,7 +54,7 @@ export function SecurityTab({ summary }: { summary: SecuritySummary | undefined 
             ? [
                 {
                   key: "sessions",
-                  label: t("roles.security.kpi.sessions"),
+                  label: own ? t("roles.security.kpi.sessionsOwn") : t("roles.security.kpi.sessions"),
                   value: String(summary.activeSessions),
                   hint: t("roles.security.kpi.sessionsHint", { web: summary.sessionsWeb, mobile: summary.sessionsMobile }),
                 },
@@ -64,7 +66,7 @@ export function SecurityTab({ summary }: { summary: SecuritySummary | undefined 
       />
       <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) 360px" }, alignItems: "start" }}>
         <Box sx={{ display: "grid", gap: 2, minWidth: 0 }}>
-          <SessionsCard />
+          <SessionsCard own={own} />
           <PoliciesCard policies={summary?.policies ?? null} />
         </Box>
         <Box sx={{ display: "grid", gap: 2, minWidth: 0 }}>
@@ -84,7 +86,7 @@ export function SecurityTab({ summary }: { summary: SecuritySummary | undefined 
   );
 }
 
-function SessionsCard() {
+function SessionsCard({ own }: { own: boolean }) {
   const { t } = useT("estateSettings");
   const scope = useRealtyScope();
   const queryClient = useQueryClient();
@@ -108,6 +110,7 @@ function SessionsCard() {
   if (sessions.error) return <ScreenError error={sessions.error} onRetry={() => void sessions.refetch()} />;
   const rows = sessions.data ?? [];
   const others = rows.filter((s) => !s.isCurrent).length;
+  const canTerminate = perms.sessionsTerminate && !own;
 
   const columns: GridColDef<SecuritySession>[] = [
     { field: "name", headerName: t("roles.security.sessions.user"), flex: 1.2, minWidth: 180, renderCell: ({ row }) => <TwoLines strong top={row.name || "—"} bottom={row.roleName || null} /> },
@@ -129,7 +132,9 @@ function SessionsCard() {
     { field: "lastActivity", headerName: t("roles.security.sessions.lastActivity"), width: 150, valueFormatter: (value: string | null) => time(value) },
     { field: "createdAt", headerName: t("roles.security.sessions.createdAt"), width: 150, valueFormatter: (value: string | null) => time(value) },
   ];
-  if (perms.sessionsTerminate) {
+  // Только свои сессии — колонка «Сотрудник» не нужна.
+  if (own) columns.splice(0, 1);
+  if (canTerminate) {
     columns.push({
       field: "actions",
       headerName: "",
@@ -148,10 +153,10 @@ function SessionsCard() {
   return (
     <Box sx={{ ...cardSx, minWidth: 0, overflow: "hidden" }}>
       <CardHeader
-        title={t("roles.security.sessions.title")}
-        subtitle={t("roles.security.sessions.hint")}
+        title={own ? t("roles.security.sessions.titleOwn") : t("roles.security.sessions.title")}
+        subtitle={own ? t("roles.security.sessions.hintOwn") : t("roles.security.sessions.hint")}
         action={
-          perms.sessionsTerminate && others > 0 ? (
+          canTerminate && others > 0 ? (
             <Button size="small" variant="outlined" color="error" startIcon={<LogoutOutlined />} onClick={() => setEnding("all")} sx={{ whiteSpace: "nowrap" }}>
               {t("roles.security.sessions.terminateAll")}
             </Button>
@@ -295,7 +300,11 @@ function MyTwoFaCard() {
 const CODE_RE = /^\d{6}$/;
 /** Резервный код «3162-0BB3»: отключить 2FA бэк даёт и им (test2, 08.10) — на случай потерянного телефона. */
 const RECOVERY_RE = /^[0-9A-Z]{4}-?[0-9A-Z]{4}$/;
-const codeFieldError = (error: unknown) => getErrorFields(error)?.code ?? null;
+// Повтор кода и неверный код — по полю code; «2FA не подключена — отключать нечего» — по полю method.
+const codeFieldError = (error: unknown) => {
+  const fields = getErrorFields(error);
+  return fields?.code ?? fields?.method ?? null;
+};
 
 function CodeField({ value, onChange, error, autoFocus = false, recovery = false }: { value: string; onChange: (value: string) => void; error: string | null; autoFocus?: boolean; recovery?: boolean }) {
   const { t } = useT("estateSettings");

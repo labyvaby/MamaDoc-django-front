@@ -17,7 +17,7 @@ describe("bankFits", () => {
 });
 
 describe("fromRawApplication", () => {
-  it("деньги строками, банки в любой из форм, выбранный банк объектом", () => {
+  it("деньги строками, банки заявки — {bankId, bankName}, выбранный банк — bankChosenId", () => {
     const app = fromRawApplication({
       id: 6,
       number: "ИП-006",
@@ -29,10 +29,12 @@ describe("fromRawApplication", () => {
       term: 15,
       status: "approved",
       banks: [
-        { bankId: 1, name: "Оптима Банк", status: "approved", rate: 16.5 },
-        { bank: { id: 3, name: "KICB" }, status: "review" },
+        { bankId: 1, bankName: "Оптима Банк", status: "approved", rate: "16.50" },
+        { bankId: 3, bankName: "KICB", status: "review", rate: null },
       ],
-      bankChosen: { id: 1, name: "Оптима Банк" },
+      // Форма с 09.10.2026: id — bankChosenId, bankChosen — название строкой.
+      bankChosenId: 1,
+      bankChosen: "Оптима Банк",
       docs: [{ id: 21, name: "Паспорт", ok: true }],
     });
     expect(app.amount).toBe(5_174_000);

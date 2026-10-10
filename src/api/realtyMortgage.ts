@@ -5,10 +5,9 @@ import { realtyHeaders, type RealtyScope } from "./realestate";
  * «Ипотека и банки» застройщика (AIVIO) — заявки покупателей, решения банков,
  * калькулятор, банки-партнёры.
  *
- * Контракт — гайд бэка `frontend-sales.md` §8 (05.10.2026). Сводка, банк и
- * калькулятор приведены в гайде целиком; у заявки гайд даёт форму
- * «сокращено» — элементы `banks[]` разбираем защитно (`bankId`/`id`,
- * `name`/`bankName`), сверить с живым ответом.
+ * Контракт — гайд бэка `frontend-sales.md` §8 и §14. У заявки `banks[]` —
+ * `{bankId, bankName, …}`, выбранный банк — `bankChosenId` (`bankChosen` —
+ * его название); у калькулятора банк — `{bankId, name, …}`.
  * - отправить в банки: банк не подходит по сроку/взносу → 400 с названием;
  *   фронт серит такие банки заранее тем же правилом (`bankFits`);
  * - выбрать банк у неодобренной заявки → 409 `INVALID_STATE`;
@@ -198,7 +197,8 @@ export const fromRawApplication = (raw: any): MortgageApplication => ({
   banks: Array.isArray(raw.banks) ? raw.banks.map(fromRawApplicationBank) : [],
   docs: Array.isArray(raw.docs) ? raw.docs.map((d: any) => ({ id: d.id, name: d.name ?? "", ok: Boolean(d.ok), fileUrl: d.fileUrl ?? "" })) : [],
   history: Array.isArray(raw.history) ? raw.history.map((h: any) => ({ at: h.at ?? "", by: h.by ?? "", text: h.text ?? "" })) : [],
-  bankChosen: raw.bankChosen && typeof raw.bankChosen === "object" ? (raw.bankChosen.id ?? raw.bankChosen.bankId ?? null) : (raw.bankChosen ?? null),
+  // id выбранного банка — `bankChosenId`; `bankChosen` у бэка — название строкой (ответ 09.10.2026, §3).
+  bankChosen: numOrNull(raw.bankChosenId),
   createdAt: raw.createdAt ?? "",
 });
 

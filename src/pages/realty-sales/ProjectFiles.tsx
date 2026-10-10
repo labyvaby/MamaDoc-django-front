@@ -228,7 +228,8 @@ const ACCEPT: Record<ProjectFileKind, string> = {
   photo: "image/*",
   facade: "image/*",
   render: "image/*",
-  plan: "image/*,application/pdf",
+  // План рисуется <img> — бэк принимает только JPG / PNG / WEBP (PDF → 400).
+  plan: "image/jpeg,image/png,image/webp",
   presentation: "application/pdf,.pdf,.ppt,.pptx",
   document: "application/pdf,.pdf,.doc,.docx,.xls,.xlsx,image/*",
 };

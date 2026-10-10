@@ -4,16 +4,20 @@
  */
 import React from "react";
 import { Box, Button, ButtonBase, IconButton, Typography } from "@mui/material";
+import { useSnackbar } from "notistack";
 import { alpha, type Theme } from "@mui/material/styles";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import CompareArrowsOutlined from "@mui/icons-material/CompareArrowsOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import RemoveOutlined from "@mui/icons-material/RemoveOutlined";
 
 import type { Project, Unit, UnitDetails, UnitEventType, UnitOffer } from "../../../../api/realestate";
+import { downloadProtectedFile } from "../../../../api/protectedFile";
 import { unitPlan, unitRenders } from "../../../../api/realtyFiles";
 import { ProtectedImage } from "../../../../components/realty/ProtectedImage";
 import { AppButton } from "../../../../components/ui";
+import { useRealtyScope } from "../../../../hooks/useRealtyScope";
 import { useT } from "../../../../i18n/VerticalProvider";
 import { subtleBg } from "../../../../theme/uiHelpers";
 import {
@@ -801,6 +805,8 @@ const planRoomSx = (t: Theme) => ({
 
 export function FloorPlan({ unit }: { unit: UnitDetails }) {
   const { t } = useT("realestate");
+  const scope = useRealtyScope();
+  const { enqueueSnackbar } = useSnackbar();
   const balcony = balconyLabel(unit);
   const terrace = terraceLabel(unit);
   // Загруженный план планировки важнее схемы, нарисованной по площадям комнат.
@@ -809,7 +815,14 @@ export function FloorPlan({ unit }: { unit: UnitDetails }) {
     return (
       <Box component="section" sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: "14px", bgcolor: "background.paper" }}>
         <SectionTitle title={t("card.planTitle")} text={plan.note || t("card.planText")} />
-        <ProtectedImage url={plan.url} alt={plan.title || t("card.planTitle")} fit="contain" sx={(th) => ({ height: { xs: 260, md: 340 }, borderRadius: "10px", overflow: "hidden", bgcolor: subtleBg(th) })} />
+        {plan.pdf ? (
+          // План, загруженный PDF до 09.10.2026: в <img> не показать — только скачать.
+          <Button variant="outlined" startIcon={<FileDownloadOutlined />} onClick={() => void downloadProtectedFile(plan.url, plan.title || t("card.planPdf"), scope).catch((error) => enqueueSnackbar(error instanceof Error ? error.message : String(error), { variant: "error" }))}>
+            {plan.title || t("card.planPdf")}
+          </Button>
+        ) : (
+          <ProtectedImage url={plan.url} alt={plan.title || t("card.planTitle")} fit="contain" sx={(th) => ({ height: { xs: 260, md: 340 }, borderRadius: "10px", overflow: "hidden", bgcolor: subtleBg(th) })} />
+        )}
       </Box>
     );
   }

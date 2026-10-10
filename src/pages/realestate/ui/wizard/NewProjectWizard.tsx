@@ -17,6 +17,7 @@ import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ProjectCreateError, createProjectWithUnits, realEstateKeys, type RealtyScope } from "../../../../api/realestate";
+import { useEstateAccess } from "../../../../hooks/useEstateNav";
 import { useRealtyScope } from "../../../../hooks/useRealtyScope";
 import { usePermissions } from "../../../../hooks/usePermissions";
 import { useT } from "../../../../i18n/VerticalProvider";
@@ -73,10 +74,11 @@ export function NewProjectWizard({
   const { t } = useT("realestate");
   const scope = useRealtyScope();
   const { activeBranch, activeMembership, isSuperAdmin } = usePermissions();
-  // Без филиала в сессии бэк делает ЖК общим только сотруднику без ограничений по филиалам.
-  // В /auth/me ограничение не видно (branches — доступные филиалы), поэтому «общий» обещаем
-  // только владельцу и суперпользователю — у них ограничений не бывает.
-  const unrestricted = isSuperAdmin() || Boolean(activeMembership?.isOwner);
+  // Без филиала в сессии бэк делает ЖК общим только сотруднику без ограничений по филиалам —
+  // флаг `branchRestricted` из roles-matrix/me. Пока матрица не пришла, «общий» обещаем
+  // только владельцу и суперпользователю: у них ограничений не бывает.
+  const access = useEstateAccess(open);
+  const unrestricted = access ? !access.branchRestricted : isSuperAdmin() || Boolean(activeMembership?.isOwner);
   const queryClient = useQueryClient();
   const isPhone = useMediaQuery((theme: Theme) => theme.breakpoints.down("md"));
 

@@ -154,7 +154,7 @@ const grid2 = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1.5 } as c
 
 // ─── ЖК ────────────────────────────────────────────────────────────────────
 
-export function ProjectEditDrawer({ project, onClose, onSaved }: { project: CatalogProject | null; onClose: () => void; onSaved: (fresh: CatalogProject, patch: ProjectPatch) => void }) {
+export function ProjectEditDrawer({ project, onClose, onSaved }: { project: CatalogProject | null; onClose: () => void; onSaved: (fresh: CatalogProject) => void }) {
   const { t } = useT("realtySales");
   const scope = useRealtyScope();
   const initial = React.useMemo(() => (project ? projectForm(project) : null), [project]);
@@ -164,7 +164,7 @@ export function ProjectEditDrawer({ project, onClose, onSaved }: { project: Cata
   }, [initial, reset]);
   const save = useMutation({
     mutationFn: (patch: ProjectPatch) => updateCatalogProject(project?.id as number, patch, scope),
-    onSuccess: (fresh, patch) => onSaved(fresh, patch),
+    onSuccess: (fresh) => onSaved(fresh),
   });
   React.useEffect(() => save.reset(), [project]); // eslint-disable-line react-hooks/exhaustive-deps -- сбросить ошибку при новом ЖК
   return (

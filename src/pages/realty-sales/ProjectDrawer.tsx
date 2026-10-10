@@ -34,7 +34,6 @@ import {
   getPromotions,
   getUnitLayouts,
   realtyCatalogKeys,
-  unsavedFields,
   type CatalogProject,
   type CatalogSection,
   type Promotion,
@@ -352,13 +351,11 @@ export function ProjectDrawer({ projectId, onClose }: { projectId: number | null
         <ProjectEditDrawer
           project={editing?.kind === "project" ? editing.item : null}
           onClose={() => setEditing(null)}
-          onSaved={(fresh, patch) => {
+          onSaved={(fresh) => {
             queryClient.setQueryData(realtyCatalogKeys.project(scope, fresh.id), fresh);
-            const lost = unsavedFields(patch, fresh);
             setEditing(null);
             refresh();
-            if (lost.length) enqueueSnackbar(t("catalog.drawer.notSaved", { fields: lost.map((key) => t(`catalog.forms.${fieldLabel[key] ?? key}`)).join(", ") }), { variant: "warning" });
-            else enqueueSnackbar(t("catalog.drawer.saved"), { variant: "success" });
+            enqueueSnackbar(t("catalog.drawer.saved"), { variant: "success" });
           }}
         />
       )}
@@ -408,11 +405,6 @@ export function ProjectDrawer({ projectId, onClose }: { projectId: number | null
     </>
   );
 }
-
-/** Ключ PATCH → подпись поля формы для предупреждения «сервер не сохранил». */
-const fieldLabel: Record<string, string> = {
-  defaultReservationAmount: "reservationAmount",
-};
 
 function Section({ title, onAdd, children }: { title: string; onAdd?: () => void; children: React.ReactNode }) {
   const { t } = useT("realtySales");

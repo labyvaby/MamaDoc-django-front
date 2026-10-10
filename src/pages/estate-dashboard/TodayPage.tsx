@@ -18,6 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { alpha } from "@mui/material/styles";
 import { useSearchParams } from "react-router";
 import { useSnackbar } from "notistack";
 import dayjs from "dayjs";
@@ -98,7 +99,19 @@ function TodayScreen() {
       },
       { replace: true },
     );
-  const goTo = (next: string) => setParam("date", next === today ? null : next);
+  // Задача из «Фокуса дня» (`?task=`) — подсвечена; при смене дня подсветка уходит.
+  const highlightId = Number(searchParams.get("task")) || null;
+  const goTo = (next: string) =>
+    setSearchParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (next === today) out.delete("date");
+        else out.set("date", next);
+        out.delete("task");
+        return out;
+      },
+      { replace: true },
+    );
 
   const [kind, setKind] = React.useState<KindFilter>("all");
   const [drawer, setDrawer] = React.useState<TaskDrawerMode | null>(null);
@@ -261,6 +274,7 @@ function TodayScreen() {
                   key={task.id}
                   task={task}
                   divider={index > 0}
+                  highlighted={task.id === highlightId}
                   canManage={canManage}
                   onToggle={(done) => toggle.mutate({ task, done })}
                   onReschedule={() => setDrawer({ kind: "reschedule", task })}
@@ -295,6 +309,7 @@ function TodayScreen() {
 function TaskRow({
   task,
   divider,
+  highlighted,
   canManage,
   onToggle,
   onReschedule,
@@ -303,6 +318,7 @@ function TaskRow({
 }: {
   task: RealtyTaskItem;
   divider: boolean;
+  highlighted: boolean;
   canManage: boolean;
   onToggle: (done: boolean) => void;
   onReschedule: () => void;
@@ -311,6 +327,10 @@ function TaskRow({
 }) {
   const { t } = useT("estateDashboard");
   const [menu, setMenu] = React.useState<HTMLElement | null>(null);
+  const rowRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlighted]);
   const pick = (action: () => void) => () => {
     setMenu(null);
     action();
@@ -325,7 +345,19 @@ function TaskRow({
     task.manager,
   ].filter(Boolean);
   return (
-    <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, px: { xs: 1, md: 1.5 }, py: 1.25, borderTop: divider ? 1 : 0, borderColor: "divider" }}>
+    <Box
+      ref={rowRef}
+      sx={(th) => ({
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 1,
+        px: { xs: 1, md: 1.5 },
+        py: 1.25,
+        borderTop: divider ? 1 : 0,
+        borderColor: "divider",
+        bgcolor: highlighted ? alpha(th.palette.primary.main, th.palette.mode === "dark" ? 0.16 : 0.08) : undefined,
+      })}
+    >
       {canManage && (
         <Checkbox checked={task.done} onChange={(e) => onToggle(e.target.checked)} inputProps={{ "aria-label": task.text }} size="small" sx={{ mt: -0.25 }} />
       )}

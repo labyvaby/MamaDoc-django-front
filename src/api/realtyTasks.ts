@@ -177,13 +177,15 @@ export interface FocusItem {
   title: string;
   text: string;
   count: number;
-  /** Экран подсказки: leads / today / booking / billing / showings… */
+  /** Экран подсказки — ровно leads / today / booking / billing (`showings` с 09.10.2026 не приходит). */
   view: string;
   leadId: number | null;
   taskId: number | null;
   reservationId: number | null;
   billingAccountId: number | null;
   amount: number | null;
+  /** День задачи `taskId` (YYYY-MM-DD) у overdue-tasks и shows-today, у остальных null. */
+  date: string | null;
 }
 
 export interface TaskFocus {
@@ -213,6 +215,7 @@ export function fromRawFocus(raw: any): TaskFocus {
       reservationId: idOrNull(item.reservationId),
       billingAccountId: idOrNull(item.billingAccountId),
       amount: item.amount == null || item.amount === "" ? null : Number(item.amount),
+      date: typeof item.date === "string" && item.date ? item.date : null,
     })),
   };
 }

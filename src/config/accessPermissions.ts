@@ -73,7 +73,7 @@ export const PAGE_PERMISSIONS = {
   supply: "supply.view",
   // Кадры застройщика: сотрудники и табель — /api/v2/personnel/, кнопки — personnel.manage (+ staff.update).
   personnel: "personnel.view",
-  // Ведомость зарплаты застройщика — /api/v2/salary/runs/, кнопки — salary.manage + уровень payroll в матрице.
+  // Ведомость зарплаты застройщика — /api/v2/salary/runs/, кнопки — salary.payroll.manage.
   estatePayroll: "salary.view",
   // Эксплуатация застройщика: приёмка и ключи, сервис жильцов — /api/v2/estate-ops/, кнопки — estate_ops.manage.
   estateOps: "estate_ops.view",

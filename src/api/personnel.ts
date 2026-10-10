@@ -81,8 +81,12 @@ export interface PersonnelEvent {
 export interface EmployeeCard {
   employee: Employee;
   headName: string;
-  /** Трудовой договор, приказы: у бэка `{name, number, date}`, ссылки и id нет (test2, 08.10). */
-  documents: { id: number | null; name: string; number: string; date: string | null; url: string }[];
+  /**
+   * Трудовой договор, приказы. `docId` — документ ЭДО этого сотрудника
+   * (`/edo?doc=`), `url` — защищённый файл (blob, право `edo.view`); оба
+   * бывают null: у договора нет документа в ЭДО, у черновика — файла.
+   */
+  documents: { docId: number | null; name: string; number: string; date: string | null; url: string | null }[];
   events: PersonnelEvent[];
   currentMonth: { month: string; worked: number; workdays: number; vacation: number; sick: number };
 }
@@ -204,7 +208,7 @@ export const fromRawEvent = (raw: any): PersonnelEvent => ({
 export const fromRawCard = (raw: any): EmployeeCard => ({
   employee: fromRawEmployee(raw?.employee ?? raw ?? {}),
   headName: str(raw?.headName),
-  documents: list(raw?.documents).map((d) => ({ id: d.id ?? null, name: str(d.name ?? d.title), number: str(d.number), date: d.date ?? null, url: str(d.url ?? d.fileUrl) })),
+  documents: list(raw?.documents).map((d) => ({ docId: numOrNull(d.docId), name: str(d.name), number: str(d.number), date: d.date ?? null, url: str(d.url) || null })),
   events: list(raw?.events).map(fromRawEvent),
   currentMonth: {
     month: str(raw?.currentMonth?.month),
@@ -315,8 +319,9 @@ export async function getBirthdays(days: number, scope?: RealtyScope, signal?: A
     id: b.id ?? b.employeeId,
     name: str(b.name),
     position: str(b.position),
-    date: str(b.date ?? b.birthday),
-    daysLeft: numOrNull(b.daysLeft ?? b.inDays),
+    // `next` — ближайший день рождения, `days` — дней до него; `birthday` — сама дата рождения.
+    date: str(b.next ?? b.birthday),
+    daysLeft: numOrNull(b.days),
   }));
 }
 
@@ -375,10 +380,16 @@ export async function raiseEmployee(id: number, body: { position: string; salary
 
 export type AbsenceKind = "vacation" | "sick" | "trip";
 
-/** Отпуск / больничный / командировка: задевает закрытый месяц табеля — 400. */
-export async function registerAbsence(id: number, kind: AbsenceKind, body: { from: string; days: number; type?: VacationType; note?: string }, scope?: RealtyScope): Promise<EmployeeCard> {
+/**
+ * Отпуск / больничный / командировка. 400: задевает закрытый месяц табеля;
+ * пересекается с другим отсутствием (`details.fields.from`, больничный поверх
+ * отпуска можно); ежегодный отпуск сверх остатка (`details.fields.days`) —
+ * разрешается только с `advance: true` («Авансом»).
+ */
+export async function registerAbsence(id: number, kind: AbsenceKind, body: { from: string; days: number; type?: VacationType; note?: string; advance?: boolean }, scope?: RealtyScope): Promise<EmployeeCard> {
   const payload: Record<string, unknown> = { from: body.from, days: body.days };
   if (kind === "vacation") payload.type = body.type ?? "annual";
+  if (kind === "vacation" && body.advance) payload.advance = true;
   else if (body.note?.trim()) payload.note = body.note.trim();
   return fromRawCard(await post(scope, `/employees/${id}/${kind}/`, payload));
 }
@@ -438,6 +449,8 @@ export interface StaffingPosition {
   /** Сверх штата. */
   over: number;
   inRecruitment: number;
+  /** Свободно под новую вакансию: max(headcount − filled − inRecruitment, 0) — считает бэк. */
+  free: number;
   employees: StaffingEmployee[];
   note: string;
   sortOrder: number;
@@ -454,7 +467,7 @@ export interface StaffingDepartment {
 }
 
 export interface Staffing {
-  totals: { positions: number; headcount: number; filled: number; vacant: number; over: number; fund: number; openVacancies: number; unassigned: number };
+  totals: { positions: number; headcount: number; filled: number; vacant: number; over: number; fund: number; openVacancies: number; unassigned: number; inRecruitment: number; free: number };
   departments: StaffingDepartment[];
 }
 
@@ -503,6 +516,7 @@ export const fromRawStaffingPosition = (raw: any): StaffingPosition => ({
   vacant: num(raw.vacant),
   over: num(raw.over),
   inRecruitment: num(raw.inRecruitment),
+  free: num(raw.free),
   employees: list(raw.employees).map((e) => ({ id: e.id, name: str(e.name), status: str(e.status) })),
   note: str(raw.note),
   sortOrder: num(raw.sortOrder),
@@ -518,6 +532,8 @@ export const fromRawStaffing = (raw: any): Staffing => ({
     fund: num(raw?.totals?.fund),
     openVacancies: num(raw?.totals?.openVacancies),
     unassigned: num(raw?.totals?.unassigned),
+    inRecruitment: num(raw?.totals?.inRecruitment),
+    free: num(raw?.totals?.free),
   },
   departments: list(raw?.departments).map((d) => ({
     deptId: numOrNull(d.deptId),
@@ -621,9 +637,14 @@ export async function updateVacancy(id: number, patch: Partial<Omit<VacancyInput
 
 /**
  * «Принять по вакансии» — обычный приём (договор и приказ в ЭДО); закрытая по
- * ставкам вакансия закрывается сама. Ответ — `{vacancy, employee: <карточка>}`
- * (test2, 08.10), не карточка, как у `POST /employees/`.
+ * ставкам вакансия закрывается сама. Ответ — всегда `{vacancy, employee: <карточка>}`
+ * (контракт с 09.10.2026), не карточка, как у `POST /employees/`.
  */
+/** Удалить вакансию без принятых; по ней уже приняли → 409 `VACANCY_HAS_HIRES` (закрыть или отменить). */
+export async function deleteVacancy(id: number, scope?: RealtyScope): Promise<void> {
+  await personnel(scope, `/vacancies/${id}/`, { method: "DELETE" });
+}
+
 export async function hireByVacancy(id: number, input: EmployeeInput, scope?: RealtyScope): Promise<{ vacancy: Vacancy | null; card: EmployeeCard }> {
   const raw = await post<{ vacancy?: unknown; employee?: unknown }>(scope, `/vacancies/${id}/hire/`, employeeBody(input));
   return { vacancy: raw?.vacancy ? fromRawVacancy(raw.vacancy) : null, card: fromRawCard(raw?.employee ?? raw) };

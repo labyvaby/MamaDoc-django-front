@@ -338,7 +338,7 @@ export type EdoAction =
   | { kind: "comment"; text: string }
   | { kind: "additionalAgreement"; title: string; changes: string[]; amount: number | null; deadline: string | null }
   | { kind: "terminate"; reason: string }
-  | { kind: "archive" }
+  | { kind: "archive"; exportTo1C: boolean }
   | { kind: "export1c" };
 
 export async function runEdoAction(id: number, action: EdoAction, scope?: RealtyScope): Promise<void> {
@@ -372,8 +372,8 @@ export async function runEdoAction(id: number, action: EdoAction, scope?: Realty
     case "terminate":
       return void (await post("terminate/", { reason: action.reason }));
     case "archive":
-      // Тело как в гайде — пустое: бэк по умолчанию (exportTo1C=true) ещё и выгружает в 1С.
-      return void (await post("archive/"));
+      // С 09.10.2026 пустое тело — только архив, без выгрузки в 1С; выгрузка — явным флагом.
+      return void (await post("archive/", action.exportTo1C ? { exportTo1C: true } : undefined));
     case "export1c":
       return void (await post("export-1c/"));
   }

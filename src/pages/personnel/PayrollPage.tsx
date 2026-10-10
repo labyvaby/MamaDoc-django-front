@@ -9,7 +9,6 @@ import ChevronRightOutlined from "@mui/icons-material/ChevronRightOutlined";
 
 import { getPayroll, getPayslip, payrollActions, payrollKeys, previousMonth, runPayrollAction, type PayrollAction, type PayrollRow, type PayrollRun } from "../../api/salaryPayroll";
 import { useCan } from "../../hooks/useCan";
-import { useEstateLevel } from "../../hooks/useEstateNav";
 import { usePageTitle } from "../../hooks/usePageTitle";
 import { useRealtyScope } from "../../hooks/useRealtyScope";
 import { useT } from "../../i18n/VerticalProvider";
@@ -27,8 +26,8 @@ const runTone = (status: string) => (status === "paid" ? "success" : status === 
  * «Зарплата» застройщика (AIVIO, гайд `frontend-hr-ops.md` §3): ведомость
  * месяца или прогноз, если её ещё нет; «Рассчитать → Утвердить (приказ в
  * ЭДО) → В банк» по статусу. Месяц — `?month=`, по умолчанию прошлый.
- * Кнопки — `salary.manage` **и** уровень `payroll` ∈ {edit, approve} в
- * матрице ролей: `salary.manage` есть и у продажника (вопрос бэка №2).
+ * Кнопки — `salary.payroll.manage` (отдельное право с 09.10.2026; `salary.manage`
+ * теперь только «Планы и мотивация»).
  */
 export default function PayrollPage() {
   const { t } = useT("personnel");
@@ -46,9 +45,7 @@ function PayrollScreen() {
   const queryClient = useQueryClient();
   const refresh = useRefreshPersonnel();
   const { enqueueSnackbar } = useSnackbar();
-  const level = useEstateLevel("payroll");
-  // Матрица не пришла или роль без ограничений (`nav = null`) — решает право.
-  const canManage = useCan("salary.manage") && (level == null || level === "edit" || level === "approve");
+  const canManage = useCan("salary.payroll.manage");
   const [searchParams, setSearchParams] = useSearchParams();
   const month = /^\d{4}-\d{2}$/.test(searchParams.get("month") ?? "") ? (searchParams.get("month") as string) : previousMonth();
   const [confirm, setConfirm] = React.useState<"approve" | "pay" | null>(null);

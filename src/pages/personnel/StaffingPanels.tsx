@@ -14,6 +14,7 @@ import {
   createStaffingPosition,
   createVacancy,
   deleteStaffingPosition,
+  deleteVacancy,
   downloadStaffingCsv,
   getStaffing,
   getVacancies,
@@ -283,11 +284,15 @@ function StaffingPositionDrawer({ position, onClose }: { position: StaffingPosit
           <>
             <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{t("staffing.form.filledHint", { filled: existing.filled, headcount: existing.headcount })}</Typography>
             <Box>
-              {/* Занятую позицию бэк не удаляет (400 «переведите их или уменьшите штат»). */}
-              <Button color="error" size="small" startIcon={<DeleteOutlineOutlined />} onClick={() => setConfirmDelete(true)} disabled={save.isPending || existing.filled > 0}>
+              {/* Занятую позицию или позицию с открытой вакансией бэк не удаляет: 409 POSITION_HAS_EMPLOYEES / POSITION_HAS_VACANCIES. */}
+              <Button color="error" size="small" startIcon={<DeleteOutlineOutlined />} onClick={() => setConfirmDelete(true)} disabled={save.isPending || existing.filled > 0 || existing.inRecruitment > 0}>
                 {t("staffing.form.delete")}
               </Button>
-              {existing.filled > 0 && <Typography sx={{ mt: 0.5, fontSize: "0.75rem", color: "text.secondary" }}>{t("staffing.form.deleteBlocked", { count: existing.filled })}</Typography>}
+              {existing.filled > 0 ? (
+                <Typography sx={{ mt: 0.5, fontSize: "0.75rem", color: "text.secondary" }}>{t("staffing.form.deleteBlocked", { count: existing.filled })}</Typography>
+              ) : existing.inRecruitment > 0 ? (
+                <Typography sx={{ mt: 0.5, fontSize: "0.75rem", color: "text.secondary" }}>{t("staffing.form.deleteBlockedVacancy")}</Typography>
+              ) : null}
             </Box>
           </>
         )}
@@ -312,6 +317,9 @@ export function VacanciesPanel({ canManage, onOpen, onCreate }: { canManage: boo
   const { t } = useT("personnel");
   const scope = useRealtyScope();
   const vacancies = useQuery({ queryKey: personnelKeys.vacancies(scope, "open"), queryFn: ({ signal }) => getVacancies("open", scope, signal), enabled: scope.orgReady !== false, staleTime: 30_000, retry: false });
+  const staffing = useQuery({ queryKey: personnelKeys.staffing(scope, null), queryFn: ({ signal }) => getStaffing(null, scope, signal), enabled: canManage && scope.orgReady !== false, staleTime: 60_000, retry: false });
+  // Все ставки заняты или в подборе — бэк не откроет вакансию (400 по openings), «+» гасим заранее.
+  const noFree = staffing.data?.totals.free === 0;
   // Панель вспомогательная: без ручки (старый бэк) или без права — не показываем.
   if (vacancies.error) return null;
   const rows = vacancies.data;
@@ -321,10 +329,12 @@ export function VacanciesPanel({ canManage, onOpen, onCreate }: { canManage: boo
         title={rows ? t("vacancies.title", { count: rows.length }) : t("vacancies.titleShort")}
         action={
           canManage && (
-            <Tooltip title={t("vacancies.add")}>
-              <IconButton size="small" aria-label={t("vacancies.add")} onClick={onCreate}>
-                <AddOutlined fontSize="small" />
-              </IconButton>
+            <Tooltip title={noFree ? t("vacancies.form.noFreeHint") : t("vacancies.add")}>
+              <span>
+                <IconButton size="small" aria-label={t("vacancies.add")} onClick={onCreate} disabled={noFree}>
+                  <AddOutlined fontSize="small" />
+                </IconButton>
+              </span>
             </Tooltip>
           )
         }
@@ -356,8 +366,6 @@ export function VacanciesPanel({ canManage, onOpen, onCreate }: { canManage: boo
 
 type T = (key: string, options?: Record<string, unknown>) => string;
 
-/** Ставок, под которые ещё можно открыть вакансию: свободные минус уже в подборе. */
-const freeForVacancy = (p: Pick<StaffingPosition, "vacant" | "inRecruitment">) => Math.max(0, p.vacant - p.inRecruitment);
 const statusLabel = (v: Pick<Vacancy, "status" | "statusLabel">, t: T) => t(`vacancies.status.${v.status}`, { defaultValue: v.statusLabel || v.status });
 
 /**
@@ -371,6 +379,7 @@ export function VacancyDrawer({ id, canManage, onClose, onHire }: { id: number |
   const { enqueueSnackbar } = useSnackbar();
   const [editing, setEditing] = React.useState(false);
   const [closing, setClosing] = React.useState<"closed" | "cancelled" | null>(null);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
   // Отдельной деталки в гайде нет — берём из списка (все вакансии, с закрытыми).
   const all = useQuery({ queryKey: personnelKeys.vacancies(scope, null), queryFn: ({ signal }) => getVacancies(null, scope, signal), enabled: id != null && scope.orgReady !== false, staleTime: 15_000 });
   const vacancy = all.data?.find((v) => v.id === id) ?? null;
@@ -385,12 +394,25 @@ export function VacancyDrawer({ id, canManage, onClose, onHire }: { id: number |
     onError: (error) => enqueueSnackbar(message(error, t("common.failed")), { variant: "error" }),
   });
 
+  // Удаляется только вакансия, по которой никого не приняли; иначе 409 VACANCY_HAS_HIRES — закрыть или отменить.
+  const remove = useMutation({
+    mutationFn: () => deleteVacancy(id as number, scope),
+    onSuccess: () => {
+      setConfirmDelete(false);
+      refresh();
+      enqueueSnackbar(t("vacancies.deleted"), { variant: "success" });
+      onClose();
+    },
+  });
+
   React.useEffect(() => {
     if (id == null) {
       setEditing(false);
       setClosing(null);
+      setConfirmDelete(false);
+      remove.reset();
     }
-  }, [id]);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps -- сброс при закрытии карточки
 
   return (
     <>
@@ -464,6 +486,13 @@ export function VacancyDrawer({ id, canManage, onClose, onHire }: { id: number |
                   </Button>
                 </Box>
               )}
+              {canManage && vacancy.hired === 0 && (
+                <Box sx={{ pt: 1, borderTop: 1, borderColor: "divider" }}>
+                  <Button color="error" size="small" startIcon={<DeleteOutlineOutlined />} disabled={setStatus.isPending} onClick={() => setConfirmDelete(true)}>
+                    {t("vacancies.delete")}
+                  </Button>
+                </Box>
+              )}
             </>
           )}
         </Box>
@@ -479,6 +508,17 @@ export function VacancyDrawer({ id, canManage, onClose, onHire }: { id: number |
         error={null}
         onConfirm={() => closing && setStatus.mutate(closing)}
         onClose={() => setClosing(null)}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        title={t("vacancies.deleteConfirm.title")}
+        text={t("vacancies.deleteConfirm.text")}
+        confirmLabel={t("vacancies.delete")}
+        danger
+        busy={remove.isPending}
+        error={remove.error}
+        onConfirm={() => remove.mutate()}
+        onClose={() => setConfirmDelete(false)}
       />
     </>
   );
@@ -520,17 +560,17 @@ export function VacancyFormDrawer({ open, vacancy, onClose, onCreated }: { open:
     setTitle(p.title);
     setSalary(String(p.salary));
     // Сколько людей искать — по умолчанию все ставки, которые ещё не в подборе.
-    if (freeForVacancy(p) > 0) setOpenings(String(freeForVacancy(p)));
+    if (p.free > 0) setOpenings(String(p.free));
   };
   const picked = positions.find((x) => x.id === positionId);
-  const noFree = positions.length > 0 && positions.every((p) => freeForVacancy(p) === 0);
+  const noFree = positions.length > 0 && positions.every((p) => p.free === 0);
 
   const ints = { openings: Number(openings), candidates: Number(candidates), responses: Number(responses) };
   const badInt = (value: number, min: number) => !Number.isInteger(value) || value < min;
   const salaryValue = parseNumber(salary);
   // Вакансия всегда на штатную единицу: без `positionId` бэк отвечает 400 (test2, 08.10).
   // Мест не больше свободных ставок позиции за вычетом уже открытых вакансий — иначе 400.
-  const tooMany = vacancy == null && picked != null && ints.openings > freeForVacancy(picked);
+  const tooMany = vacancy == null && picked != null && ints.openings > picked.free;
   const invalid = { position: vacancy == null && positionId === "", title: !title.trim(), openings: badInt(ints.openings, 1) || tooMany, candidates: badInt(ints.candidates, 0), responses: badInt(ints.responses, 0), salary: salary.trim() !== "" && (salaryValue == null || salaryValue < 0) };
   const hasErrors = Object.values(invalid).some(Boolean);
   const input = (): VacancyInput => ({ positionId: positionId === "" ? null : positionId, title, openings: ints.openings, salary: salaryValue != null ? String(salaryValue) : "", candidates: ints.candidates, responses: ints.responses, note });
@@ -583,16 +623,16 @@ export function VacancyFormDrawer({ open, vacancy, onClose, onCreated }: { open:
           helperText={noFree ? t("vacancies.form.noFreeHint") : touched && invalid.position ? t("common.required") : t("vacancies.form.positionHint")}
         >
           {positions.map((p) => (
-            <MenuItem key={p.id} value={p.id} disabled={freeForVacancy(p) === 0}>
+            <MenuItem key={p.id} value={p.id} disabled={p.free === 0}>
               {[p.deptName, p.title].filter(Boolean).join(" · ")}
-              {` — ${freeForVacancy(p) > 0 ? t("vacancies.form.vacant", { count: freeForVacancy(p) }) : t("vacancies.form.noFree")}`}
+              {` — ${p.free > 0 ? t("vacancies.form.vacant", { count: p.free }) : t("vacancies.form.noFree")}`}
             </MenuItem>
           ))}
         </TextField>
       )}
       <TextField size="small" label={t("vacancies.form.title")} value={title} onChange={(e) => setTitle(e.target.value)} error={touched && invalid.title} helperText={touched && invalid.title ? t("common.required") : undefined} />
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5 }}>
-        <TextField size="small" label={t("vacancies.form.openings")} value={openings} inputMode="numeric" onChange={(e) => setOpenings(e.target.value)} error={touched && invalid.openings} helperText={touched && tooMany && picked ? t("vacancies.form.tooMany", { count: freeForVacancy(picked) }) : numberHelp(invalid.openings)} />
+        <TextField size="small" label={t("vacancies.form.openings")} value={openings} inputMode="numeric" onChange={(e) => setOpenings(e.target.value)} error={touched && invalid.openings} helperText={touched && tooMany && picked ? t("vacancies.form.tooMany", { count: picked.free }) : numberHelp(invalid.openings)} />
         <TextField size="small" label={t("vacancies.form.salary")} value={salary} inputMode="decimal" onChange={(e) => setSalary(e.target.value)} error={touched && invalid.salary} helperText={numberHelp(invalid.salary)} />
         <TextField size="small" label={t("vacancies.form.candidates")} value={candidates} inputMode="numeric" onChange={(e) => setCandidates(e.target.value)} error={touched && invalid.candidates} helperText={numberHelp(invalid.candidates)} />
         <TextField size="small" label={t("vacancies.form.responses")} value={responses} inputMode="numeric" onChange={(e) => setResponses(e.target.value)} error={touched && invalid.responses} helperText={numberHelp(invalid.responses)} />

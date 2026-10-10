@@ -616,7 +616,8 @@ export const fromRawInventory = (raw: any): Inventory => ({
   warehouseName: str(raw.warehouseName),
   status: str(raw.status),
   statusLabel: str(raw.statusLabel),
-  startedAt: raw.startedAt ?? raw.created ?? null,
+  // Дата начала — `date`; полей `number` и `startedAt` у инвентаризации нет (ответ бэка 09.10.2026, §3).
+  startedAt: raw.date ?? null,
   completedAt: raw.completedAt ?? null,
   rows: list(raw.rows).map((r) => ({
     nomId: r.nomId,

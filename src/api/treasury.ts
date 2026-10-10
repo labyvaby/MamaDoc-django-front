@@ -434,8 +434,7 @@ export const fromRawItem = (raw: any): CalendarItem => ({
   projectName: raw.projectName ?? null,
   doc: str(raw.doc),
   status: str(raw.status),
-  // В карточке `/planned-payments/<id>/` поля `done` нет — исполненность видна по операции оплаты.
-  done: Boolean(raw.done) || raw.settledOperationId != null,
+  done: Boolean(raw.done),
   moved: Boolean(raw.moved),
   originalDate: raw.originalDate ?? null,
   billingAccountId: raw.billingAccountId ?? null,
@@ -714,9 +713,8 @@ export async function getCalendarMonth(month: string, scope?: RealtyScope, signa
 }
 
 export async function getPlannedPayment(id: number, scope?: RealtyScope, signal?: AbortSignal): Promise<CalendarItem> {
-  // В карточке нет `kind` (это всегда плановый платёж) — без него не нашлась бы кнопка «Оплатить».
-  const raw = await treasury<Record<string, unknown>>(scope, `/planned-payments/${id}/`, { signal });
-  return fromRawItem({ kind: "planned", ...raw });
+  // С 09.10.2026 карточка отдаёт `kind: "planned"` и `done` сама (ответ бэка, п. 2.1).
+  return fromRawItem(await treasury(scope, `/planned-payments/${id}/`, { signal }));
 }
 
 /** «Оплатить» (выплата) / «Получено» (поступление); без счёта — основной расчётный. */

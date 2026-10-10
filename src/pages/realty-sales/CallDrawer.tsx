@@ -1,17 +1,18 @@
 import React from "react";
-import { Alert, Box, Button, Drawer, IconButton, Skeleton, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, Skeleton, TextField, Typography } from "@mui/material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 import { useNavigate } from "react-router";
 import AddTaskOutlined from "@mui/icons-material/AddTaskOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
+import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import PhoneOutlined from "@mui/icons-material/PhoneOutlined";
 
 import { estateDashboardKeys } from "../../api/estateDashboard";
-import { createCallTask, formatCallDuration, getCall, realtyCallKeys, updateCall, type Call } from "../../api/realtyCalls";
+import { createCallTask, deleteCall, formatCallDuration, getCall, realtyCallKeys, updateCall, type Call } from "../../api/realtyCalls";
 import { realtyLeadKeys } from "../../api/realtyLeads";
 import { realtyTaskKeys } from "../../api/realtyTasks";
 import { useCan } from "../../hooks/useCan";
@@ -31,7 +32,8 @@ interface Draft {
 /**
  * Карточка звонка — шторка `?call=<id>`: факты, запись (если есть ссылка),
  * итог с оценкой, следующий шаг, расшифровка. С `realty.manage` — правка
- * итога и «Создать задачу» (задача на +1 час с текстом следующего шага).
+ * итога, «Создать задачу» (задача на +1 час с текстом следующего шага) и
+ * удаление звонка.
  */
 export function CallDrawer({ callId, onClose }: { callId: number | null; onClose: () => void }) {
   const { t } = useT("realtySales");
@@ -41,8 +43,12 @@ export function CallDrawer({ callId, onClose }: { callId: number | null; onClose
   const { enqueueSnackbar } = useSnackbar();
   const canManage = useCan("realty.manage");
   const [draft, setDraft] = React.useState<Draft | null>(null);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
 
-  React.useEffect(() => setDraft(null), [callId]);
+  React.useEffect(() => {
+    setDraft(null);
+    setConfirmDelete(false);
+  }, [callId]);
 
   const call = useQuery({
     queryKey: realtyCallKeys.detail(scope, callId ?? 0),
@@ -72,6 +78,20 @@ export function CallDrawer({ callId, onClose }: { callId: number | null; onClose
     },
     onError: failed,
   });
+  const remove = useMutation({
+    mutationFn: () => deleteCall(callId as number, scope),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: realtyCallKeys.all });
+      void queryClient.invalidateQueries({ queryKey: realtyTaskKeys.all });
+      void queryClient.invalidateQueries({ queryKey: realtyLeadKeys.all });
+      void queryClient.invalidateQueries({ queryKey: estateDashboardKeys.all });
+      enqueueSnackbar(t("calls.card.deleted"), { variant: "success" });
+      setConfirmDelete(false);
+      onClose();
+    },
+    onError: failed,
+  });
+  const busy = save.isPending || remove.isPending;
 
   const data = call.data;
   const copySummary = async (c: Call) => {
@@ -88,7 +108,7 @@ export function CallDrawer({ callId, onClose }: { callId: number | null; onClose
     <Drawer
       anchor="right"
       open={callId != null}
-      onClose={save.isPending ? undefined : onClose}
+      onClose={busy ? undefined : onClose}
       PaperProps={{ sx: { width: { xs: "100vw", sm: 600 }, maxWidth: "100vw", display: "flex", flexDirection: "column" } }}
     >
       <Box sx={{ px: 2.5, py: 2, display: "flex", alignItems: "flex-start", gap: 1, borderBottom: 1, borderColor: "divider" }}>
@@ -124,7 +144,7 @@ export function CallDrawer({ callId, onClose }: { callId: number | null; onClose
             {data.result && <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600 }}>{data.result}</Typography>}
           </Box>
         )}
-        <IconButton aria-label={t("common.close")} onClick={onClose} disabled={save.isPending}>
+        <IconButton aria-label={t("common.close")} onClick={onClose} disabled={busy}>
           <CloseOutlined />
         </IconButton>
       </Box>
@@ -237,13 +257,35 @@ export function CallDrawer({ callId, onClose }: { callId: number | null; onClose
         )}
       </Box>
 
-      {data?.leadId != null && (
-        <Box sx={{ px: 2.5, py: 1.5, display: "flex", borderTop: 1, borderColor: "divider" }}>
-          <Button startIcon={<OpenInNewOutlined />} onClick={() => navigate(`/realestate/leads?lead=${data.leadId}`)}>
-            {t("calls.card.openLead")}
-          </Button>
+      {data && (data.leadId != null || canManage) && (
+        <Box sx={{ px: 2.5, py: 1.5, display: "flex", gap: 1, borderTop: 1, borderColor: "divider" }}>
+          {data.leadId != null && (
+            <Button startIcon={<OpenInNewOutlined />} onClick={() => navigate(`/realestate/leads?lead=${data.leadId}`)}>
+              {t("calls.card.openLead")}
+            </Button>
+          )}
+          {canManage && (
+            <Button color="error" startIcon={<DeleteOutlineOutlined />} onClick={() => setConfirmDelete(true)} disabled={busy} sx={{ ml: "auto" }}>
+              {t("calls.card.delete")}
+            </Button>
+          )}
         </Box>
       )}
+
+      <Dialog open={confirmDelete} onClose={remove.isPending ? undefined : () => setConfirmDelete(false)} maxWidth={false} PaperProps={{ sx: { width: 420, maxWidth: "calc(100vw - 32px)" } }}>
+        <DialogTitle>{t("calls.card.deleteTitle")}</DialogTitle>
+        <DialogContent>
+          <Typography>{t("calls.card.deleteText", { client: data?.client || data?.number || "" })}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDelete(false)} disabled={remove.isPending}>
+            {t("common.cancel")}
+          </Button>
+          <Button color="error" variant="contained" onClick={() => remove.mutate()} disabled={remove.isPending}>
+            {t("calls.card.delete")}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Drawer>
   );
 }

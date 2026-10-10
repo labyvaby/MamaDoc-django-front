@@ -97,11 +97,15 @@ export function unitRenders(media: UnitMedia): { url: string; title: string; not
   return media.renders.map((url) => ({ url, title: "", note: "" }));
 }
 
-/** План планировки: первая картинка `images[]` (или `plan` из `media[]`). */
-export function unitPlan(media: UnitMedia): { url: string; title: string; note: string } | null {
+/**
+ * План планировки: первая картинка `images[]` (или `plan` из `media[]`).
+ * С 09.10.2026 план — только JPG / PNG / WEBP; `pdf` — план, загруженный
+ * раньше PDF-файлом: его не показать в `<img>`, только скачать.
+ */
+export function unitPlan(media: UnitMedia): { url: string; title: string; note: string; pdf: boolean } | null {
   const plan = media.media.find((f) => f.kind === "plan");
-  if (plan) return { url: plan.url, title: plan.title, note: plan.note };
-  return media.images[0] ? { url: media.images[0], title: "", note: "" } : null;
+  if (plan) return { url: plan.url, title: plan.title, note: plan.note, pdf: plan.contentType === "application/pdf" || /\.pdf$/i.test(plan.fileName) };
+  return media.images[0] ? { url: media.images[0], title: "", note: "", pdf: false } : null;
 }
 
 /** «1,2 МБ» / «820 КБ». */

@@ -14,17 +14,33 @@ export interface EstateAccess {
   canSee: Record<string, boolean>;
   /** Уровень по экрану: none / view / edit / approve. */
   levels: Record<string, string>;
+  /**
+   * Сотрудник ограничен филиалами `allowedBranchIds` — то же правило, по
+   * которому бэк режет данные. false — владелец, суперпользователь или
+   * сотрудник без ограничений (ответ бэка 09.10.2026, п. 3а.2).
+   */
+  branchRestricted: boolean;
+  allowedBranchIds: number[] | null;
 }
 
 interface RawEstateAccess {
   role: string | null;
   canSee: Record<string, boolean>;
   permissions: Record<string, string>;
+  branchRestricted?: boolean;
+  allowedBranchIds?: number[] | null;
 }
 
 export async function getMyEstateAccess(scope?: RealtyScope, signal?: AbortSignal): Promise<EstateAccess> {
   const raw = await apiRequest<RawEstateAccess>("/v2/integrations/roles-matrix/me/", { headers: realtyHeaders(scope), signal });
-  return { role: raw.role, canSee: raw.canSee ?? {}, levels: raw.permissions ?? {} };
+  return {
+    role: raw.role,
+    canSee: raw.canSee ?? {},
+    levels: raw.permissions ?? {},
+    // Ответ без поля (стенд до 09.10) — считаем ограниченным: «ЖК будет общим» не обещаем зря.
+    branchRestricted: raw.branchRestricted ?? true,
+    allowedBranchIds: raw.allowedBranchIds ?? null,
+  };
 }
 
 export const estateAccessKeys = {

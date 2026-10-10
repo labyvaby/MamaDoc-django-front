@@ -288,7 +288,13 @@ function ShiftDialog({ stage, onClose }: { stage: Stage | null; onClose: () => v
         inputMode="numeric"
         onChange={(e) => setDays(e.target.value)}
         error={touched && daysBad}
-        helperText={touched && daysBad ? t("schedule.shiftDialog.nonZero") : t("schedule.shiftDialog.daysHint")}
+        helperText={
+          touched && daysBad
+            ? t("schedule.shiftDialog.nonZero")
+            : stage?.shiftDays
+              ? t("schedule.shiftDialog.daysHintCurrent", { current: t("common.days", { count: stage.shiftDays }) })
+              : t("schedule.shiftDialog.daysHint")
+        }
       />
       <TextField size="small" label={t("schedule.shiftDialog.reason")} value={reason} onChange={(e) => setReason(e.target.value)} error={touched && reasonBad} helperText={touched && reasonBad ? t("common.required") : undefined} />
       <FormControlLabel control={<Checkbox size="small" checked={cascade} onChange={(e) => setCascade(e.target.checked)} />} label={t("schedule.shiftDialog.cascade")} />

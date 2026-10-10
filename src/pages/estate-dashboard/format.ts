@@ -126,20 +126,28 @@ export function estateHref(view: string, objectId?: number | null): string | nul
 
 /**
  * Подсказка «Фокуса дня» → адрес. Запись по id: заявка — карточка лида (там же
- * её задачи с датами — деталки задачи у бэка нет), счёт — биллинг. Бронь
+ * её задачи с датами), задача без заявки — «Мой день» на её дату с подсветкой
+ * (`?date=&task=`), счёт — биллинг. Бронь
  * открывается в шахматке, но для этого нужна её квартира — это делает панель
  * отдельным запросом, здесь — запасной адрес реестра броней.
  */
-export function focusHref(item: Pick<FocusItem, "code" | "view" | "leadId" | "billingAccountId">): string | null {
-  if (item.leadId != null && ["leads", "funnel", "today", "calls"].includes(item.view)) return `/realestate/leads?lead=${item.leadId}`;
+export function focusHref(item: Pick<FocusItem, "code" | "view" | "leadId" | "billingAccountId"> & Partial<Pick<FocusItem, "taskId" | "date">>): string | null {
+  // «Показы и встречи сегодня» — про весь день, а не про одного клиента: всегда «Мой день», даже с leadId.
+  if (item.leadId != null && item.code !== "shows-today" && ["leads", "funnel", "today", "calls"].includes(item.view)) return `/realestate/leads?lead=${item.leadId}`;
   switch (item.view) {
     case "booking":
     case "reservations":
       return "/realestate/deals";
     // «Показы и встречи сегодня» считает и встречи — их видно только в «Моём дне», не на «Показах».
+    case "today":
     case "showings":
-    case "shows":
-      return "/realestate/today";
+    case "shows": {
+      const query = new URLSearchParams();
+      if (item.date) query.set("date", item.date);
+      if (item.taskId != null) query.set("task", String(item.taskId));
+      const qs = query.toString();
+      return `/realestate/today${qs ? `?${qs}` : ""}`;
+    }
     case "leads":
       return item.code === "no-next-step" ? "/realestate/leads?filter=notask" : "/realestate/leads";
     default:

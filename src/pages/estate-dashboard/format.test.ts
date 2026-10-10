@@ -11,6 +11,13 @@ describe("focusHref", () => {
     expect(focusHref(item({ code: "overdue-tasks", view: "today" }))).toBe("/realestate/today");
   });
 
+  it("задача без заявки — «Мой день» на её дату с подсветкой", () => {
+    expect(focusHref(item({ code: "overdue-tasks", view: "today", taskId: 10, date: "2026-10-09" }))).toBe("/realestate/today?date=2026-10-09&task=10");
+    expect(focusHref(item({ code: "shows-today", view: "today", taskId: 12, date: "2026-10-09" }))).toBe("/realestate/today?date=2026-10-09&task=12");
+    // Показы дня — всегда «Мой день», хотя бэк кладёт leadId ближайшего показа.
+    expect(focusHref(item({ code: "shows-today", view: "today", leadId: 26, taskId: 23, date: "2026-10-10" }))).toBe("/realestate/today?date=2026-10-10&task=23");
+  });
+
   it("счёт — биллинг с открытым счётом, сделки без дела — фильтр лидов", () => {
     expect(focusHref(item({ code: "billing-overdue", view: "billing", billingAccountId: 5 }))).toBe("/finance/billing?account=5");
     expect(focusHref(item({ code: "no-next-step", view: "leads" }))).toBe("/realestate/leads?filter=notask");

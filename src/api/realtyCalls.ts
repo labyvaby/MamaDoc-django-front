@@ -13,7 +13,8 @@ import type { RealtyTaskItem } from "./realtyTasks";
  *   менеджер по умолчанию — тот, кто записывает;
  * - «☑ Создать задачу» — `POST /calls/<id>/tasks/`: задача на +1 час с текстом
  *   `nextAction`;
- * - смотреть — `realty.view`, записывать и править — `realty.manage`.
+ * - смотреть — `realty.view`, записывать, править и удалять — `realty.manage`
+ *   (`DELETE /calls/<id>/` с 09.10.2026).
  */
 
 const CALLS_API = "/v2/realty/calls";
@@ -178,6 +179,11 @@ export async function createCall(input: CallInput, scope?: RealtyScope): Promise
 /** Правка итога. Пустая строка очищает поле — её шлём как есть. */
 export async function updateCall(id: number, patch: Partial<Pick<Call, "result" | "summary" | "nextAction" | "status" | "seconds">>, scope?: RealtyScope): Promise<Call> {
   return fromRaw(await calls(scope, `/${id}/`, { method: "PATCH", body: patch }));
+}
+
+/** Удалить звонок (`realty.manage`). Задачи из звонка остаются, их ссылка на звонок обнуляется. */
+export async function deleteCall(id: number, scope?: RealtyScope): Promise<void> {
+  await calls(scope, `/${id}/`, { method: "DELETE" });
 }
 
 /** «☑ Создать задачу» — задача `call` на +1 час с текстом следующего шага. */

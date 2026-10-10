@@ -4,6 +4,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 import dayjs, { type Dayjs } from "dayjs";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
+import { Link as RouterLink } from "react-router";
 
 import {
   VACATION_TYPES,
@@ -23,6 +25,8 @@ import {
   type Vacancy,
   type VacationType,
 } from "../../api/personnel";
+import { getErrorFields } from "../../api/client";
+import { downloadProtectedFile } from "../../api/protectedFile";
 import { getMotivation, motivationKeys } from "../../api/salaryMotivation";
 import { CustomDatePicker } from "../../components/ui";
 import { useCan } from "../../hooks/useCan";
@@ -45,6 +49,8 @@ export function EmployeeDrawer({ id, preview, canManage, onClose }: { id: number
   const refresh = useRefreshPersonnel();
   const { enqueueSnackbar } = useSnackbar();
   const canSalary = useCan("salary.view");
+  // Документ ЭДО и его файл открываются только с edo.view, без него бэк ответит 403.
+  const canEdo = useCan("edo.view");
   const [dialog, setDialog] = React.useState<"edit" | "raise" | "fire" | AbsenceKind | null>(null);
   const card = useQuery({ queryKey: personnelKeys.card(scope, id ?? 0), queryFn: ({ signal }) => getEmployeeCard(id as number, scope, signal), enabled: id != null && scope.orgReady !== false, staleTime: 15_000 });
   const payslip = useQuery({
@@ -134,21 +140,32 @@ export function EmployeeDrawer({ id, preview, canManage, onClose }: { id: number
                     <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{t("staff.card.documentsEmpty")}</Typography>
                   ) : (
                     detail.documents.map((d, index) => (
-                      <Typography key={d.id ?? `${d.number}-${index}`} sx={{ fontSize: "0.8125rem" }}>
-                        {d.url ? (
-                          <Link href={d.url} target="_blank" rel="noreferrer">
-                            {d.name}
-                          </Link>
-                        ) : (
-                          d.name
+                      <Box key={`${d.docId ?? d.number}-${index}`} sx={{ display: "flex", alignItems: "center", gap: 0.5, minHeight: 28 }}>
+                        <Typography sx={{ flex: 1, minWidth: 0, fontSize: "0.8125rem" }}>
+                          {d.docId != null && canEdo ? (
+                            <Link component={RouterLink} to={`/edo?doc=${d.docId}`} title={t("staff.card.openInEdo")}>
+                              {d.name}
+                            </Link>
+                          ) : (
+                            d.name
+                          )}
+                          {(d.number || d.date) && (
+                            <Box component="span" sx={{ color: "text.secondary" }}>
+                              {" · "}
+                              {[d.number, d.date ? dayjs(d.date).format("DD.MM.YYYY") : ""].filter(Boolean).join(" · ")}
+                            </Box>
+                          )}
+                        </Typography>
+                        {d.url && canEdo && (
+                          <IconButton
+                            size="small"
+                            aria-label={t("staff.card.downloadDocument", { name: d.name })}
+                            onClick={() => void downloadProtectedFile(d.url as string, d.name, scope).catch((error) => enqueueSnackbar(message(error, t("common.failed")), { variant: "error" }))}
+                          >
+                            <FileDownloadOutlined fontSize="small" />
+                          </IconButton>
                         )}
-                        {(d.number || d.date) && (
-                          <Box component="span" sx={{ color: "text.secondary" }}>
-                            {" · "}
-                            {[d.number, d.date ? dayjs(d.date).format("DD.MM.YYYY") : ""].filter(Boolean).join(" · ")}
-                          </Box>
-                        )}
-                      </Typography>
+                      </Box>
                     ))
                   )}
                 </Box>
@@ -448,9 +465,10 @@ function AbsenceDialog({ employee, kind, onClose }: { employee: Employee | null;
   const [days, setDays] = React.useState("");
   const [type, setType] = React.useState<VacationType>("annual");
   const [note, setNote] = React.useState("");
+  const [advance, setAdvance] = React.useState(false);
   const [touched, setTouched] = React.useState(false);
   const save = useMutation({
-    mutationFn: () => registerAbsence(employee?.id as number, kind, { from: isoDate(from) as string, days: Math.round(parseNumber(days) as number), type, note }, scope),
+    mutationFn: () => registerAbsence(employee?.id as number, kind, { from: isoDate(from) as string, days: Math.round(parseNumber(days) as number), type, note, advance: annual && advance }, scope),
     onSuccess: () => {
       refresh();
       enqueueSnackbar(t("staff.card.absenceSaved"), { variant: "success" });
@@ -463,19 +481,27 @@ function AbsenceDialog({ employee, kind, onClose }: { employee: Employee | null;
     setDays(kind === "vacation" ? "14" : "3");
     setType("annual");
     setNote("");
+    setAdvance(false);
     setTouched(false);
     save.reset();
   }, [employee, kind]); // eslint-disable-line react-hooks/exhaustive-deps -- сброс формы при открытии
   const d = parseNumber(days);
   const invalid = { from: !isoDate(from), days: d == null || d < 1 || !Number.isInteger(d) };
+  const annual = kind === "vacation" && type === "annual";
+  const left = employee?.vacationLeft ?? 0;
+  // Ежегодный сверх остатка бэк принимает только с advance (иначе 400 по days).
+  const overLeft = annual && d != null && d > left;
+  // Пересечение с другим отсутствием — по полю from, нехватка остатка — по days.
+  const fieldErrors = getErrorFields(save.error);
+  const daysServerError = fieldErrors?.days ? (overLeft && !advance ? t("staff.absenceForm.overLeft", { left: t("common.days", { count: left }) }) : fieldErrors.days) : null;
   return (
     <ConfirmDialog
       open={employee != null}
       title={t(`staff.absenceForm.title_${kind}`)}
-      text={employee ? `${employee.name}${kind === "vacation" ? ` · ${t("staff.absenceForm.left", { count: employee.vacationLeft })}` : ""}` : null}
+      text={employee ? `${employee.name}${kind === "vacation" ? ` · ${t("staff.absenceForm.left", { days: t("common.days", { count: employee.vacationLeft }) })}` : ""}` : null}
       confirmLabel={t("staff.absenceForm.save")}
       busy={save.isPending}
-      error={save.error}
+      error={fieldErrors?.from || fieldErrors?.days ? null : save.error}
       onConfirm={() => {
         setTouched(true);
         if (!invalid.from && !invalid.days) save.mutate();
@@ -483,8 +509,16 @@ function AbsenceDialog({ employee, kind, onClose }: { employee: Employee | null;
       onClose={onClose}
     >
       <Box sx={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 1.5 }}>
-        <CustomDatePicker label={t("staff.absenceForm.from")} value={from} onChange={(v) => setFrom(v as Dayjs | null)} slotProps={{ textField: { size: "small", fullWidth: true, error: touched && invalid.from } }} />
-        <TextField size="small" label={t("staff.absenceForm.days")} value={days} inputMode="numeric" onChange={(ev) => setDays(ev.target.value)} error={touched && invalid.days} helperText={touched && invalid.days ? t("common.number") : undefined} />
+        <CustomDatePicker label={t("staff.absenceForm.from")} value={from} onChange={(v) => setFrom(v as Dayjs | null)} slotProps={{ textField: { size: "small", fullWidth: true, error: (touched && invalid.from) || Boolean(fieldErrors?.from), helperText: fieldErrors?.from } }} />
+        <TextField
+          size="small"
+          label={t("staff.absenceForm.days")}
+          value={days}
+          inputMode="numeric"
+          onChange={(ev) => setDays(ev.target.value)}
+          error={(touched && invalid.days) || Boolean(daysServerError)}
+          helperText={touched && invalid.days ? t("common.number") : daysServerError}
+        />
       </Box>
       {kind === "vacation" ? (
         <TextField select size="small" label={t("staff.absenceForm.type")} value={type} onChange={(ev) => setType(ev.target.value as VacationType)}>
@@ -496,6 +530,17 @@ function AbsenceDialog({ employee, kind, onClose }: { employee: Employee | null;
         </TextField>
       ) : (
         <TextField size="small" label={t("staff.absenceForm.note")} value={note} onChange={(ev) => setNote(ev.target.value)} />
+      )}
+      {overLeft && (
+        <FormControlLabel
+          control={<Checkbox size="small" checked={advance} onChange={(ev) => setAdvance(ev.target.checked)} />}
+          label={
+            <Box>
+              <Typography sx={{ fontSize: "0.875rem" }}>{t("staff.absenceForm.advance")}</Typography>
+              <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{t("staff.absenceForm.advanceHint")}</Typography>
+            </Box>
+          }
+        />
       )}
     </ConfirmDialog>
   );

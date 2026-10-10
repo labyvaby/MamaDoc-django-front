@@ -4,11 +4,13 @@ import {
   Box,
   Button,
   ButtonBase,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Drawer,
+  FormControlLabel,
   IconButton,
   Menu,
   MenuItem,
@@ -65,7 +67,7 @@ export function DocumentDrawer({ docId, onClose, onOpenDoc }: { docId: number | 
   );
 }
 
-type DialogKind = "approve" | "approveStep" | "reject" | "rework" | "terminate" | "signCompany" | "signCounterparty" | "agreement" | "version" | null;
+type DialogKind = "approve" | "approveStep" | "reject" | "rework" | "terminate" | "signCompany" | "signCounterparty" | "agreement" | "archive" | "version" | null;
 
 function DocumentContent({ docId, onClose, onOpenDoc }: { docId: number; onClose: () => void; onOpenDoc: (id: number) => void }) {
   const { t } = useT("edo");
@@ -89,7 +91,7 @@ function DocumentContent({ docId, onClose, onOpenDoc }: { docId: number; onClose
   const action = useMutation({
     mutationFn: (next: EdoAction) => runEdoAction(docId, next, scope),
     onSuccess: (_, next) => {
-      enqueueSnackbar(t(`action.done.${next.kind}`), { variant: "success" });
+      enqueueSnackbar(t(next.kind === "archive" && next.exportTo1C ? "action.done.archiveExported" : `action.done.${next.kind}`), { variant: "success" });
       setDialog(null);
       refresh();
     },
@@ -215,6 +217,7 @@ function DocumentContent({ docId, onClose, onOpenDoc }: { docId: number; onClose
             onSubmit={(next) => action.mutate(next)}
           />
           <SignDialog open={dialog === "signCompany" || dialog === "signCounterparty"} party={dialog === "signCounterparty" ? "counterparty" : "company"} busy={action.isPending} onClose={() => setDialog(null)} onSubmit={(next) => action.mutate(next)} />
+          <ArchiveDialog open={dialog === "archive"} busy={action.isPending} onClose={() => setDialog(null)} onSubmit={(next) => action.mutate(next)} />
           <AgreementDialog open={dialog === "agreement"} busy={action.isPending} onClose={() => setDialog(null)} onSubmit={(next) => action.mutate(next)} />
           <VersionDialog open={dialog === "version"} busy={upload.isPending} onClose={() => setDialog(null)} onSubmit={(file, note) => upload.mutate({ kind: "versions", file, note })} />
         </>
@@ -306,7 +309,7 @@ function ActionBar({
     }
     if (doc.status === "signed")
       buttons.push(
-        <Button key="archive" variant="contained" disabled={busy} onClick={() => onAction({ kind: "archive" })}>
+        <Button key="archive" variant="contained" disabled={busy} onClick={() => onDialog("archive")}>
           {t("action.archive")}
         </Button>,
       );
@@ -466,6 +469,32 @@ function SignDialog({ open, party, busy, onClose, onSubmit }: { open: boolean; p
         </Button>
         <Button variant="contained" disabled={busy || !name.trim()} onClick={() => onSubmit({ kind: "sign", party, signerName: name.trim(), signerPosition: position.trim() })}>
           {t("dialog.confirm")}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/** «В архив»: по умолчанию без выгрузки в 1С — выгрузить можно и позже кнопкой «Выгрузить в 1С». */
+function ArchiveDialog({ open, busy, onClose, onSubmit }: { open: boolean; busy: boolean; onClose: () => void; onSubmit: (action: EdoAction) => void }) {
+  const { t } = useT("edo");
+  const [exportTo1C, setExportTo1C] = React.useState(false);
+  React.useEffect(() => {
+    if (open) setExportTo1C(false);
+  }, [open]);
+  return (
+    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth PaperProps={{ sx: { maxWidth: 440 } }}>
+      <DialogTitle>{t("dialog.archiveTitle")}</DialogTitle>
+      <DialogContent sx={{ display: "grid", gap: 1, pt: "8px !important" }}>
+        <Typography sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{t("dialog.archiveText")}</Typography>
+        <FormControlLabel control={<Checkbox size="small" checked={exportTo1C} onChange={(e) => setExportTo1C(e.target.checked)} />} label={t("dialog.archiveExport")} />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={busy}>
+          {t("dialog.cancel")}
+        </Button>
+        <Button variant="contained" disabled={busy} onClick={() => onSubmit({ kind: "archive", exportTo1C })}>
+          {t("action.archive")}
         </Button>
       </DialogActions>
     </Dialog>

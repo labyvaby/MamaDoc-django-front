@@ -240,6 +240,8 @@ export const PERMISSIONS = {
   ESTATE_DASHBOARD_VIEW: 'estate_dashboard.view',
   // «Планы и мотивация» застройщика (AIVIO): /api/v2/salary/motivation/.
   SALARY_VIEW: 'salary.view',
+  // Ведомость застройщика: рассчитать / утвердить / выплатить (09.10.2026).
+  SALARY_PAYROLL_MANAGE: 'salary.payroll.manage',
 
   // Финансы застройщика (AIVIO): биллинг рассрочек — treasury.* или realty.* (04.10.2026)
   TREASURY_VIEW: 'treasury.view',
