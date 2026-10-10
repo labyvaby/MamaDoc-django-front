@@ -78,7 +78,9 @@ export default function PhoneNumberField({
               </InputAdornment>
             ) : undefined,
         }}
-        inputProps={{ inputMode: "tel", pattern: "[0-9]*" }}
+        // Без pattern: значение показывается с пробелами («700 000 001»), и pattern="[0-9]*"
+        // делал форму невалидной — нативный submit молча не отправлялся. Цифровую клавиатуру даёт inputMode.
+        inputProps={{ inputMode: "tel" }}
         placeholder={
           getPhoneLocalMaxLength(countryCode) === 10 ? "XXX XXX XXXX" : "XXX XXX XXX"
         }
