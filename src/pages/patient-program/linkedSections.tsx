@@ -8,15 +8,19 @@ import { getProgramModuleRecords, type EffectiveProgramModule } from "../../api/
 import { djangoQueryKeys } from "../../api/queryKeys";
 import { AllergiesSection } from "../../components/health/AllergiesSection";
 import { BirthHistorySection } from "../../components/health/BirthHistorySection";
-import { ConditionsSection } from "../../components/health/ConditionsSection";
 import { FamilySection } from "../../components/health/FamilySection";
+import { HealthSectionCard } from "../../components/health/HealthSectionCard";
+import { IllnessHistorySection } from "../../components/health/IllnessHistorySection";
+import { LifeAnamnesisSection } from "../../components/health/anamnesis/LifeAnamnesisSection";
 import { MedicationsSection } from "../../components/health/MedicationsSection";
+import { SurgeriesSection } from "../../components/health/SurgeriesSection";
 import { useHealthAccess } from "../../components/health/useHealth";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import PatientVaccinationsPanel from "../patients/components/PatientVaccinationsPanel";
 import { BookAppointments } from "./BookAppointments";
+import { FeedingBookSection } from "./growth/FeedingBookSection";
 import { GrowthSection } from "./growth/GrowthSection";
-import { systemType } from "./linkedSectionTypes";
+import { systemType, type SystemSectionType } from "./linkedSectionTypes";
 import { ModuleRecords } from "./ModuleRecords";
 
 /** Записи, внесённые в раздел, пока он был разделом конструктора, — только просмотр. */
@@ -55,6 +59,9 @@ interface LinkedSectionProps {
   enrollmentId: number;
   scope: ActiveScope;
   icon: React.ReactNode;
+  /** Перейти в другой раздел книжки (ссылки из «Анамнеза жизни»). */
+  openSection?: (type: SystemSectionType) => void;
+  hasSection?: (type: SystemSectionType) => boolean;
 }
 
 /** Содержимое связанного раздела: компонент медкарты, прививок или приёмов. */
@@ -64,6 +71,8 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
   enrollmentId,
   scope,
   icon,
+  openSection,
+  hasSection,
 }) => {
   const { canManage } = useHealthAccess();
   const type = systemType(module);
@@ -79,10 +88,25 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
       content = <AllergiesSection patientId={patient.id} canManage={canManage} title={module.name} />;
       break;
     case "conditions":
-      content = <ConditionsSection patientId={patient.id} canManage={canManage} title={module.name} />;
+      content = (
+        <IllnessHistorySection
+          patientId={patient.id}
+          canManage={canManage}
+          title={module.name}
+          gender={patient.gender}
+          patientName={patient.fullName}
+        />
+      );
+      break;
+    case "surgeries":
+      content = <SurgeriesSection patientId={patient.id} canManage={canManage} birthDate={patient.birthDate} title={module.name} />;
       break;
     case "growth":
-      content = <GrowthSection patientId={patient.id} title={module.name} canManage={canManage} />;
+      // Вскармливание — отдельным разделом, если он есть в программе; иначе внизу «Роста».
+      content = <GrowthSection patientId={patient.id} title={module.name} canManage={canManage} showFeeding={!hasSection?.("feeding")} />;
+      break;
+    case "feeding":
+      content = <FeedingBookSection patientId={patient.id} title={module.name} canManage={canManage} />;
       break;
     case "medications":
       content = <MedicationsSection patientId={patient.id} canManage={canManage} title={module.name} />;
@@ -93,8 +117,22 @@ export const LinkedSection: React.FC<LinkedSectionProps> = ({
     case "visits":
       content = <BookAppointments patientId={patient.id} birthDate={patient.birthDate ?? null} scope={scope} />;
       break;
+    case "life_anamnesis":
+      content = (
+        <LifeAnamnesisSection
+          patientId={patient.id}
+          title={module.name}
+          openSection={openSection ? (type) => openSection(type as SystemSectionType) : undefined}
+          hasSection={hasSection ? (type) => hasSection(type as SystemSectionType) : undefined}
+        />
+      );
+      break;
     default:
       content = <Alert severity="info">Раздел «{module.name}» появится на следующих этапах.</Alert>;
+  }
+  // Прививки — в той же карточке с заголовком, что и другие разделы; сама панель общая с карточкой пациента.
+  if (type === "vaccination") {
+    content = <HealthSectionCard title={module.name}>{content}</HealthSectionCard>;
   }
   return (
     <Stack gap={1.5}>

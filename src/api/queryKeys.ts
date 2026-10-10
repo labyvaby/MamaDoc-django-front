@@ -133,12 +133,21 @@ export const djangoQueryKeys = {
       ["django", "health", "patient", patientId, "family", orgId] as const,
     familySuggestions: (patientId: number, orgId: number | undefined) =>
       ["django", "health", "patient", patientId, "family-suggestions", orgId] as const,
+    // «Анамнез жизни» — под общим префиксом пациента: useInvalidateHealth сбрасывает и его.
+    lifeAnamnesis: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "life-anamnesis", orgId] as const,
     growth: (patientId: number, orgId: number | undefined) =>
       ["django", "health", "patient", patientId, "growth", orgId] as const,
     visitConclusions: (patientId: number, orgId: number | undefined) =>
       ["django", "health", "patient", patientId, "visit-conclusions", orgId] as const,
     medications: (patientId: number, orgId: number | undefined) =>
       ["django", "health", "patient", patientId, "medications", orgId] as const,
+    // История болезней и операции — под ключом пациента: useInvalidateHealth сбрасывает и их.
+    illnessHistory: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "illness-history", orgId] as const,
+    /** Все записи, вместе с ошибочно внесёнными (`status=all`): их прячет и показывает экран. */
+    surgeries: (patientId: number, orgId: number | undefined) =>
+      ["django", "health", "patient", patientId, "surgeries", orgId] as const,
     changes: (patientId: number, orgId: number | undefined) =>
       ["django", "health", "patient", patientId, "changes", orgId] as const,
     onboarding: (enrollmentId: number, orgId: number | undefined) =>

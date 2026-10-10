@@ -5,18 +5,20 @@ import type { DjangoPatient } from "../../api/patients";
 import { GrowthSection } from "../../pages/patient-program/growth/GrowthSection";
 import { AllergiesSection } from "./AllergiesSection";
 import { BirthHistorySection } from "./BirthHistorySection";
-import { ConditionsSection } from "./ConditionsSection";
 import { FamilySection } from "./FamilySection";
 import { HealthChangesLog } from "./HealthChangesLog";
 import { HealthProfileCard } from "./HealthProfileCard";
+import { IllnessHistorySection } from "./IllnessHistorySection";
 import { MedicationsSection } from "./MedicationsSection";
+import { SurgeriesSection } from "./SurgeriesSection";
 import { isChild } from "./healthMeta";
 import { useHealthAccess } from "./useHealth";
 
 /**
- * Вкладка «Здоровье» карточки пациента: аллергии, диагнозы и Д-учёт,
- * профиль, сведения о рождении и паспорт семьи (детские блоки — до 18 лет
- * или без даты рождения), журнал изменений.
+ * Вкладка «Здоровье» карточки пациента: аллергии, история болезней (с
+ * хроническими и Д-учётом), операции и травмы — у всех возрастов; профиль,
+ * сведения о рождении и паспорт семьи (детские блоки — до 18 лет или без даты
+ * рождения), журнал изменений.
  */
 export const PatientHealthPanel: React.FC<{ patient: DjangoPatient | null }> = ({ patient }) => {
   const { canManage } = useHealthAccess();
@@ -46,7 +48,8 @@ export const PatientHealthPanel: React.FC<{ patient: DjangoPatient | null }> = (
     // карточки не сжимаются (у Card overflow: hidden, иначе flex их обрежет).
     <Stack gap={2} sx={{ height: "100%", minHeight: 0, overflowY: "auto", pb: 2, pr: 0.5, "& > *": { flexShrink: 0 } }}>
       <AllergiesSection patientId={patient.id} canManage={canManage} />
-      <ConditionsSection patientId={patient.id} canManage={canManage} />
+      <IllnessHistorySection patientId={patient.id} canManage={canManage} gender={patient.gender} patientName={patient.fullName} />
+      <SurgeriesSection patientId={patient.id} canManage={canManage} birthDate={patient.birthDate} />
       <MedicationsSection patientId={patient.id} canManage={canManage} />
       {child && <GrowthSection patientId={patient.id} canManage={canManage} />}
       <HealthProfileCard patientId={patient.id} birthDate={patient.birthDate} canManage={canManage} />

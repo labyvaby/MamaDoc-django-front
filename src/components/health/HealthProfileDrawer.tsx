@@ -1,10 +1,10 @@
 import React from "react";
-import { Box, InputAdornment, TextField } from "@mui/material";
+import { Box, Chip, InputAdornment, Stack, TextField, Typography } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 import { useSnackbar } from "notistack";
 
-import { updateHealthProfile, type HealthProfile, type HealthProfileUpdate, type RiskGroup } from "../../api/health";
+import { updateHealthProfile, type HealthProfile, type HealthProfileUpdate } from "../../api/health";
 import { ChipGroup, Section } from "../../pages/patient-program/vision/VisionControls";
 import { pairGridSx } from "../../pages/patient-program/vision/visionUi";
 import { CustomDatePicker } from "../ui";
@@ -19,6 +19,7 @@ import {
   RISK_GROUPS,
   ageLabel,
   dayOfLife,
+  optionLabel,
 } from "./healthMeta";
 import { useHealthScope, useInvalidateHealth } from "./useHealth";
 
@@ -213,18 +214,16 @@ export const HealthProfileDrawer: React.FC<HealthProfileDrawerProps> = ({
             />
           </Section>
           <Section title="Группы риска">
-            <ChipGroup<RiskGroup>
-              options={RISK_GROUPS}
-              selected={form.riskGroups}
-              tone={() => "warning"}
-              onToggle={(value) =>
-                patch({
-                  riskGroups: form.riskGroups.includes(value)
-                    ? form.riskGroups.filter((group) => group !== value)
-                    : [...form.riskGroups, value],
-                })
-              }
-            />
+            {form.riskGroups.length ? (
+              <Stack direction="row" gap={0.75} flexWrap="wrap">
+                {form.riskGroups.map((group) => (
+                  <Chip key={group} size="small" color="warning" variant="outlined" label={optionLabel(RISK_GROUPS, group)} />
+                ))}
+              </Stack>
+            ) : null}
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.5 }}>
+              Группы риска ведутся записями: «Анамнез жизни» → «Группы риска» — с датой, основанием и пересмотрами.
+            </Typography>
           </Section>
         </>
       )}

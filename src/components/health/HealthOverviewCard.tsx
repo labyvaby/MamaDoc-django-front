@@ -7,7 +7,8 @@ import { AppCard } from "../ui";
 import { HealthAlertStrip } from "./HealthAlertChip";
 import { OnboardingChecklistCard } from "./OnboardingChecklistCard";
 import { bloodLabel, controlState, formatDate, healthGroupLabel, onDispensary } from "./healthMeta";
-import { useHealthAccess, usePatientHealth } from "./useHealth";
+import { anesthesiaSummary } from "./surgeryData";
+import { useHealthAccess, usePatientHealth, usePatientSurgeries } from "./useHealth";
 
 interface HealthOverviewCardProps {
   patientId: number;
@@ -23,8 +24,11 @@ export const HealthOverviewCard: React.FC<HealthOverviewCardProps> = ({ patientI
   // Медпрофиль — только у клиник (книжка фитнеса его не показывает).
   const visible = canView && activeOrganization?.vertical === "clinic";
   const summary = usePatientHealth(patientId, visible);
+  const surgeries = usePatientSurgeries(patientId, visible);
   if (!visible) return null;
   const data = summary.data;
+  // Как ребёнок перенёс наркоз — рядом с аллергиями (ТЗ 2026-10-04 §4.3).
+  const narcosis = anesthesiaSummary(surgeries.data ?? []);
   const observed = (data?.conditions ?? []).filter(onDispensary);
   const nextControl = observed
     .map((condition) => condition.nextControlOn)
@@ -46,6 +50,21 @@ export const HealthOverviewCard: React.FC<HealthOverviewCardProps> = ({ patientI
     >
       <Stack gap={1.5}>
         <HealthAlertStrip patientId={patientId} />
+        {narcosis && (
+          <Chip
+            size="small"
+            color={narcosis.danger ? "error" : "default"}
+            variant={narcosis.danger ? "filled" : "outlined"}
+            label={narcosis.text}
+            sx={{
+              alignSelf: "flex-start",
+              maxWidth: "100%",
+              height: "auto",
+              fontWeight: narcosis.danger ? 700 : 500,
+              "& .MuiChip-label": { whiteSpace: "normal", py: 0.5 },
+            }}
+          />
+        )}
         {data && (
           <Stack direction="row" gap={0.75} flexWrap="wrap">
             <Chip

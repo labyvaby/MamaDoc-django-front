@@ -1,5 +1,6 @@
 import { getErrorFields, getErrorMessage } from "../../api/client";
-import type { HealthProfile, HealthProfileUpdate, RiskGroup } from "../../api/health";
+import type { ConditionInput, HealthProfile, HealthProfileUpdate, RiskGroup } from "../../api/health";
+import { normalizePrecisionDate } from "./illnessData";
 
 /** Текст ошибки сохранения: сообщения полей без служебных ключей. */
 const FIELD_LABELS: Record<string, string> = {
@@ -124,7 +125,8 @@ const PART_FIELDS: Record<ProfilePart, ReadonlyArray<keyof ProfileForm>> = {
     "perinatalNotes",
   ],
   maternity: ["maternityHospital", "maternityDischargedOn", "birthNoticeReceivedOn", "complementaryFeedingOn"],
-  groups: ["healthGroup", "healthGroupSetOn", "peGroup", "riskGroups"],
+  // Группы риска ведутся записями «Анамнеза жизни»: PATCH health/ с riskGroups — 400.
+  groups: ["healthGroup", "healthGroupSetOn", "peGroup"],
   blood: ["bloodGroup", "rhFactor"],
 };
 
@@ -137,6 +139,38 @@ const NUMERIC: ReadonlyArray<keyof ProfileForm> = [
   "apgar1min",
   "apgar5min",
 ];
+
+/**
+ * Тело диагноза с видом и точностью даты (ТЗ 2026-10-04 §2.2): дата
+ * приводится к 1-му числу или 1 января. Перенесённая — без Д-учёта и
+ * «выздоровела» (кроме ошибочно внесённой); её «выздоровление» сегодняшним
+ * числом не подставляется — ОРВИ 2024 года не «выздоравливает» сегодня.
+ */
+export function buildConditionPayload(form: ConditionInput): ConditionInput {
+  const payload: ConditionInput = {
+    ...form,
+    title: form.title.trim(),
+    diagnosisCode: form.diagnosisCode.trim().toUpperCase(),
+    place: form.place.trim(),
+    notes: form.notes.trim(),
+    diagnosedOn: normalizePrecisionDate(form.diagnosedOn, form.datePrecision),
+  };
+  if (payload.kind === "past") {
+    return {
+      ...payload,
+      status: payload.status === "refuted" ? "refuted" : "resolved",
+      isDispensary: false,
+      dispensarySince: null,
+      dispensaryEndedOn: null,
+      dispensaryEndReason: "",
+      responsibleDoctorId: null,
+      controlIntervalMonths: null,
+      lastControlOn: null,
+      nextControlOn: null,
+    };
+  }
+  return payload;
+}
 
 /** Тело PATCH: только поля открытых частей; числа — числами; ошибка ввода — null. */
 export function buildProfilePatch(form: ProfileForm, parts: ReadonlyArray<ProfilePart>): HealthProfileUpdate | null {

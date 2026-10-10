@@ -36,7 +36,7 @@ interface VisitHistoryProps {
 }
 
 /**
- * «История приёмов» книжки — лента по времени: впереди пунктиром, отметка
+ * «Приёмы» книжки — лента по времени: впереди пунктиром, отметка
  * «сегодня», прошедшие по годам. У приёма — возраст ребёнка в тот день,
  * диагнозы из заключения, врач и статус; отменённые приглушены.
  */
@@ -80,10 +80,18 @@ export const VisitHistory: React.FC<VisitHistoryProps> = ({
   const subtitle = loading
     ? "Загрузка…"
     : summary.pastCount
-      ? `${summary.pastCount} ${pluralRu(summary.pastCount, ["приём", "приёма", "приёмов"])} в клинике${
-          summary.firstAt ? ` с ${dayjs(summary.firstAt).format("D MMMM YYYY")}` : ""
-        }`
+      ? [
+          `${summary.pastCount} ${pluralRu(summary.pastCount, ["приём", "приёма", "приёмов"])}${
+            summary.firstAt ? ` с ${dayjs(summary.firstAt).format("D MMMM YYYY")}` : ""
+          }`,
+          summary.doctorsCount ? `${summary.doctorsCount} ${pluralRu(summary.doctorsCount, ["врач", "врача", "врачей"])}` : "",
+          summary.withConclusion ? `${summary.withConclusion} с заключением` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")
       : "Приёмы ребёнка во всех филиалах клиники";
+  const rest = filtered.length - shown.length;
+  const more = Math.min(PAGE * 2, rest);
 
   let visitIndex = 0;
   return (
@@ -92,7 +100,7 @@ export const VisitHistory: React.FC<VisitHistoryProps> = ({
       header={
         <Box sx={{ px: 2, pt: 2 }}>
           <Typography variant="h6" fontWeight={700}>
-            История приёмов
+            Приёмы
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {subtitle}
@@ -168,10 +176,10 @@ export const VisitHistory: React.FC<VisitHistoryProps> = ({
                   />
                 );
               })}
-              {filtered.length > shown.length && (
+              {rest > 0 && (
                 <Box sx={{ pl: { xs: "80px", md: "132px" }, pt: 0.5 }}>
                   <AppButton variant="outlined" size="small" onClick={() => setLimit((value) => value + PAGE * 2)}>
-                    Показать ещё {Math.min(PAGE * 2, filtered.length - shown.length)} из {filtered.length - shown.length}
+                    {more < rest ? `Показать ещё ${more} из ${rest}` : `Показать ещё ${rest}`}
                   </AppButton>
                 </Box>
               )}

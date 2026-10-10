@@ -15,10 +15,8 @@ import {
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
-import CalendarMonthOutlined from "@mui/icons-material/CalendarMonthOutlined";
 import CloseOutlined from "@mui/icons-material/CloseOutlined";
 import NotesOutlined from "@mui/icons-material/NotesOutlined";
-import PersonOutlineOutlined from "@mui/icons-material/PersonOutlineOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs, { type Dayjs } from "dayjs";
 import { useSnackbar } from "notistack";
@@ -32,7 +30,8 @@ import {
   type ProgramFieldDefinition,
 } from "../../api/programs";
 import { djangoQueryKeys } from "../../api/queryKeys";
-import { AppButton, AppCard, CustomDateTimePicker, ListEmptyState } from "../../components/ui";
+import { HealthSectionCard } from "../../components/health/HealthSectionCard";
+import { AppButton, CustomDateTimePicker, ListEmptyState } from "../../components/ui";
 import type { ActiveScope } from "../../hooks/useActiveScope";
 import { subtleBg } from "../../theme/uiHelpers";
 
@@ -292,15 +291,14 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
 
   return (
     <>
-      <AppCard
-        variant="outlined"
+      <HealthSectionCard
         title={module.name}
         subheader={
           typeof module.settings.description === "string" && module.settings.description.trim()
             ? module.settings.description
             : undefined
         }
-        headerActions={canManage ? (
+        actions={canManage ? (
           <AppButton variant="contained" size="small" startIcon={<AddOutlined />} onClick={() => setDrawerOpen(true)}>
             Добавить запись
           </AppButton>
@@ -321,9 +319,11 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
           <Stack gap={1.25}>
             {query.data.results.map((record) => {
               const recordFields = fieldsFromSettings(record.schemaSnapshot);
+              const title = record.title.trim().toLowerCase();
+              // Поле, повторяющее название записи («Исследование: Ферритин»), не показываем.
               const details = (recordFields.length > 0 ? recordFields : fields)
                 .map((field) => ({ label: field.label, value: displayValue(record.data[field.key], field) }))
-                .filter((item) => item.value);
+                .filter((item) => item.value && item.value.trim().toLowerCase() !== title);
               return (
                 <Box
                   key={record.id}
@@ -338,26 +338,20 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
                   <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" gap={1}>
                     <Box sx={{ minWidth: 0 }}>
                       <Typography variant="body2" fontWeight={600}>{record.title}</Typography>
-                      <Stack direction="row" gap={1.5} flexWrap="wrap" sx={{ mt: 0.5 }}>
-                        <Stack direction="row" gap={0.5} alignItems="center">
-                          <CalendarMonthOutlined sx={{ fontSize: 16 }} color="action" />
-                          <Typography variant="caption" color="text.secondary">{dayjs(record.occurredAt).format("DD.MM.YYYY HH:mm")}</Typography>
-                        </Stack>
-                        {record.createdByName && (
-                          <Stack direction="row" gap={0.5} alignItems="center">
-                            <PersonOutlineOutlined sx={{ fontSize: 16 }} color="action" />
-                            <Typography variant="caption" color="text.secondary">{record.createdByName}</Typography>
-                          </Stack>
-                        )}
-                      </Stack>
+                      <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
+                        {`${dayjs(record.occurredAt).format("DD.MM.YYYY HH:mm")}${record.createdByName ? ` · ${record.createdByName}` : ""}`}
+                      </Typography>
                     </Box>
                     <Stack direction="row" alignItems="center" gap={0.5}>
-                      <Chip
-                        size="small"
-                        color={record.status === "completed" ? "success" : "default"}
-                        label={record.status === "completed" ? "Выполнено" : record.status === "planned" ? "Запланировано" : "Пропущено"}
-                        sx={{ borderRadius: "7px" }}
-                      />
+                      {/* У выполненной записи метки нет — только «Запланировано» и «Пропущено». */}
+                      {record.status !== "completed" && (
+                        <Chip
+                          size="small"
+                          color="default"
+                          label={record.status === "planned" ? "Запланировано" : "Пропущено"}
+                          sx={{ borderRadius: "7px" }}
+                        />
+                      )}
                       {canManage && (
                         <IconButton
                           size="small"
@@ -370,14 +364,15 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
                     </Stack>
                   </Stack>
                   {details.length > 0 && (
-                    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" }, gap: 1, mt: 1.25 }}>
-                      {details.map((item) => (
-                        <Box key={item.label}>
-                          <Typography variant="caption" color="text.secondary">{item.label}</Typography>
-                          <Typography variant="body2" fontWeight={600}>{item.value}</Typography>
-                        </Box>
+                    <Typography variant="body2" sx={{ mt: 0.75, overflowWrap: "anywhere" }}>
+                      {details.map((item, index) => (
+                        <React.Fragment key={item.label}>
+                          {index > 0 && " · "}
+                          <Box component="span" sx={{ color: "text.secondary" }}>{item.label}:</Box>{" "}
+                          <Box component="span" sx={{ fontWeight: 600 }}>{item.value}</Box>
+                        </React.Fragment>
                       ))}
-                    </Box>
+                    </Typography>
                   )}
                   {record.notes && (
                     <Stack direction="row" gap={0.75} sx={{ mt: 1.25 }}>
@@ -390,7 +385,7 @@ export const ModuleRecords: React.FC<ModuleRecordsProps> = ({ enrollmentId, modu
             })}
           </Stack>
         )}
-      </AppCard>
+      </HealthSectionCard>
 
       <RecordDrawer
         open={drawerOpen}

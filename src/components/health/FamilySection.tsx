@@ -12,6 +12,7 @@ import { subtleBg } from "../../theme/uiHelpers";
 import { AppButton } from "../ui";
 import { FamilyMemberDrawer } from "./FamilyMemberDrawer";
 import { HealthSectionCard } from "./HealthSectionCard";
+import { relationTitle } from "./anamnesis/anamnesisTypes";
 import { FAMILY_RELATIONS, fluorographyOverdue, formatDate, optionLabel } from "./healthMeta";
 import { useHealthScope } from "./useHealth";
 
@@ -20,6 +21,24 @@ const MemberRow: React.FC<{ member: FamilyMember; canManage: boolean; onEdit: (m
   canManage,
   onEdit,
 }) => {
+  const death =
+    member.vitalStatus === "deceased"
+      ? `${member.sex === "female" ? "умерла" : "умер"}${member.deathAge != null ? ` в ${member.deathAge} г.` : member.deathYear != null ? ` в ${member.deathYear}` : ""}`
+      : "";
+  const health = [
+    member.healthStatus === "ill" && member.diseases.length
+      ? member.diseases.map((disease) => disease.title).join(", ")
+      : member.healthStatus === "healthy"
+        ? member.sex === "female"
+          ? "Здорова"
+          : "Здоров"
+        : member.healthStatus === "ill"
+          ? "Есть болезни — список не указан"
+          : "",
+    death,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const exams = [
     member.therapistExamOn ? `терапевт ${formatDate(member.therapistExamOn)}` : "",
     member.gynecologistExamOn ? `гинеколог ${formatDate(member.gynecologistExamOn)}` : "",
@@ -35,7 +54,7 @@ const MemberRow: React.FC<{ member: FamilyMember; canManage: boolean; onEdit: (m
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Stack direction="row" gap={0.75} alignItems="center" flexWrap="wrap">
           <Typography variant="caption" color="text.secondary" fontWeight={700}>
-            {optionLabel(FAMILY_RELATIONS, member.relation)}
+            {relationTitle(member)}
           </Typography>
           <Typography variant="body2" fontWeight={700}>
             {member.fullName}
@@ -46,9 +65,14 @@ const MemberRow: React.FC<{ member: FamilyMember; canManage: boolean; onEdit: (m
             </Typography>
           )}
         </Stack>
-        <Typography variant="body2" color={member.conditions ? "text.primary" : "text.secondary"}>
-          {member.conditions || "Заболевания не указаны"}
+        <Typography variant="body2" color={health ? "text.primary" : "text.secondary"}>
+          {health || "Здоровье не указано"}
         </Typography>
+        {member.conditions && (
+          <Typography variant="caption" color="text.secondary" component="div">
+            Записано текстом: {member.conditions}
+          </Typography>
+        )}
         <Stack direction="row" gap={0.75} alignItems="center" flexWrap="wrap" sx={{ mt: 0.5 }}>
           {exams.length > 0 && (
             <Typography variant="caption" color="text.secondary">

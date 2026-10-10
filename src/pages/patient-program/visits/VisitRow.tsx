@@ -162,7 +162,7 @@ export const VisitRow: React.FC<VisitRowProps> = ({ visit, index, top, bottom, s
             }
           }}
           sx={{
-            p: { xs: 1.25, md: 1.5 },
+            p: cancelled ? 1 : { xs: 1.25, md: 1.5 },
             borderRadius: "12px",
             border: `1px ${cancelled ? "dashed" : "solid"} ${cancelled ? subtleBorder(theme) : alpha(theme.palette.primary.main, visit.phase === "upcoming" ? 0.3 : 0.14)}`,
             bgcolor: cancelled ? "transparent" : visit.phase === "upcoming" ? alpha(theme.palette.primary.main, 0.04) : "background.paper",
@@ -178,7 +178,7 @@ export const VisitRow: React.FC<VisitRowProps> = ({ visit, index, top, bottom, s
         >
           <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" gap={{ xs: 1, md: 2 }}>
             <Box sx={{ minWidth: 0, flex: 1, color: cancelled ? "text.secondary" : "text.primary" }}>
-              <Typography variant="subtitle1" fontWeight={700} sx={{ lineHeight: 1.3, overflowWrap: "anywhere" }}>
+              <Typography variant={cancelled ? "body2" : "subtitle1"} fontWeight={cancelled ? 600 : 700} sx={{ lineHeight: 1.3, overflowWrap: "anywhere" }}>
                 {title}
                 {visit.services.length > 1 && (
                   <Box component="span" sx={{ color: "text.secondary", fontWeight: 500 }}>
@@ -191,7 +191,7 @@ export const VisitRow: React.FC<VisitRowProps> = ({ visit, index, top, bottom, s
               <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ mt: 0.5, rowGap: 0.5 }}>
                 {doctor && (
                   <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
-                    <UserAvatar src={doctor.photoUrl} name={doctor.name} size={22} />
+                    {!cancelled && <UserAvatar src={doctor.photoUrl} name={doctor.name} size={22} />}
                     <Typography variant="body2" fontWeight={600} sx={{ overflowWrap: "anywhere" }}>
                       {doctor.name}
                     </Typography>
@@ -211,22 +211,10 @@ export const VisitRow: React.FC<VisitRowProps> = ({ visit, index, top, bottom, s
                 <Typography variant="body2" color="text.secondary" sx={{ display: { md: "none" } }}>
                   · {date.format("HH:mm")}
                 </Typography>
-                {visit.age && (
-                  <Box
-                    component="span"
-                    sx={{
-                      px: 0.75,
-                      py: 0.125,
-                      borderRadius: "6px",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      bgcolor: alpha(theme.palette.primary.main, 0.08),
-                      color: theme.palette.mode === "dark" ? "primary.light" : "primary.dark",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {visit.age}
-                  </Box>
+                {visit.age && !cancelled && (
+                  <Typography variant="body2" color="text.secondary">
+                    · {visit.age}
+                  </Typography>
                 )}
               </Stack>
 
@@ -243,8 +231,13 @@ export const VisitRow: React.FC<VisitRowProps> = ({ visit, index, top, bottom, s
                 </Stack>
               )}
 
+              {/* На компьютере причина отмены — в подсказке чипа «Отменено» (в карточке приёма её нет); у неявки подсказки нет — строка остаётся. */}
               {reason && (
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mt: 0.75, display: appointment.status === "canceled" ? { xs: "block", md: "none" } : "block" }}
+                >
                   Причина: {reason}
                 </Typography>
               )}

@@ -16,12 +16,14 @@ import { GrowthDrawer } from "./GrowthDrawer";
 import { GrowthHistory } from "./GrowthHistory";
 import { GrowthMetrics } from "./GrowthMetrics";
 import { Stadiometer } from "./Stadiometer";
-import { assessMeasurement, growthSex, previousWith, readGrowth, type Measurement } from "./growthData";
+import { assessMeasurement, feedingInputs, growthSex, previousWith, readGrowth, type Measurement } from "./growthData";
 
 interface GrowthSectionProps {
   patientId: number;
   title?: string;
   canManage: boolean;
+  /** Блок «Вскармливание и прикорм» внизу; false — он отдельным разделом книжки. */
+  showFeeding?: boolean;
 }
 
 interface DrawerState {
@@ -32,10 +34,11 @@ interface DrawerState {
 const CLOSED: DrawerState = { open: false, measurement: null };
 
 /**
- * «Рост и питание»: ростомер, показатели с центилями ВОЗ, график, история
- * замеров (ручные, из заключений приёмов, из архива) и вскармливание.
+ * «Рост и развитие»: ростомер, показатели с центилями ВОЗ, график, история
+ * замеров (ручные, из заключений приёмов, из архива) и — пока в программе нет
+ * отдельного раздела — вскармливание.
  */
-export const GrowthSection: React.FC<GrowthSectionProps> = ({ patientId, title = "Рост и питание", canManage }) => {
+export const GrowthSection: React.FC<GrowthSectionProps> = ({ patientId, title = "Рост и развитие", canManage, showFeeding = true }) => {
   const { orgId, scope, ready } = useHealthScope();
   const query = useQuery({
     queryKey: djangoQueryKeys.health.growth(patientId, orgId),
@@ -54,6 +57,7 @@ export const GrowthSection: React.FC<GrowthSectionProps> = ({ patientId, title =
   const measured = list.filter((item) => item.key !== "birth");
   const latest = measured.find((item) => item.heightCm != null) ?? measured[0] ?? null;
   const previousHeight = latest ? previousWith(list, latest, "heightCm") : null;
+  const feeding = React.useMemo(() => (data && showFeeding ? feedingInputs(data) : null), [data, showFeeding]);
   const open = (measurement: Measurement | null) => setDrawer({ open: true, measurement });
 
   const subheader = latest
@@ -147,16 +151,10 @@ export const GrowthSection: React.FC<GrowthSectionProps> = ({ patientId, title =
                 <GrowthHistory list={list} sex={sex} canManage={canManage} onEdit={open} />
               </>
             )}
-            {isChild(birthDate) && (
+            {feeding && isChild(birthDate) && (
               <>
                 <Divider />
-                <FeedingSection
-                  patientId={patientId}
-                  birthDate={birthDate}
-                  canManage={canManage}
-                  feeding={data.feeding}
-                  complementaryFeedingOn={data.complementaryFeedingOn}
-                />
+                <FeedingSection patientId={patientId} canManage={canManage} {...feeding} />
               </>
             )}
           </Stack>

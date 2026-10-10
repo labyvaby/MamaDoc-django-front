@@ -10,6 +10,9 @@ import RestaurantOutlined from "@mui/icons-material/RestaurantOutlined";
 import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 
 import { AppButton, InfoTile } from "../ui";
+import { buildAnamnesisModel } from "./anamnesis/anamnesisModel";
+import { NewbornTab } from "./anamnesis/NewbornTab";
+import { useAnamnesisInput } from "./anamnesis/useAnamnesis";
 import { HealthProfileDrawer } from "./HealthProfileDrawer";
 import { HealthSectionCard } from "./HealthSectionCard";
 import {
@@ -46,6 +49,17 @@ export const BirthHistorySection: React.FC<BirthHistorySectionProps> = ({
 }) => {
   const summary = usePatientHealth(patientId);
   const [editing, setEditing] = React.useState(false);
+  // Тот же блок «Новорождённый», что в «Анамнезе жизни», — только чтение (ТЗ анамнеза §4.3).
+  const anamnesis = useAnamnesisInput(patientId);
+  const anamnesisInput = anamnesis.input;
+  const canSeeVaccinations = anamnesis.access.canSeeVaccinations;
+  const newbornModel = React.useMemo(
+    () =>
+      anamnesisInput?.perinatal?.exists
+        ? buildAnamnesisModel(anamnesisInput, anamnesis.at, { canSeeSensitive: false, canSeeVaccinations })
+        : null,
+    [anamnesisInput, anamnesis.at, canSeeVaccinations],
+  );
   const profile = summary.data?.profile;
   // Вес, длина и голова без срока гестации — он своей плиткой.
   const measures = profile ? birthSummary({ ...profile, gestationalAgeWeeks: null }) : "";
@@ -126,6 +140,7 @@ export const BirthHistorySection: React.FC<BirthHistorySectionProps> = ({
                 {profile.perinatalNotes}
               </Typography>
             )}
+            {newbornModel && <NewbornTab model={newbornModel} />}
           </Stack>
         )}
       </HealthSectionCard>

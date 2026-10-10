@@ -52,11 +52,13 @@ interface AllergyDrawerProps {
   allergy: Allergy | null;
   /** Подсказка для новой (реакция на курс препарата). */
   initial?: Partial<AllergyInput>;
+  /** Сохранённая аллергия — например, чтобы связать её с отметкой прикорма. */
+  onSaved?: (allergy: Allergy) => void;
   onClose: () => void;
 }
 
 /** Аллергия: вид, аллерген и реакция кнопками, тяжесть цветом, статус при правке. */
-export const AllergyDrawer: React.FC<AllergyDrawerProps> = ({ open, patientId, allergy, initial, onClose }) => {
+export const AllergyDrawer: React.FC<AllergyDrawerProps> = ({ open, patientId, allergy, initial, onSaved, onClose }) => {
   const { enqueueSnackbar } = useSnackbar();
   const { scope } = useHealthScope();
   const invalidate = useInvalidateHealth(patientId);
@@ -75,8 +77,9 @@ export const AllergyDrawer: React.FC<AllergyDrawerProps> = ({ open, patientId, a
       const payload = { ...form, allergen: form.allergen.trim(), reaction: form.reaction.trim(), notes: form.notes.trim() };
       return allergy ? updateAllergy(scope, patientId, allergy.id, payload) : createAllergy(scope, patientId, payload);
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       enqueueSnackbar(allergy ? "Аллергия обновлена" : "Аллергия добавлена", { variant: "success" });
+      onSaved?.(saved);
       await invalidate();
       onClose();
     },

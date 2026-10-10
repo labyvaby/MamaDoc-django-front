@@ -7,6 +7,7 @@ import {
   defaultPosition,
   deltaLabel,
   emptyGrowthForm,
+  feedingInputs,
   fromApiMeasurement,
   growthFormValid,
   growthSex,
@@ -48,7 +49,29 @@ const DATA: GrowthData = {
     row(2, "2026-03-26", { lengthHeightCm: 75.7, weightKg: 9.6, source: "conclusion", appointmentId: 44 }),
   ],
   feeding: [],
+  foods: [],
 };
+
+describe("feedingInputs", () => {
+  it("gives the feeding block the same inputs in «Рост» and in its own section", () => {
+    const inputs = feedingInputs(DATA);
+    expect(inputs).toMatchObject({
+      birthDate: "2025-03-26",
+      gestation: { weeks: 39, days: 2 },
+      complementaryFeedingOn: null,
+      birthWeightKg: 3.35,
+    });
+    expect(inputs.foods).toEqual([]);
+    // ИМТ — по последнему замеру с весом и ростом, словами для подсказок.
+    expect(inputs.bmiVerdict).not.toBe("");
+  });
+
+  it("works with a server that has no feeding journal yet", () => {
+    const old = { ...DATA } as Partial<GrowthData>;
+    delete old.foods;
+    expect(feedingInputs(old as GrowthData).foods).toEqual([]);
+  });
+});
 
 describe("growthData", () => {
   it("reads measurements newest first and the birth point last", () => {

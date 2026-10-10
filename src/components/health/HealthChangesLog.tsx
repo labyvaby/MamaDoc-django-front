@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getHealthChanges, type HealthChange } from "../../api/health";
 import { DJANGO_LIST_STALE_TIME_MS, djangoQueryKeys } from "../../api/queryKeys";
+import { FOOD_GROUP_OPTIONS, FOOD_REACTIONS, FOOD_SEVERITIES } from "./feeding/feedingCatalog";
 import {
   ALLERGY_CATEGORIES,
   ALLERGY_SEVERITIES,
@@ -20,6 +21,18 @@ import {
   RH_FACTORS,
   type Option,
 } from "./healthMeta";
+import { DATE_PRECISIONS, EVIDENCE_OPTIONS, INFECTION_SHORT, infectionStatusOptions } from "./illnessData";
+import {
+  ANESTHESIA_OPTIONS,
+  BODY_SIDES,
+  INJURY_TYPES,
+  OUTCOME_OPTIONS,
+  SURGERY_KINDS,
+  SURGERY_STATUSES,
+  TOLERANCE_OPTIONS,
+  TRANSFUSION_PRODUCTS,
+  TREATMENTS,
+} from "./surgeryData";
 import { useHealthScope } from "./useHealth";
 
 const MODEL_LABELS: Record<string, string> = {
@@ -31,6 +44,9 @@ const MODEL_LABELS: Record<string, string> = {
   family_history: "Паспорт семьи",
   feeding_period: "Вскармливание",
   medication_course: "Препарат",
+  surgery: "Операции и травмы",
+  childhood_infection: "Детская инфекция",
+  food_introduction: "Прикорм",
 };
 
 const ACTION_LABELS: Record<HealthChange["action"], string> = {
@@ -57,7 +73,44 @@ const FIELD_LABELS: Record<string, string> = {
   full_name: "ФИО",
   blood_group: "группа крови",
   rh_factor: "резус",
+  kind: "вид",
+  date_precision: "точность даты",
+  place: "где лечили",
+  diagnosed_on: "когда",
+  attachments: "документы",
+  performed_on: "дата",
+  injury_type: "вид травмы",
+  body_part: "часть тела",
+  side: "сторона",
+  treatments: "лечение",
+  transfusion_product: "что переливали",
+  reason: "показание или причина",
+  surgeon: "кто делал",
+  anesthesia: "обезболивание",
+  anesthesia_tolerance: "как перенёс",
+  anesthesia_notes: "осложнение обезболивания",
+  complications: "осложнения",
+  outcome: "исход",
+  infection: "инфекция",
+  occurred_on: "когда",
+  evidence: "откуда известно",
+  product_name: "продукт",
+  given_on: "дата",
+  reaction_severity: "тяжесть",
+  food_group: "группа",
 };
+
+/** Коды отметки прикорма словами. */
+const FOOD_VALUE_OPTIONS: Record<string, ReadonlyArray<Option<string>>> = {
+  reaction: FOOD_REACTIONS,
+  reaction_severity: FOOD_SEVERITIES,
+  food_group: FOOD_GROUP_OPTIONS,
+};
+
+const CONDITION_KINDS: ReadonlyArray<Option<string>> = [
+  { value: "chronic", label: "хроническая" },
+  { value: "past", label: "перенесённая" },
+];
 
 const VALUE_OPTIONS: Record<string, ReadonlyArray<Option<string>>> = {
   severity: ALLERGY_SEVERITIES,
@@ -68,17 +121,45 @@ const VALUE_OPTIONS: Record<string, ReadonlyArray<Option<string>>> = {
   blood_group: BLOOD_GROUPS,
   rh_factor: RH_FACTORS,
   delivery_type: DELIVERY_TYPES,
+  date_precision: DATE_PRECISIONS,
+  injury_type: INJURY_TYPES,
+  side: BODY_SIDES,
+  treatments: TREATMENTS,
+  transfusion_product: TRANSFUSION_PRODUCTS,
+  anesthesia: ANESTHESIA_OPTIONS,
+  anesthesia_tolerance: TOLERANCE_OPTIONS,
+  outcome: OUTCOME_OPTIONS,
+  evidence: EVIDENCE_OPTIONS,
+  infection: (Object.keys(INFECTION_SHORT) as Array<keyof typeof INFECTION_SHORT>).map((code) => ({ value: code, label: INFECTION_SHORT[code] })),
 };
+
+/** У поля «статус» и «вид» значения свои у каждой таблицы. */
+function optionsFor(model: string, field: string): ReadonlyArray<Option<string>> | undefined {
+  if (field === "status") {
+    if (model === "allergy") return ALLERGY_STATUSES;
+    if (model === "surgery") return SURGERY_STATUSES;
+    if (model === "childhood_infection") return infectionStatusOptions(null);
+    return CONDITION_STATUSES;
+  }
+  if (field === "kind") return model === "surgery" ? SURGERY_KINDS : model === "condition" ? CONDITION_KINDS : undefined;
+  return VALUE_OPTIONS[field];
+}
 
 function valueText(model: string, field: string, value: unknown): string {
   if (value === true) return "да";
   if (value === false) return "нет";
   if (value == null || value === "") return "—";
-  const text = String(value);
-  const options = field === "status" ? (model === "allergy" ? ALLERGY_STATUSES : CONDITION_STATUSES) : VALUE_OPTIONS[field];
+  if (Array.isArray(value)) {
+    // Документы — числом, лечение травмы — словами.
+    if (field === "attachments") return value.length ? String(value.length) : "—";
+    return value.map((item) => valueText(model, field, item)).join(", ") || "—";
+  }
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  const options =
+    model === "food_introduction" && FOOD_VALUE_OPTIONS[field] ? FOOD_VALUE_OPTIONS[field] : optionsFor(model, field);
   const label = options?.find((option) => option.value === text)?.label;
   if (label) return label;
-  if (/^d{4}-d{2}-d{2}$/.test(text)) return dayjs(text).format("DD.MM.YYYY");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return dayjs(text).format("DD.MM.YYYY");
   return text;
 }
 

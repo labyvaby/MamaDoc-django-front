@@ -1,8 +1,8 @@
 import React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getHealthAlert, getPatientHealth } from "../../api/health";
-import { DJANGO_DETAIL_STALE_TIME_MS, djangoQueryKeys } from "../../api/queryKeys";
+import { getHealthAlert, getIllnessHistory, getPatientHealth, getSurgeries } from "../../api/health";
+import { DJANGO_DETAIL_STALE_TIME_MS, DJANGO_LIST_STALE_TIME_MS, djangoQueryKeys } from "../../api/queryKeys";
 import { orgWide, type Scope } from "../../api/scope";
 import { useActiveScope } from "../../hooks/useActiveScope";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -35,6 +35,28 @@ export function usePatientHealth(patientId: number | null | undefined, enabled =
     queryFn: ({ signal }) => getPatientHealth(scope, patientId as number, signal),
     enabled: enabled && ready && patientId != null,
     staleTime: DJANGO_DETAIL_STALE_TIME_MS,
+  });
+}
+
+/** «История болезней» одним ответом: случаи из приёмов, хронические, госпитализации, инфекции. */
+export function useIllnessHistory(patientId: number | null | undefined, enabled = true) {
+  const { orgId, scope, ready } = useHealthScope();
+  return useQuery({
+    queryKey: djangoQueryKeys.health.illnessHistory(patientId ?? 0, orgId),
+    queryFn: ({ signal }) => getIllnessHistory(scope, patientId as number, signal),
+    enabled: enabled && ready && patientId != null,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
+  });
+}
+
+/** Операции, травмы, процедуры и переливания — вместе с ошибочно внесёнными: их прячет экран. */
+export function usePatientSurgeries(patientId: number | null | undefined, enabled = true) {
+  const { orgId, scope, ready } = useHealthScope();
+  return useQuery({
+    queryKey: djangoQueryKeys.health.surgeries(patientId ?? 0, orgId),
+    queryFn: ({ signal }) => getSurgeries(scope, patientId as number, { status: "all" }, signal),
+    enabled: enabled && ready && patientId != null,
+    staleTime: DJANGO_LIST_STALE_TIME_MS,
   });
 }
 
