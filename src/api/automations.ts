@@ -119,6 +119,9 @@ export interface AutomationActionConfig {
   /** Заголовок push-уведомления; у SMS и WhatsApp заголовка нет. */
   title?: string;
   body?: string;
+  messageMode?: "text" | "template";
+  whatsappTemplateId?: number;
+  templateVariables?: Record<string, string>;
   [key: string]: unknown;
 }
 
@@ -242,6 +245,37 @@ export interface AutomationTestActionPreview {
   delayMinutes: number;
   channel: string;
   renderedTitle: string;
+  messageMode?: "text" | "template";
+  templateName?: string;
+  templateVariables?: Record<string, string>;
+}
+
+export interface AutomationWhatsAppTemplate {
+  id: number;
+  title: string;
+  name: string;
+  language: string;
+  body: string;
+  variableOrder: string[];
+  ready: boolean;
+  unavailableReason: string;
+}
+
+export interface AutomationTemplatePage {
+  results: AutomationWhatsAppTemplate[];
+  count: number;
+  page: number;
+  pageSize: number;
+}
+
+export function getAutomationTemplates(
+  scope: Scope & { page?: number; search?: string; templateId?: number },
+): Promise<AutomationTemplatePage> {
+  const params = scopeParams(scope);
+  if (scope.page) params.set("page", String(scope.page));
+  if (scope.search) params.set("search", scope.search);
+  if (scope.templateId) params.set("templateId", String(scope.templateId));
+  return apiRequest(`${BASE}/templates/?${params}`);
 }
 
 export interface AutomationTestResult {

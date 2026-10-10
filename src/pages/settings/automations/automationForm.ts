@@ -59,6 +59,9 @@ export interface ActionForm {
   /** Заголовок push-уведомления. Для SMS и WhatsApp не используется. */
   title: string;
   body: string;
+  messageMode: "text" | "template";
+  whatsappTemplateId: number | null;
+  templateVariables: Record<string, string>;
 }
 
 /**
@@ -115,6 +118,9 @@ export function makeAction(recipientField: string): ActionForm {
     recipientPhone: "",
     title: "",
     body: "",
+    messageMode: "text",
+    whatsappTemplateId: null,
+    templateVariables: {},
   };
 }
 
@@ -180,6 +186,9 @@ export function automationToForm(automation: Automation): AutomationForm {
       recipientPhone: String(action.config.recipientPhone ?? ""),
       title: String(action.config.title ?? ""),
       body: String(action.config.body ?? ""),
+      messageMode: action.config.messageMode === "template" ? "template" : "text",
+      whatsappTemplateId: action.config.whatsappTemplateId ?? null,
+      templateVariables: action.config.templateVariables ?? {},
     })),
   };
 }
@@ -268,7 +277,13 @@ export function toSaveInput(
         ...(isScheduledForm(form)
           ? { recipientPhone: action.recipientPhone }
           : { recipientField: action.recipientField }),
-        body: action.body,
+        ...(isTemplateAction(action)
+          ? {
+              messageMode: "template" as const,
+              whatsappTemplateId: action.whatsappTemplateId ?? undefined,
+              templateVariables: action.templateVariables,
+            }
+          : { body: action.body }),
         // Заголовок хранится только там, где он есть: у SMS и WhatsApp его
         // нет вовсе, и пустой ключ в конфиге лишь путал бы при чтении правила.
         ...(supportsTitle(action.channel) ? { title: action.title } : {}),
@@ -302,6 +317,9 @@ export interface ValidationLabels {
   intervalRange: string;
   timeRequired: string;
   phoneRequired: string;
+  templateRequired?: string;
+  templateVariablesRequired?: string;
+  templateUnknownVariable?: string;
 }
 
 /**
@@ -344,7 +362,18 @@ export function validateForm(
 
   for (const action of form.actions) {
     const fieldErrors: Record<string, string> = {};
-    if (!action.body.trim()) fieldErrors.body = labels.bodyRequired;
+    if (isTemplateAction(action)) {
+      if (!action.whatsappTemplateId) {
+        fieldErrors.whatsappTemplateId = labels.templateRequired ?? labels.bodyRequired;
+      }
+      if (Object.values(action.templateVariables).some((value) => !value.trim())) {
+        fieldErrors.templateVariables = labels.templateVariablesRequired ?? labels.bodyRequired;
+      }
+      if (Object.values(action.templateVariables).some((value) =>
+        templateVariables(value).some((code) => !event?.variables.includes(code)))) {
+        fieldErrors.templateVariables = labels.templateUnknownVariable ?? labels.bodyRequired;
+      }
+    } else if (!action.body.trim()) fieldErrors.body = labels.bodyRequired;
     if (scheduled && !action.recipientPhone.trim()) {
       fieldErrors.recipientPhone = labels.phoneRequired;
     }
@@ -498,6 +527,10 @@ export function supportsTitle(channel: string): boolean {
   return channel === PROFICHAT_PUSH_CHANNEL;
 }
 
+export function isTemplateAction(action: ActionForm): boolean {
+  return action.channel === "whatsapp" && action.messageMode === "template";
+}
+
 /** Черновик payload для dry run: все переменные события пустыми строками. */
 export function samplePayload(
   event: AutomationCatalogEvent | undefined,
@@ -567,7 +600,8 @@ export function relevantPayloadFields(
     // У расписания получатель — введённый номер, а не поле payload: в форме
     // прогона ему делать нечего.
     if (!scheduled) add(action.recipientField, "recipient");
-    templateVariables(action.body).forEach((code) => add(code, "template"));
+    const texts = isTemplateAction(action) ? Object.values(action.templateVariables) : [action.body];
+    texts.forEach((text) => templateVariables(text).forEach((code) => add(code, "template")));
     if (supportsTitle(action.channel)) {
       templateVariables(action.title).forEach((code) => add(code, "template"));
     }
