@@ -490,6 +490,8 @@ export const djangoQueryKeys = {
   },
 
   odoctor: {
+    reconciliation: (orgId: number | null, branchId: number, year: number, month: number) =>
+      ["django", "odoctor", "reconciliation", orgId, branchId, year, month] as const,
     // Строка настроек одна на организацию, списка нет — только объект в скоупе
     // организации, поэтому и ключ один.
     settings: (organizationId: number | null | undefined) =>

@@ -1,6 +1,78 @@
 import { apiRequest } from "./client";
 import { parseBackendError } from "./appointments";
 
+export interface OdoctorReconciliationRow {
+  id: number;
+  patient: string;
+  doctor: string;
+  scheduledAt: string;
+  actualAt: string | null;
+  appointmentId: number | null;
+  decision: "yes" | "no" | "review";
+  reason: string;
+  commission: string;
+  current: boolean | null;
+  saved: boolean;
+  saveError: string;
+}
+
+export interface OdoctorReconciliationReport {
+  payment: { status: number; status_display: string } | null;
+  rows: OdoctorReconciliationRow[];
+  visited: number;
+  notVisited: number;
+  review: number;
+  commission: string;
+  saved: number;
+  unchanged: number;
+  failed: number;
+  message: string;
+}
+
+export interface OdoctorReconciliationRun {
+  id: number;
+  branchId: number;
+  year: number;
+  month: number;
+  status: "queued" | "running" | "completed" | "failed";
+  previewOnly: boolean;
+  report: Partial<OdoctorReconciliationReport>;
+  error: string;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
+export interface OdoctorReconciliationResult {
+  run: OdoctorReconciliationRun | null;
+}
+
+export function getOdoctorReconciliation(
+  branchId: number,
+  year: number,
+  month: number,
+  organizationId?: number,
+  signal?: AbortSignal,
+): Promise<OdoctorReconciliationResult> {
+  const query = new URLSearchParams({ year: String(year), month: String(month) });
+  if (organizationId != null) query.set("organizationId", String(organizationId));
+  return apiRequest(`/odoctor/branches/${branchId}/reconciliation/?${query}`, { signal });
+}
+
+export function startOdoctorReconciliation(input: {
+  branchId: number;
+  year: number;
+  month: number;
+  organizationId?: number;
+  previewOnly: boolean;
+}): Promise<OdoctorReconciliationResult> {
+  const { branchId, organizationId, ...body } = input;
+  const query = organizationId == null ? "" : `?organizationId=${organizationId}`;
+  return apiRequest(`/odoctor/branches/${branchId}/reconciliation/${query}`, {
+    method: "POST",
+    body,
+  });
+}
+
 /**
  * Настройки интеграции с публичной витриной записи odoctor.kg: CRM выкладывает
  * туда свободные окна врачей и закрывает их, как только окно занято записью.
