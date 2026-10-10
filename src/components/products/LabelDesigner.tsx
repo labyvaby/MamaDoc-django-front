@@ -53,6 +53,7 @@ import {
   type PrintTemplate,
 } from "../../api/printforms";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
+import { LabelPreview } from "./LabelPreview";
 import {
   FONT_SIZE_PT,
   LABEL_FIELD_SOURCES,
@@ -62,10 +63,8 @@ import {
   MAX_LABEL_ELEMENTS,
   MAX_LABEL_LINES,
   barcodeElement,
-  buildLayoutLabelsHtml,
   elementText,
   fitElement,
-  htmlKey,
   layoutToTemplate,
   newElementId,
   presetLayout,
@@ -278,11 +277,6 @@ export const LabelDesigner: React.FC<{
   );
   const scale = fit * zoom;
   const pxPerMm = MM_TO_PX * scale;
-
-  const previewHtml = React.useMemo(
-    () => buildLayoutLabelsHtml([sample], layout, { preview: true, organizationName }),
-    [sample, layout, organizationName],
-  );
 
   const drag = React.useRef<{
     id: string;
@@ -758,24 +752,12 @@ export const LabelDesigner: React.FC<{
                     bgcolor: "#fff",
                   }}
                 >
-                  <Box
-                    key={htmlKey(previewHtml)}
-                    component="iframe"
-                    title="Этикетка"
-                    sandbox=""
-                    srcDoc={previewHtml}
-                    sx={{
-                      position: "absolute",
-                      left: 0,
-                      top: 0,
-                      width: labelPx.width,
-                      height: labelPx.height,
-                      border: 0,
-                      transform: `scale(${scale})`,
-                      transformOrigin: "0 0",
-                      pointerEvents: "none",
-                      colorScheme: "light",
-                    }}
+                  <LabelPreview
+                    tag={sample}
+                    layout={layout}
+                    organizationName={organizationName}
+                    scale={scale}
+                    sx={{ position: "absolute", left: 0, top: 0 }}
                   />
                   {layout.elements.map((element) => {
                     const isSelected = element.id === selectedId;

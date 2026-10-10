@@ -399,17 +399,6 @@ export function labelHtml(layout: LabelLayout, tag: PriceTag, organizationName =
   return `<div class="label">${inner}</div>`;
 }
 
-/**
- * Короткий отпечаток документа — ключ iframe превью. Chrome пропускает смену
- * `srcdoc`, пока iframe ещё грузит предыдущий документ, и превью застывает
- * на старой раскладке; новый ключ пересоздаёт iframe.
- */
-export function htmlKey(html: string): string {
-  let hash = 0;
-  for (let i = 0; i < html.length; i += 1) hash = (hash * 31 + html.charCodeAt(i)) | 0;
-  return `${html.length}:${hash}`;
-}
-
 /** Наклеек на лист A4: сетка по размеру этикетки, по центру листа. */
 export function sheetGrid(layout: Pick<LabelLayout, "widthMm" | "heightMm">): { cols: number; rows: number } {
   return {
@@ -418,53 +407,58 @@ export function sheetGrid(layout: Pick<LabelLayout, "widthMm" | "heightMm">): { 
   };
 }
 
-function layoutStyles(layout: LabelLayout, preview: boolean): string {
+/** Стили самой этикетки — общие для печати и превью. */
+function labelStyles(layout: LabelLayout): string {
+  return `* { box-sizing: border-box; }
+  .label { position: relative; width: ${layout.widthMm}mm; height: ${layout.heightMm}mm; overflow: hidden; background: #fff; }
+  .e { position: absolute; overflow: hidden; display: flex; flex-direction: column; }
+  .t { line-height: 1.15; }
+  .t .x { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .t.one .x { display: block; white-space: nowrap; text-overflow: ellipsis; }
+  .b svg { display: block; flex: 1 1 0; min-height: 0; width: 100%; fill: #000; }
+  .b .d { font-family: "Courier New", monospace; text-align: center; letter-spacing: .06em; line-height: 1.1; }`;
+}
+
+function printStyles(layout: LabelLayout): string {
   const { widthMm: w, heightMm: h } = layout;
-  const sheet = layout.media === "sheet" && !preview;
+  const sheet = layout.media === "sheet";
   const grid = sheetGrid(layout);
-  const page = preview
-    ? ""
-    : sheet
-      ? `@page { size: ${A4_MM.width}mm ${A4_MM.height}mm; margin: 0; }`
-      : `@page { size: ${w}mm ${h}mm; margin: 0; }`;
+  const page = sheet
+    ? `@page { size: ${A4_MM.width}mm ${A4_MM.height}mm; margin: 0; }`
+    : `@page { size: ${w}mm ${h}mm; margin: 0; }`;
   const flow = sheet
     ? `.sheet { width: ${A4_MM.width}mm; height: ${A4_MM.height}mm; display: grid;
          grid-template-columns: repeat(${grid.cols}, ${w}mm); grid-auto-rows: ${h}mm;
          justify-content: center; align-content: center; break-after: page; }
        .sheet:last-child { break-after: auto; }`
     : `.label { break-after: page; } .label:last-child { break-after: auto; }`;
-  // Окно превью ровно в размер этикетки: дробные пиксели иначе рисуют полосы прокрутки.
-  const screen = preview ? `html, body { background: transparent; overflow: hidden; }` : "";
   return `${page}
-  * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; color: #000; background: #fff;
     font-family: ${LABEL_FONTS[DEFAULT_LABEL_FONT].css}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .label { position: relative; width: ${w}mm; height: ${h}mm; overflow: hidden; background: #fff; }
-  ${flow}
-  .e { position: absolute; overflow: hidden; display: flex; flex-direction: column; }
-  .t { line-height: 1.15; }
-  .t .x { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-  .t.one .x { display: block; white-space: nowrap; text-overflow: ellipsis; }
-  .b svg { display: block; flex: 1 1 0; min-height: 0; width: 100%; fill: #000; }
-  .b .d { font-family: "Courier New", monospace; text-align: center; letter-spacing: .06em; line-height: 1.1; }
-  ${screen}`;
+  ${labelStyles(layout)}
+  ${flow}`;
 }
 
 /**
- * Документ печати. `tags` — ответ сервера: копии уже в `copies`.
- * `preview` — одна этикетка в левом верхнем углу, без страниц: для превью
- * в окне печати и в конструкторе.
+ * Превью одной этикетки для Shadow DOM: стили изолированы от темы CRM, а
+ * обновление идёт в том же кадре — без перезагрузки фрейма и мигания.
+ * `all: initial` отсекает унаследованные цвет и шрифт тёмной темы.
  */
+export function labelPreviewMarkup(tag: PriceTag, layout: LabelLayout, organizationName = ""): string {
+  return `<style>:host { all: initial; display: block; color: #000;
+    font-family: ${LABEL_FONTS[DEFAULT_LABEL_FONT].css}; }
+  ${labelStyles(layout)}</style>${labelHtml(layout, tag, organizationName)}`;
+}
+
+/** Документ печати. `tags` — ответ сервера: копии уже в `copies`. */
 export function buildLayoutLabelsHtml(
   tags: readonly PriceTag[],
   layout: LabelLayout,
-  { organizationName = "", preview = false }: { organizationName?: string; preview?: boolean } = {},
+  { organizationName = "" }: { organizationName?: string } = {},
 ): string {
-  const labels = (preview ? tags.slice(0, 1) : expandLabelCopies(tags)).map((tag) =>
-    labelHtml(layout, tag, organizationName),
-  );
+  const labels = expandLabelCopies(tags).map((tag) => labelHtml(layout, tag, organizationName));
   let body = labels.join("");
-  if (layout.media === "sheet" && !preview) {
+  if (layout.media === "sheet") {
     const grid = sheetGrid(layout);
     const perPage = grid.cols * grid.rows;
     const pages: string[] = [];
@@ -475,5 +469,5 @@ export function buildLayoutLabelsHtml(
   }
   return `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><title>Этикетки</title>
-<style>${layoutStyles(layout, preview)}</style></head><body>${body}</body></html>`;
+<style>${printStyles(layout)}</style></head><body>${body}</body></html>`;
 }

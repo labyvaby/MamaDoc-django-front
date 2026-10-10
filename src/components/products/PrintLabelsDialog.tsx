@@ -33,7 +33,6 @@ import { usePermissions } from "../../hooks/usePermissions";
 import {
   LABEL_PRESETS,
   buildLayoutLabelsHtml,
-  htmlKey,
   layoutFromTemplate,
   presetByKey,
   sheetGrid,
@@ -48,6 +47,7 @@ import {
   type LabelCopiesMode,
 } from "../../utility/productLabels";
 import { LabelDesigner, type LabelDesignerTarget } from "./LabelDesigner";
+import { LabelPreview } from "./LabelPreview";
 
 /** Строка печати: товар, его остаток (для «по остатку») и данные для превью. */
 export type LabelPrintItem = { productId: number; stock: number; preview: PriceTag };
@@ -202,10 +202,6 @@ export const PrintLabelsDialog: React.FC<{
   const tooMany = plan.total > MAX_LABELS_PER_PRINT;
 
   const previewTag = items[0]?.preview;
-  const previewHtml = React.useMemo(
-    () => (previewTag ? buildLayoutLabelsHtml([previewTag], layout, { preview: true, organizationName }) : ""),
-    [previewTag, layout, organizationName],
-  );
   const frameWidth = layout.widthMm * MM_TO_PX;
   const frameHeight = layout.heightMm * MM_TO_PX;
   const scale = Math.min(3, Math.min(PREVIEW_MAX_WIDTH, previewWidth - PREVIEW_GUTTER) / frameWidth);
@@ -357,7 +353,7 @@ export const PrintLabelsDialog: React.FC<{
               </Typography>
             </Box>
 
-            {previewHtml && (
+            {previewTag && (
               <Box>
                 <Typography variant="subtitle2" sx={{ mb: 1 }}>
                   Как будет выглядеть
@@ -382,22 +378,7 @@ export const PrintLabelsDialog: React.FC<{
                       bgcolor: "#fff",
                     }}
                   >
-                    <Box
-                      key={htmlKey(previewHtml)}
-                      component="iframe"
-                      title="Превью этикетки"
-                      sandbox=""
-                      srcDoc={previewHtml}
-                      sx={{
-                        width: frameWidth,
-                        height: frameHeight,
-                        border: 0,
-                        transform: `scale(${scale})`,
-                        transformOrigin: "0 0",
-                        pointerEvents: "none",
-                        colorScheme: "light",
-                      }}
-                    />
+                    <LabelPreview tag={previewTag} layout={layout} organizationName={organizationName} scale={scale} />
                   </Box>
                 </Box>
               </Box>

@@ -8,6 +8,7 @@ import {
   elementText,
   fitElement,
   layoutFromTemplate,
+  labelPreviewMarkup,
   layoutToTemplate,
   presetByKey,
   presetLayout,
@@ -191,11 +192,14 @@ describe("документ печати", () => {
     expect(buildLayoutLabelsHtml([tag()], noDigits)).not.toContain('class="d"');
   });
 
-  it("превью — одна этикетка без страниц", () => {
-    const html = buildLayoutLabelsHtml([tag({ copies: 10 })], presetByKey("a4-70x37"), { preview: true });
-    expect(count(html, 'class="label"')).toBe(1);
-    expect(html).not.toContain("@page");
-    expect(html).not.toContain('class="sheet"');
+  it("превью — одна этикетка для Shadow DOM: без страниц, тема CRM отрезана", () => {
+    const markup = labelPreviewMarkup(tag({ copies: 10 }), presetByKey("a4-70x37"), "Monogram");
+    expect(count(markup, 'class="label"')).toBe(1);
+    expect(markup).toContain(":host { all: initial;");
+    expect(markup).toContain("width: 70mm; height: 37.1mm;");
+    expect(markup).not.toContain("@page");
+    expect(markup).not.toContain('class="sheet"');
+    expect(markup).not.toContain("<html");
   });
 
   it("HTML из данных товара и своего текста экранируется", () => {
