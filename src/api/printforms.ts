@@ -39,8 +39,16 @@ export type PriceTag = {
   unit: string;
   category: string;
   attributes: PriceTagAttribute[];
-  /** Деньги строкой («5000.00»), как во всём v2. */
+  /** Деньги строкой («5000.00»), как во всём v2. Обычная цена — без скидки. */
   price: string;
+  /**
+   * Скидка по акции, которую получит любой покупатель за одну штуку (без
+   * промокода и карты клиента); null — скидки нет.
+   */
+  discountPrice?: string | null;
+  discountAmount?: string | null;
+  /** Целые проценты, «30». */
+  discountPercent?: string | null;
   copies: number;
 };
 

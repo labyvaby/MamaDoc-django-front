@@ -53,6 +53,10 @@ export const DEFAULT_LABEL_FONT: LabelFontKey = "arial";
 export type LabelFieldSource =
   | "name"
   | "price"
+  | "oldPrice"
+  | "discountPercent"
+  | "discountAmount"
+  | "currency"
   | "sku"
   | "size"
   | "color"
@@ -66,7 +70,11 @@ export type LabelFieldSource =
 /** Что умеет выводить текстовый элемент; префикс и суффикс — по умолчанию. */
 export const LABEL_FIELD_SOURCES: Record<LabelFieldSource, { label: string; prefix: string; suffix: string }> = {
   name: { label: "Название", prefix: "", suffix: "" },
-  price: { label: "Цена", prefix: "", suffix: " сом" },
+  price: { label: "Цена к оплате (со скидкой, если есть)", prefix: "", suffix: " сом" },
+  oldPrice: { label: "Старая цена (только при скидке)", prefix: "", suffix: " сом" },
+  discountPercent: { label: "Скидка, % (только при скидке)", prefix: "−", suffix: "%" },
+  discountAmount: { label: "Скидка, сом (только при скидке)", prefix: "−", suffix: " сом" },
+  currency: { label: "Валюта «сом»", prefix: "", suffix: "" },
   sku: { label: "Артикул", prefix: "Арт. ", suffix: "" },
   size: { label: "Размер", prefix: "Размер ", suffix: "" },
   color: { label: "Цвет", prefix: "", suffix: "" },
@@ -78,15 +86,30 @@ export const LABEL_FIELD_SOURCES: Record<LabelFieldSource, { label: string; pref
   text: { label: "Свой текст", prefix: "", suffix: "" },
 };
 
+/** Суммы — то, у чего бывают копейки. */
+export const MONEY_SOURCES: readonly LabelFieldSource[] = ["price", "oldPrice", "discountAmount"];
+
+/**
+ * Когда элемент печатается: всегда, только у товара со скидкой (плашка
+ * «SALE») или только без неё.
+ */
+export type LabelShowWhen = "always" | "discount" | "regular";
+
+export const LABEL_SHOW_WHEN: Record<LabelShowWhen, string> = {
+  always: "Всегда",
+  discount: "Только при скидке",
+  regular: "Только без скидки",
+};
+
 export type LabelAlign = "left" | "center" | "right";
 export type LabelVAlign = "top" | "middle" | "bottom";
 
-type LabelBox = { id: string; x: number; y: number; w: number; h: number };
+type LabelBox = { id: string; x: number; y: number; w: number; h: number; showWhen: LabelShowWhen };
 
 export type LabelTextElement = LabelBox & {
   kind: "field";
   source: LabelFieldSource;
-  /** Текст элемента «Свой текст». */
+  /** Текст элемента «Свой текст» и «Валюта». */
   text: string;
   prefix: string;
   suffix: string;
@@ -96,6 +119,11 @@ export type LabelTextElement = LabelBox & {
   bold: boolean;
   italic: boolean;
   uppercase: boolean;
+  underline: boolean;
+  /** Зачёркнуто — старая цена при скидке. */
+  strike: boolean;
+  /** У сумм: всегда с копейками — «74 400,00». */
+  cents: boolean;
   align: LabelAlign;
   valign: LabelVAlign;
   /** Сколько строк уместить, дальше — обрезка. */
@@ -156,19 +184,23 @@ export function textElement(source: LabelFieldSource, patch: Partial<LabelTextEl
     id: newElementId(),
     kind: "field",
     source,
-    text: source === "text" ? "Текст" : "",
+    text: source === "text" ? "Текст" : source === "currency" ? "сом" : "",
     prefix: LABEL_FIELD_SOURCES[source].prefix,
     suffix: LABEL_FIELD_SOURCES[source].suffix,
     x: 2,
     y: 2,
     w: 30,
     h: 5,
+    showWhen: "always",
     font: DEFAULT_LABEL_FONT,
     fontSize: 8,
-    bold: source === "price" || source === "name" || source === "brand",
+    bold: ["price", "name", "brand", "discountPercent"].includes(source),
     italic: false,
     uppercase: source === "brand",
-    align: source === "price" ? "right" : "left",
+    underline: false,
+    strike: source === "oldPrice",
+    cents: false,
+    align: source === "price" || source === "oldPrice" ? "right" : "left",
     valign: "top",
     lines: 1,
     ...patch,
@@ -176,7 +208,52 @@ export function textElement(source: LabelFieldSource, patch: Partial<LabelTextEl
 }
 
 export function barcodeElement(patch: Partial<LabelBarcodeElement> = {}): LabelBarcodeElement {
-  return { id: newElementId(), kind: "barcode", x: 2, y: 2, w: 40, h: 12, showDigits: true, digitsSize: 7, ...patch };
+  return {
+    id: newElementId(),
+    kind: "barcode",
+    x: 2,
+    y: 2,
+    w: 40,
+    h: 12,
+    showWhen: "always",
+    showDigits: true,
+    digitsSize: 7,
+    ...patch,
+  };
+}
+
+/**
+ * «Сом» отдельным элементом: суффикс цены убирается, валюта встаёт мелко,
+ * подчёркнутая, справа над ценой — как на ценниках магазина. Дальше её
+ * двигают и настраивают как любой элемент.
+ */
+export function splitCurrency(layout: LabelLayout, priceId: string): { layout: LabelLayout; currencyId: string | null } {
+  const price = layout.elements.find((e): e is LabelTextElement => e.id === priceId && e.kind === "field");
+  if (!price) return { layout, currencyId: null };
+  const currencyText = price.suffix.trim() || "сом";
+  const size = Math.max(FONT_SIZE_PT.min, Math.round(price.fontSize * 0.45 * 2) / 2);
+  const w = round(Math.min(layout.widthMm, Math.max(6, lineMm(size) * 2.6)));
+  const h = round(lineMm(size));
+  const priceW = round(Math.max(1, price.w - w - 0.5));
+  const currency = fitElement(
+    textElement("currency", {
+      text: currencyText,
+      x: round(price.x + priceW + 0.5),
+      y: price.y,
+      w,
+      h,
+      fontSize: size,
+      underline: true,
+      showWhen: price.showWhen,
+      font: price.font,
+    }),
+    layout.widthMm,
+    layout.heightMm,
+  );
+  const elements = layout.elements.flatMap((element) =>
+    element.id === priceId ? [{ ...price, suffix: "", w: priceW }, currency] : [element],
+  );
+  return { layout: { ...layout, elements }, currencyId: currency.id };
 }
 
 /**
@@ -241,6 +318,7 @@ function parseElement(raw: unknown, widthMm: number, heightMm: number): LabelEle
     y: num(raw.y, 0),
     w: num(raw.w, 10),
     h: num(raw.h, 5),
+    showWhen: oneOf(raw.showWhen, Object.keys(LABEL_SHOW_WHEN) as LabelShowWhen[], "always"),
   };
   if (raw.kind === "barcode") {
     return fitElement(
@@ -270,6 +348,9 @@ function parseElement(raw: unknown, widthMm: number, heightMm: number): LabelEle
       bold: bool(raw.bold, false),
       italic: bool(raw.italic, false),
       uppercase: bool(raw.uppercase, false),
+      underline: bool(raw.underline, false),
+      strike: bool(raw.strike, false),
+      cents: bool(raw.cents, false),
       align: oneOf(raw.align, ["left", "center", "right"] as const, "left"),
       valign: oneOf(raw.valign, ["top", "middle", "bottom"] as const, "top"),
       lines: clamp(Math.round(num(raw.lines, 1)), 1, MAX_LABEL_LINES),
@@ -324,12 +405,28 @@ const attributeOf = (tag: PriceTag, role: string): string =>
   tag.attributes.find((a) => a.role === role && a.value.trim())?.value.trim() ?? "";
 
 /** Значение без префикса и суффикса; пустое — элемент на этикетку не ставится. */
-export function sourceValue(source: LabelFieldSource, tag: PriceTag, organizationName = ""): string {
+/** У товара есть скидка по акции — сервер прислал цену со скидкой. */
+export const hasDiscount = (tag: PriceTag): boolean => Boolean(tag.discountPrice);
+
+export function sourceValue(
+  source: LabelFieldSource,
+  tag: PriceTag,
+  organizationName = "",
+  { cents = false }: { cents?: boolean } = {},
+): string {
   switch (source) {
     case "name":
       return tag.name.trim();
     case "price":
-      return formatLabelNumber(tag.price);
+      return formatLabelNumber(tag.discountPrice || tag.price, cents);
+    case "oldPrice":
+      return hasDiscount(tag) ? formatLabelNumber(tag.price, cents) : "";
+    case "discountPercent":
+      return hasDiscount(tag) ? (tag.discountPercent ?? "") : "";
+    case "discountAmount":
+      return hasDiscount(tag) ? formatLabelNumber(tag.discountAmount ?? "", cents) : "";
+    case "currency":
+      return "";
     case "sku":
       return tag.sku.trim();
     case "size":
@@ -356,9 +453,16 @@ export function sourceValue(source: LabelFieldSource, tag: PriceTag, organizatio
 }
 
 export function elementText(element: LabelTextElement, tag: PriceTag, organizationName = ""): string {
-  if (element.source === "text") return element.text;
-  const value = sourceValue(element.source, tag, organizationName);
+  if (element.source === "text" || element.source === "currency") return element.text;
+  const value = sourceValue(element.source, tag, organizationName, { cents: element.cents });
   return value ? `${element.prefix}${value}${element.suffix}` : "";
+}
+
+/** Печатается ли элемент у этого товара — по условию «при скидке / без неё». */
+export function elementShown(element: LabelElement, tag: PriceTag): boolean {
+  if (element.showWhen === "discount") return hasDiscount(tag);
+  if (element.showWhen === "regular") return !hasDiscount(tag);
+  return true;
 }
 
 // ── HTML ──
@@ -373,7 +477,13 @@ function boxStyle(element: LabelElement): string {
   return `left:${mm(element.x)};top:${mm(element.y)};width:${mm(element.w)};height:${mm(element.h)};`;
 }
 
+function textDecoration(element: LabelTextElement): string {
+  const lines = [element.underline && "underline", element.strike && "line-through"].filter(Boolean);
+  return lines.length > 0 ? lines.join(" ") : "none";
+}
+
 function elementHtml(element: LabelElement, tag: PriceTag, organizationName: string): string {
+  if (!elementShown(element, tag)) return "";
   if (element.kind === "barcode") {
     const barcode = labelBarcode(tag);
     if (!barcode) return "";
@@ -389,7 +499,7 @@ function elementHtml(element: LabelElement, tag: PriceTag, organizationName: str
     `justify-content:${JUSTIFY[element.valign]};font-family:${esc(LABEL_FONTS[element.font].css)};` +
     `font-size:${element.fontSize}pt;font-weight:${element.bold ? 700 : 400};` +
     `font-style:${element.italic ? "italic" : "normal"};text-transform:${element.uppercase ? "uppercase" : "none"};` +
-    `text-align:${element.align};`;
+    `text-decoration:${textDecoration(element)};text-align:${element.align};`;
   const clampCss = element.lines > 1 ? ` style="-webkit-line-clamp:${element.lines}"` : "";
   return `<div class="e t${element.lines === 1 ? " one" : ""}" style="${style}"><div class="x"${clampCss}>${esc(text)}</div></div>`;
 }
