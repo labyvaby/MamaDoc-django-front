@@ -79,11 +79,12 @@ export function labelBrand(tag: Pick<PriceTag, "productId" | "attributes">): str
   );
 }
 
-/** Число цены с разрядами: «7 500», «99,5». */
-export function formatLabelNumber(price: string | number): string {
+/** Число цены с разрядами: «7 500», «99,5»; с копейками — «7 500,00». */
+export function formatLabelNumber(price: string | number, cents = false): string {
+  if (typeof price === "string" && price.trim() === "") return "";
   const value = Number(price);
   if (!Number.isFinite(value)) return "";
-  return value.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+  return value.toLocaleString("ru-RU", { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: 2 });
 }
 
 export function formatLabelPrice(price: string | number): string {

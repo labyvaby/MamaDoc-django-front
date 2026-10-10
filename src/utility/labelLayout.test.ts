@@ -13,6 +13,7 @@ import {
   presetByKey,
   presetLayout,
   sheetGrid,
+  splitCurrency,
   textElement,
   type LabelLayout,
 } from "./labelLayout";
@@ -210,5 +211,105 @@ describe("документ печати", () => {
     });
     expect(html).not.toContain("<img");
     expect(count(html, "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;")).toBe(2);
+  });
+});
+
+describe("скидка и валюта", () => {
+  const sale = (overrides: Partial<PriceTag> = {}) =>
+    tag({ price: "74400.00", discountPrice: "52080.00", discountAmount: "22320.00", discountPercent: "30", ...overrides });
+
+  it("цена — к оплате, старая и скидка — только когда скидка есть", () => {
+    expect(nbsp(elementText(textElement("price"), sale()))).toBe("52 080 сом");
+    expect(nbsp(elementText(textElement("oldPrice"), sale()))).toBe("74 400 сом");
+    expect(elementText(textElement("discountPercent"), sale())).toBe("−30%");
+    expect(nbsp(elementText(textElement("discountAmount"), sale()))).toBe("−22 320 сом");
+
+    const regular = tag({ price: "74400.00" });
+    expect(nbsp(elementText(textElement("price"), regular))).toBe("74 400 сом");
+    expect(elementText(textElement("oldPrice"), regular)).toBe("");
+    expect(elementText(textElement("discountPercent"), regular)).toBe("");
+    expect(elementText(textElement("discountAmount"), regular)).toBe("");
+  });
+
+  it("копейки — по желанию, как на ценнике «74 400,00»", () => {
+    expect(nbsp(elementText(textElement("price", { cents: true, suffix: "" }), tag({ price: "74400" })))).toBe("74 400,00");
+    expect(nbsp(elementText(textElement("oldPrice", { cents: true }), sale()))).toBe("74 400,00 сом");
+  });
+
+  it("валюта — свой текст элемента", () => {
+    expect(elementText(textElement("currency"), tag())).toBe("сом");
+    expect(elementText(textElement("currency", { text: "KGS" }), tag())).toBe("KGS");
+  });
+
+  it("зачёркнуто и подчёркнуто уходят в CSS; старая цена зачёркнута сразу", () => {
+    expect(textElement("oldPrice").strike).toBe(true);
+    const layout: LabelLayout = {
+      widthMm: 58,
+      heightMm: 40,
+      media: "roll",
+      elements: [
+        textElement("oldPrice", { x: 1, y: 1, w: 30, h: 5 }),
+        textElement("currency", { x: 40, y: 1, w: 10, h: 4, underline: true }),
+        textElement("name", { underline: true, strike: true }),
+      ],
+    };
+    const html = buildLayoutLabelsHtml([sale()], layout);
+    expect(html).toContain("text-decoration:line-through;");
+    expect(html).toContain("text-decoration:underline;");
+    expect(html).toContain("text-decoration:underline line-through;");
+  });
+
+  it("элемент «только при скидке» и «только без скидки»", () => {
+    const layout: LabelLayout = {
+      widthMm: 58,
+      heightMm: 40,
+      media: "roll",
+      elements: [
+        textElement("text", { text: "SALE", showWhen: "discount" }),
+        textElement("text", { text: "НОВИНКА", showWhen: "regular" }),
+        barcodeElement({ showWhen: "regular" }),
+      ],
+    };
+    const onSale = buildLayoutLabelsHtml([sale()], layout);
+    expect(onSale).toContain("SALE");
+    expect(onSale).not.toContain("НОВИНКА");
+    expect(onSale).not.toContain("<svg");
+    const regular = buildLayoutLabelsHtml([tag()], layout);
+    expect(regular).not.toContain("SALE");
+    expect(regular).toContain("НОВИНКА");
+    expect(regular).toContain("<svg");
+  });
+
+  it("«сом» выносится отдельным элементом: мелко, подчёркнуто, справа от цены", () => {
+    const price = textElement("price", { x: 2, y: 10, w: 54, h: 9, fontSize: 20, showWhen: "discount" });
+    const layout: LabelLayout = { widthMm: 58, heightMm: 40, media: "roll", elements: [price] };
+    const { layout: next, currencyId } = splitCurrency(layout, price.id);
+    expect(next.elements).toHaveLength(2);
+    const [newPrice, currency] = next.elements;
+    expect(newPrice).toMatchObject({ id: price.id, suffix: "" });
+    expect(currency).toMatchObject({ id: currencyId, kind: "field", source: "currency", text: "сом", underline: true, showWhen: "discount", y: 10 });
+    if (currency.kind !== "field" || newPrice.kind !== "field") throw new Error("kinds");
+    expect(currency.fontSize).toBeLessThan(price.fontSize);
+    expect(currency.x).toBeGreaterThanOrEqual(newPrice.x + newPrice.w);
+    expect(currency.x + currency.w).toBeLessThanOrEqual(58);
+  });
+
+  it("новые свойства переживают сохранение, старые элементы получают значения по умолчанию", () => {
+    const layout: LabelLayout = {
+      widthMm: 58,
+      heightMm: 40,
+      media: "roll",
+      elements: [textElement("oldPrice", { cents: true, underline: true, showWhen: "discount" })],
+    };
+    const saved = layoutToTemplate(layout);
+    expect(layoutFromTemplate({ ...saved, fields: JSON.parse(JSON.stringify(saved.fields)) })).toEqual(layout);
+
+    const legacy = layoutFromTemplate({
+      widthMm: 58,
+      heightMm: 40,
+      pageSize: "label_58",
+      fields: [{ kind: "field", source: "price", x: 1, y: 1, w: 20, h: 5 }],
+    });
+    expect(legacy.elements[0]).toMatchObject({ showWhen: "always", strike: false, underline: false, cents: false });
   });
 });

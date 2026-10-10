@@ -35,6 +35,8 @@ import FormatAlignLeft from "@mui/icons-material/FormatAlignLeft";
 import FormatAlignRight from "@mui/icons-material/FormatAlignRight";
 import FormatBold from "@mui/icons-material/FormatBold";
 import FormatItalic from "@mui/icons-material/FormatItalic";
+import FormatStrikethrough from "@mui/icons-material/FormatStrikethrough";
+import FormatUnderlined from "@mui/icons-material/FormatUnderlined";
 import TextFieldsOutlined from "@mui/icons-material/TextFieldsOutlined";
 import QrCode2Outlined from "@mui/icons-material/QrCode2Outlined";
 import VerticalAlignBottom from "@mui/icons-material/VerticalAlignBottom";
@@ -59,16 +61,20 @@ import {
   LABEL_FIELD_SOURCES,
   LABEL_FONTS,
   LABEL_PRESETS,
+  LABEL_SHOW_WHEN,
   LABEL_SIDE_MM,
   MAX_LABEL_ELEMENTS,
   MAX_LABEL_LINES,
+  MONEY_SOURCES,
   barcodeElement,
   elementText,
   fitElement,
+  hasDiscount,
   layoutToTemplate,
   newElementId,
   presetLayout,
   sheetGrid,
+  splitCurrency,
   textElement,
   type LabelAlign,
   type LabelBarcodeElement,
@@ -78,6 +84,7 @@ import {
   type LabelLayout,
   type LabelMedia,
   type LabelPresetKey,
+  type LabelShowWhen,
   type LabelTextElement,
   type LabelVAlign,
 } from "../../utility/labelLayout";
@@ -158,6 +165,20 @@ const NumberField: React.FC<{
 };
 
 const FONT_KEYS = Object.keys(LABEL_FONTS) as LabelFontKey[];
+/** Что печатается только у товаров со скидкой. */
+const DISCOUNT_SOURCES: readonly LabelFieldSource[] = ["oldPrice", "discountPercent", "discountAmount"];
+
+/** Образец со скидкой 20 %: увидеть, как этикетка выглядит в распродажу. */
+function withDemoDiscount(tag: PriceTag): PriceTag {
+  const price = Number(tag.price) || 0;
+  const discount = Math.round(price * 0.2);
+  return {
+    ...tag,
+    discountPrice: String(price - discount),
+    discountAmount: String(discount),
+    discountPercent: "20",
+  };
+}
 const SOURCE_KEYS = Object.keys(LABEL_FIELD_SOURCES) as LabelFieldSource[];
 
 /**
@@ -189,6 +210,11 @@ export const LabelDesigner: React.FC<{
   const [saving, setSaving] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
   const [addAnchor, setAddAnchor] = React.useState<HTMLElement | null>(null);
+  const [sampleDiscount, setSampleDiscount] = React.useState(false);
+  const shownSample = React.useMemo(
+    () => (sampleDiscount && !hasDiscount(sample) ? withDemoDiscount(sample) : sample),
+    [sample, sampleDiscount],
+  );
 
   React.useEffect(() => {
     if (!open || !target) return;
@@ -215,6 +241,12 @@ export const LabelDesigner: React.FC<{
     }));
   const patchSelected = (patch: Partial<LabelTextElement> | Partial<LabelBarcodeElement>) => {
     if (selected) updateElement(selected.id, (element) => ({ ...element, ...patch }) as LabelElement);
+  };
+  const splitCurrencyOut = (id: string) => {
+    const { layout: next, currencyId } = splitCurrency(layout, id);
+    if (!currencyId) return;
+    changeLayout(() => next);
+    setSelectedId(currencyId);
   };
   const removeElement = (id: string) => {
     changeLayout((prev) => ({ ...prev, elements: prev.elements.filter((element) => element.id !== id) }));
@@ -390,7 +422,7 @@ export const LabelDesigner: React.FC<{
   // ── Панель свойств ──
   const textProps = selected?.kind === "field" ? selected : null;
   const barcodeProps = selected?.kind === "barcode" ? selected : null;
-  const emptyForSample = textProps ? elementText(textProps, sample, organizationName) === "" : false;
+  const emptyForSample = textProps ? elementText(textProps, shownSample, organizationName) === "" : false;
 
   const propsPanel = selected ? (
     <Stack spacing={1.5}>
@@ -423,7 +455,13 @@ export const LabelDesigner: React.FC<{
                 source,
                 prefix: LABEL_FIELD_SOURCES[source].prefix,
                 suffix: LABEL_FIELD_SOURCES[source].suffix,
-                text: source === "text" && !textProps.text ? "Текст" : textProps.text,
+                text:
+                  source === "currency" && !textProps.text
+                    ? "сом"
+                    : source === "text" && !textProps.text
+                      ? "Текст"
+                      : textProps.text,
+                strike: source === "oldPrice" ? true : textProps.strike,
               });
             }}
           >
@@ -433,12 +471,12 @@ export const LabelDesigner: React.FC<{
               </MenuItem>
             ))}
           </TextField>
-          {textProps.source === "text" ? (
+          {textProps.source === "text" || textProps.source === "currency" ? (
             <TextField
               size="small"
               label="Текст"
               value={textProps.text}
-              multiline
+              multiline={textProps.source === "text"}
               maxRows={4}
               onChange={(e) => patchSelected({ text: e.target.value })}
             />
@@ -448,13 +486,43 @@ export const LabelDesigner: React.FC<{
               <TextField size="small" label="После" value={textProps.suffix} onChange={(e) => patchSelected({ suffix: e.target.value })} />
             </Box>
           )}
+          {MONEY_SOURCES.includes(textProps.source) && (
+            <Stack direction="row" alignItems="center" flexWrap="wrap" useFlexGap sx={{ gap: 1 }}>
+              <FormControlLabel
+                control={<Switch size="small" checked={textProps.cents} onChange={(e) => patchSelected({ cents: e.target.checked })} />}
+                label="С копейками ,00"
+              />
+              {textProps.suffix.trim() && (
+                <Button size="small" onClick={() => splitCurrencyOut(textProps.id)}>
+                  Вынести «{textProps.suffix.trim()}» отдельно
+                </Button>
+              )}
+            </Stack>
+          )}
           {emptyForSample && (
             <Typography variant="caption" color="text.secondary">
-              У образца это поле пустое — на его этикетке элемента не будет.
+              {DISCOUNT_SOURCES.includes(textProps.source) && !sampleDiscount
+                ? "Видно только у товаров со скидкой — включите «Образец со скидкой» над этикеткой."
+                : "У образца это поле пустое — на его этикетке элемента не будет."}
             </Typography>
           )}
         </>
       )}
+
+      <TextField
+        select
+        size="small"
+        label="Показывать"
+        value={selected.showWhen}
+        onChange={(e) => patchSelected({ showWhen: e.target.value as LabelShowWhen })}
+        helperText={selected.showWhen === "always" ? undefined : "Например, плашка «SALE» — только у товаров со скидкой"}
+      >
+        {(Object.keys(LABEL_SHOW_WHEN) as LabelShowWhen[]).map((key) => (
+          <MenuItem key={key} value={key}>
+            {LABEL_SHOW_WHEN[key]}
+          </MenuItem>
+        ))}
+      </TextField>
 
       <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1 }}>
         <NumberField label="Слева" value={selected.x} min={0} max={layout.widthMm} onChange={(x) => patchSelected({ x })} />
@@ -517,6 +585,22 @@ export const LabelDesigner: React.FC<{
                 sx={{ fontWeight: 700, fontSize: 12, px: 1.25 }}
               >
                 АБ
+              </ToggleButton>
+              <ToggleButton
+                value="underline"
+                selected={textProps.underline}
+                onChange={() => patchSelected({ underline: !textProps.underline })}
+                aria-label="Подчеркнуть"
+              >
+                <FormatUnderlined fontSize="small" />
+              </ToggleButton>
+              <ToggleButton
+                value="strike"
+                selected={textProps.strike}
+                onChange={() => patchSelected({ strike: !textProps.strike })}
+                aria-label="Зачеркнуть"
+              >
+                <FormatStrikethrough fontSize="small" />
               </ToggleButton>
             </ToggleButtonGroup>
             <ToggleButtonGroup
@@ -687,6 +771,15 @@ export const LabelDesigner: React.FC<{
                   </MenuItem>
                 ))}
               </TextField>
+              {!hasDiscount(sample) && (
+                <FormControlLabel
+                  control={
+                    <Switch size="small" checked={sampleDiscount} onChange={(e) => setSampleDiscount(e.target.checked)} />
+                  }
+                  label="Образец со скидкой −20%"
+                  sx={{ mr: 0 }}
+                />
+              )}
               <Box sx={{ flex: 1 }} />
               <Tooltip title="Мельче">
                 <span>
@@ -753,7 +846,7 @@ export const LabelDesigner: React.FC<{
                   }}
                 >
                   <LabelPreview
-                    tag={sample}
+                    tag={shownSample}
                     layout={layout}
                     organizationName={organizationName}
                     scale={scale}
