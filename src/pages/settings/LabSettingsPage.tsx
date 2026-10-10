@@ -15,7 +15,9 @@ import {
   Switch,
   TextField,
   Typography,
+  type TextFieldProps,
 } from "@mui/material";
+import CheckCircleOutlined from "@mui/icons-material/CheckCircleOutlined";
 import BiotechOutlined from "@mui/icons-material/BiotechOutlined";
 import GroupsOutlined from "@mui/icons-material/GroupsOutlined";
 import LocalOfferOutlined from "@mui/icons-material/LocalOfferOutlined";
@@ -45,6 +47,53 @@ import {
   type LabBranchRow,
   type LabSettingsForm,
 } from "./labSettingsForm";
+
+const LabPasswordField = ({
+  hasPassword,
+  usernameChanged = false,
+  value,
+  ...props
+}: TextFieldProps & { hasPassword: boolean; usernameChanged?: boolean; value: string }) => {
+  const pending = value !== "";
+  const saved = hasPassword && !usernameChanged && !pending;
+  const status = pending
+    ? "Новый пароль не сохранён"
+    : usernameChanged && hasPassword
+      ? "Введите пароль для нового логина"
+      : saved ? "Пароль сохранён" : "Пароль не задан";
+
+  return (
+    <TextField
+      {...props}
+      type="password"
+      value={value}
+      autoComplete="new-password"
+      InputLabelProps={{ shrink: true }}
+      placeholder={saved ? "Пароль сохранён" : "Введите пароль"}
+      FormHelperTextProps={{ "aria-live": "polite" }}
+      helperText={
+        <Stack component="span" spacing={0.5}>
+          <Box component="span" sx={(theme) => ({
+            display: "flex", alignItems: "center", gap: 0.5, fontWeight: 600,
+            color: saved
+              ? theme.palette.success.onSurface
+              : "text.primary",
+          })}>
+            {saved && <CheckCircleOutlined sx={{ fontSize: 16 }} />}
+            {status}
+          </Box>
+          <span>
+            {saved
+              ? "Чтобы заменить пароль, введите новый."
+              : pending
+                ? "Нажмите «Проверить и сохранить»."
+                : "Введите пароль от этой учётной записи ExpressLab."}
+          </span>
+        </Stack>
+      }
+    />
+  );
+};
 
 /**
  * Настройка подключения к ЛИС ExpressLab — то, что раньше делал только
@@ -273,20 +322,14 @@ const LabSettingsPage: React.FC = () => {
                 helperText="Общий логин клиники, если он выдан"
                 sx={{ maxWidth: 320 }}
               />
-              <TextField
+              <LabPasswordField
                 label="Пароль в ЛИС"
                 size="small"
-                type="password"
                 value={form.lisPassword}
                 onChange={(e) => patch({ lisPassword: e.target.value })}
                 disabled={busy}
-                autoComplete="new-password"
-                placeholder={form.hasPassword ? "сохранён — оставьте пустым" : ""}
-                helperText={
-                  form.hasPassword
-                    ? "Пустое поле — пароль не меняется"
-                    : "Пароль от учётной записи ЛИС"
-                }
+                hasPassword={form.hasPassword}
+                usernameChanged={form.lisUsername.trim() !== config?.lisUsername}
                 sx={{ maxWidth: 320 }}
               />
             </Stack>
@@ -354,17 +397,15 @@ const LabSettingsPage: React.FC = () => {
                       autoComplete="off"
                       helperText="Логин, выданный ExpressLab этому филиалу"
                     />
-                    <TextField
+                    <LabPasswordField
                       fullWidth
                       label={row.eveningEnabled ? "Пароль до 17:00" : "Пароль филиала в ЛИС"}
                       size="small"
-                      type="password"
                       value={row.lisPassword}
                       onChange={(e) => patchBranch(row.branchId, { lisPassword: e.target.value, clearCredentials: false })}
                       disabled={busy}
-                      autoComplete="new-password"
-                      placeholder={row.hasPassword ? "сохранён — оставьте пустым" : ""}
-                      helperText={row.hasPassword ? "Пустое поле сохраняет пароль; при смене логина введите его заново" : "Пароль, выданный для этого филиала"}
+                      hasPassword={row.hasPassword}
+                      usernameChanged={row.lisUsername.trim() !== row.savedUsername}
                     />
                   </Stack>
                   {!row.eveningEnabled && form.lisUsername && (row.lisUsername || row.hasPassword || row.lisPassword) && (
@@ -388,11 +429,11 @@ const LabSettingsPage: React.FC = () => {
                         <TextField fullWidth size="small" label="Логин с 17:00" disabled={busy}
                           value={row.eveningLisUsername} autoComplete="off"
                           onChange={(e) => patchBranch(row.branchId, { eveningLisUsername: e.target.value, clearEveningCredentials: false })} />
-                        <TextField fullWidth size="small" label="Пароль с 17:00" type="password" disabled={busy}
-                          value={row.eveningLisPassword} autoComplete="new-password"
+                        <LabPasswordField fullWidth size="small" label="Пароль с 17:00" disabled={busy}
+                          value={row.eveningLisPassword}
                           onChange={(e) => patchBranch(row.branchId, { eveningLisPassword: e.target.value, clearEveningCredentials: false })}
-                          placeholder={row.eveningHasPassword ? "сохранён — оставьте пустым" : ""}
-                          helperText={row.eveningHasPassword ? "Пустое поле сохраняет пароль; при смене логина введите его заново" : "Пароль вечерней учётной записи"} />
+                          hasPassword={row.eveningHasPassword}
+                          usernameChanged={row.eveningLisUsername.trim() !== row.eveningSavedUsername} />
                       </Stack>
                     </Stack>
                   )}
