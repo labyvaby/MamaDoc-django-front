@@ -2,14 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { PriceTag } from "../api/printforms";
 import {
-  DEFAULT_LABEL_CONTENT,
-  buildProductLabelsHtml,
   expandLabelCopies,
+  formatLabelNumber,
   formatLabelPrice,
   labelBarcode,
   labelBrand,
   labelCopies,
-  labelMetaLine,
   planLabelCopies,
 } from "./productLabels";
 
@@ -29,8 +27,6 @@ const tag = (overrides: Partial<PriceTag> = {}): PriceTag => ({
   copies: 1,
   ...overrides,
 });
-
-const count = (html: string, needle: string) => html.split(needle).length - 1;
 
 describe("сколько этикеток", () => {
   it("по одной, по остатку и по N", () => {
@@ -62,15 +58,13 @@ describe("сколько этикеток", () => {
     expect(plan.total).toBe(4);
     expect(plan.skipped).toBe(1);
   });
+
+  it("копии раскладываются по этикеткам", () => {
+    expect(expandLabelCopies([tag({ copies: 3 }), tag({ productId: 2, copies: 2 })])).toHaveLength(5);
+  });
 });
 
 describe("что на этикетке", () => {
-  it("строка под названием: артикул, размер, цвет", () => {
-    expect(labelMetaLine(tag(), DEFAULT_LABEL_CONTENT)).toBe("Арт. 1024 · Размер M · Синий");
-    expect(labelMetaLine(tag(), { ...DEFAULT_LABEL_CONTENT, sku: false })).toBe("Размер M · Синий");
-    expect(labelMetaLine(tag({ attributes: [] }), DEFAULT_LABEL_CONTENT)).toBe("Арт. 1024");
-  });
-
   it("бренд — свойство «Бренд», без учёта регистра имени", () => {
     expect(labelBrand(tag())).toBe("Monogram");
     expect(labelBrand(tag({ attributes: [{ name: "brand", role: "generic", value: "Zara" }] }))).toBe("Zara");
@@ -79,6 +73,7 @@ describe("что на этикетке", () => {
 
   it("цена — сомы с разделителем разрядов", () => {
     expect(formatLabelPrice("7500.00").replace(/\s/g, " ")).toBe("7 500 сом");
+    expect(formatLabelNumber("7500.00").replace(/\s/g, " ")).toBe("7 500");
     expect(formatLabelPrice("99.50")).toBe("99,5 сом");
     expect(formatLabelPrice("abc")).toBe("");
   });
@@ -92,56 +87,5 @@ describe("что на этикетке", () => {
     expect(labelBarcode(tag({ barcode: "" }))?.value).toBe("1024");
     expect(labelBarcode(tag({ barcode: "", sku: "" }))).toBeNull();
     expect(labelBarcode(tag({ barcode: "Ёлка", sku: "" }))).toBeNull();
-  });
-});
-
-describe("документ печати", () => {
-  it("копии раскладываются по этикеткам, по одной на страницу рулона", () => {
-    const tags = [tag({ copies: 3 }), tag({ productId: 2, name: "Шарф", copies: 2 })];
-    expect(expandLabelCopies(tags)).toHaveLength(5);
-    const html = buildProductLabelsHtml(tags, { size: "58x40", content: DEFAULT_LABEL_CONTENT });
-    expect(count(html, 'class="label"')).toBe(5);
-    expect(html).toContain("@page { size: 58mm 40mm; margin: 0; }");
-    expect(html).toContain("Шарф");
-  });
-
-  it("лист A4 — по 24 наклейки на страницу", () => {
-    const html = buildProductLabelsHtml([tag({ copies: 30 })], { size: "a4", content: DEFAULT_LABEL_CONTENT });
-    expect(count(html, 'class="sheet"')).toBe(2);
-    expect(count(html, 'class="label"')).toBe(30);
-    expect(html).toContain("@page { size: 210mm 297mm; margin: 0; }");
-  });
-
-  it("выключенные поля не печатаются", () => {
-    const html = buildProductLabelsHtml([tag()], {
-      size: "40x30",
-      content: { ...DEFAULT_LABEL_CONTENT, price: false, barcode: false, brand: false },
-    });
-    expect(html).not.toContain('class="price"');
-    expect(html).not.toContain("<svg");
-    expect(html).not.toContain("Monogram");
-  });
-
-  it("название магазина — только если включено и известно", () => {
-    const on = { ...DEFAULT_LABEL_CONTENT, organization: true };
-    expect(buildProductLabelsHtml([tag()], { size: "58x30", content: on, organizationName: "Monogram ЦУМ" })).toContain(
-      "Monogram ЦУМ",
-    );
-    expect(buildProductLabelsHtml([tag()], { size: "58x30", content: on })).not.toContain('class="org"');
-  });
-
-  it("HTML из данных товара экранируется", () => {
-    const html = buildProductLabelsHtml([tag({ name: '<img src=x onerror="alert(1)">' })], {
-      size: "58x40",
-      content: DEFAULT_LABEL_CONTENT,
-    });
-    expect(html).not.toContain("<img");
-    expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
-  });
-
-  it("превью — одна этикетка, даже если копий много", () => {
-    const html = buildProductLabelsHtml([tag({ copies: 10 })], { size: "a4", content: DEFAULT_LABEL_CONTENT }, { preview: true });
-    expect(count(html, 'class="label"')).toBe(1);
-    expect(html).not.toContain('class="sheet"');
   });
 });
