@@ -1,11 +1,13 @@
 import {
   MAX_DELAY_MINUTES,
   MAX_INTERVAL_DAYS,
+  PAYROLL_DAILY_EVENT_CODE,
   PROFICHAT_PUSH_CHANNEL,
   OPERATORS_WITHOUT_VALUE,
   OPERATORS_WITH_LIST_VALUE,
   isConditionGroup,
   isEmptyConditions,
+  isPerEmployeeEvent,
   isScheduledEvent,
   type Automation,
   type AutomationSchedule,
@@ -56,6 +58,11 @@ export interface ActionForm {
   recipientField: string;
   /** Телефон получателя у правила по расписанию; иначе не используется. */
   recipientPhone: string;
+  /**
+   * Пробный номер правила «каждому сотруднику»: пока заполнен, все сообщения
+   * уходят на него. Пусто — обычная рассылка сотрудникам.
+   */
+  testRecipientPhone: string;
   /** Заголовок push-уведомления. Для SMS и WhatsApp не используется. */
   title: string;
   body: string;
@@ -97,6 +104,19 @@ export function isScheduledForm(form: AutomationForm): boolean {
   return isScheduledEvent(form.eventCode);
 }
 
+/** Расписание, которое пишет каждому сотруднику своё («Зарплата за вчера»). */
+export function isPerEmployeeForm(form: AutomationForm): boolean {
+  return isPerEmployeeEvent(form.eventCode);
+}
+
+/**
+ * Обычное правило по расписанию: данных события нет, поэтому нет условий, а
+ * получатель — номер, вписанный в само действие.
+ */
+export function isFixedPhoneForm(form: AutomationForm): boolean {
+  return isScheduledForm(form) && !isPerEmployeeForm(form);
+}
+
 export function makeLeaf(field: string, operator: string): ConditionLeafForm {
   return { key: nextKey(), kind: "leaf", field, operator, value: "", values: [] };
 }
@@ -113,6 +133,7 @@ export function makeAction(recipientField: string): ActionForm {
     channel: "sms",
     recipientField,
     recipientPhone: "",
+    testRecipientPhone: "",
     title: "",
     body: "",
   };
@@ -131,14 +152,52 @@ export function emptyForm(event: AutomationCatalogEvent | undefined): Automation
   };
 }
 
-/** Получатель по умолчанию: `client_phone`, если событие такую переменную даёт. */
+/**
+ * Получатель по умолчанию: `client_phone`, если событие такую переменную даёт,
+ * иначе первый телефон события («Телефон сотрудника» у зарплатного правила).
+ */
 export function defaultRecipientField(
   event: AutomationCatalogEvent | undefined,
 ): string {
   if (!event) return "client_phone";
-  return event.variables.includes("client_phone")
-    ? "client_phone"
-    : event.variables[0] ?? "";
+  if (event.variables.includes("client_phone")) return "client_phone";
+  return (
+    event.variables.find((variable) => variable.includes("phone")) ??
+    event.variables[0] ??
+    ""
+  );
+}
+
+/** Образец сообщения, которым конструктор заполняет пустое действие. */
+export interface DefaultMessage {
+  channel?: string;
+  title: string;
+  body: string;
+}
+
+/**
+ * Готовый текст для события, у которого он очевиден.
+ *
+ * Зарплатное правило без текста бессмысленно, а собирать его из переменных
+ * руками долго — подставляем образец, который владелец потом правит. Канал —
+ * пуш, если он есть среди доступных: ради него правило и заводится.
+ */
+export function defaultMessage(
+  eventCode: string,
+  channels: string[],
+): DefaultMessage | null {
+  if (eventCode !== PAYROLL_DAILY_EVENT_CODE) return null;
+  return {
+    ...(channels.includes(PROFICHAT_PUSH_CHANNEL)
+      ? { channel: PROFICHAT_PUSH_CHANNEL }
+      : {}),
+    title: "Начисления за {{work_date}}",
+    // «Из чего сложилось» собирает бэк: без нулевых частей и с верным
+    // склонением — шаблон сам «часы 0 ч» не выкинет.
+    body:
+      "{{employee_name}}, за {{work_date}} начислено {{earned_total}} сом. " +
+      "{{breakdown}}.",
+  };
 }
 
 function conditionsToForm(node: AutomationConditionNode): ConditionNodeForm {
@@ -178,6 +237,7 @@ export function automationToForm(automation: Automation): AutomationForm {
       channel: String(action.config.channel ?? "sms"),
       recipientField: String(action.config.recipientField ?? "client_phone"),
       recipientPhone: String(action.config.recipientPhone ?? ""),
+      testRecipientPhone: String(action.config.testRecipientPhone ?? ""),
       title: String(action.config.title ?? ""),
       body: String(action.config.body ?? ""),
     })),
@@ -240,9 +300,10 @@ function nodeToApi(node: ConditionNodeForm): AutomationConditionNode {
 }
 
 export function toConditions(form: AutomationForm): AutomationConditions {
-  // У расписания условий не бывает: проверять их не на чем, и бэк такое
-  // правило отклоняет целиком.
-  if (isScheduledForm(form)) return {};
+  // У обычного расписания условий не бывает: проверять их не на чем, и бэк
+  // такое правило отклоняет целиком. У правила «каждому сотруднику» данные
+  // есть — по сотруднику на событие, — и условия работают как у события.
+  if (isFixedPhoneForm(form)) return {};
   return form.conditions ? nodeToApi(form.conditions) : {};
 }
 
@@ -262,12 +323,17 @@ export function toSaveInput(
       delayMinutes: Number(action.delayMinutes) || 0,
       config: {
         channel: action.channel,
-        // Получатель у расписания — конкретный номер, у события — переменная
-        // payload. Класть в конфиг оба ключа незачем: бэк читает ровно тот,
-        // что соответствует типу правила.
-        ...(isScheduledForm(form)
+        // Получатель у обычного расписания — конкретный номер, у остальных —
+        // переменная payload. Класть в конфиг оба ключа незачем: бэк читает
+        // ровно тот, что соответствует типу правила.
+        ...(isFixedPhoneForm(form)
           ? { recipientPhone: action.recipientPhone }
           : { recipientField: action.recipientField }),
+        // Пробный номер уходит, только пока заполнен: пустой ключ бэк
+        // принял бы за «рассылать сотрудникам», но читать конфиг так проще.
+        ...(isPerEmployeeForm(form) && action.testRecipientPhone.trim()
+          ? { testRecipientPhone: action.testRecipientPhone.trim() }
+          : {}),
         body: action.body,
         // Заголовок хранится только там, где он есть: у SMS и WhatsApp его
         // нет вовсе, и пустой ключ в конфиге лишь путал бы при чтении правила.
@@ -321,6 +387,7 @@ export function validateForm(
   if (form.actions.length === 0) errors.actions = labels.actionsRequired;
 
   const scheduled = isScheduledForm(form);
+  const fixedPhone = isFixedPhoneForm(form);
   if (scheduled) errors.schedule = scheduleError(form.schedule, labels);
 
   const knownFields = new Set((event?.fields ?? []).map((field) => field.code));
@@ -340,12 +407,12 @@ export function validateForm(
       : node.value.trim() !== "";
     if (!filled) errors.conditions[node.key] = labels.valueRequired;
   };
-  if (form.conditions && !scheduled) walk(form.conditions);
+  if (form.conditions && !fixedPhone) walk(form.conditions);
 
   for (const action of form.actions) {
     const fieldErrors: Record<string, string> = {};
     if (!action.body.trim()) fieldErrors.body = labels.bodyRequired;
-    if (scheduled && !action.recipientPhone.trim()) {
+    if (fixedPhone && !action.recipientPhone.trim()) {
       fieldErrors.recipientPhone = labels.phoneRequired;
     }
     const delay = Number(action.delayMinutes);
@@ -483,7 +550,7 @@ export function supportsBranchFilter(
 ): boolean {
   // У расписания payload нет вовсе, но филиал ему нужен: от него зависят
   // часовой пояс срабатывания и переменная «Название филиала».
-  if (event && isScheduledEvent(event.code)) return true;
+  if (event && isScheduledEvent(event.code, event)) return true;
   return Boolean(event?.fields.some((field) => field.code === "branch_id"));
 }
 
@@ -562,11 +629,11 @@ export function relevantPayloadFields(
   };
   if (form.conditions) walk(form.conditions);
 
-  const scheduled = isScheduledForm(form);
+  const fixedPhone = isFixedPhoneForm(form);
   for (const action of form.actions) {
-    // У расписания получатель — введённый номер, а не поле payload: в форме
-    // прогона ему делать нечего.
-    if (!scheduled) add(action.recipientField, "recipient");
+    // У обычного расписания получатель — введённый номер, а не поле payload:
+    // в форме прогона ему делать нечего.
+    if (!fixedPhone) add(action.recipientField, "recipient");
     templateVariables(action.body).forEach((code) => add(code, "template"));
     if (supportsTitle(action.channel)) {
       templateVariables(action.title).forEach((code) => add(code, "template"));

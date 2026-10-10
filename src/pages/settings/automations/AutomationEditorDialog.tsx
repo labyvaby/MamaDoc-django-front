@@ -50,9 +50,12 @@ import { PhonePayloadInput } from "./PhonePayloadInput";
 import { ScheduleEditor } from "./ScheduleEditor";
 import {
   automationToForm,
+  defaultMessage,
   defaultRecipientField,
   emptyForm,
   hasErrors,
+  isFixedPhoneForm,
+  isPerEmployeeForm,
   isScheduledForm,
   makeAction,
   supportsTitle,
@@ -121,9 +124,13 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
     () => catalog.events.find((item) => item.code === form.eventCode),
     [catalog.events, form.eventCode],
   );
-  /** Правило по расписанию: вместо условий — периодичность, вместо
-      переменной-получателя — введённый номер телефона. */
+  /** Правило по расписанию: вместо события — периодичность. */
   const scheduled = isScheduledForm(form);
+  /** Расписание «каждому сотруднику»: условия и переменная-получатель
+      остаются, плюс пробный номер. */
+  const perEmployee = isPerEmployeeForm(form);
+  /** Обычное расписание: ни условий, ни переменных — только введённый номер. */
+  const fixedPhone = isFixedPhoneForm(form);
 
   /**
    * Форма берётся из пропсов ровно один раз — при открытии диалога.
@@ -214,9 +221,20 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
     const retargeted = retargetForm(form, next);
     // Событие без branch_id не поддерживает фильтр по филиалу — сбрасываем,
     // иначе сохранился бы филиал, который движок всё равно не проверит.
-    const nextForm = supportsBranchFilter(next)
+    const branchForm = supportsBranchFilter(next)
       ? retargeted.form
       : { ...retargeted.form, branchId: null };
+    // У зарплатного правила есть готовый текст — подставляем его в пустые
+    // действия. Написанное пользователем не трогаем.
+    const sample = defaultMessage(code, channelOptions(catalog));
+    const nextForm = sample
+      ? {
+          ...branchForm,
+          actions: branchForm.actions.map((action) =>
+            action.body.trim() ? action : { ...action, ...sample },
+          ),
+        }
+      : branchForm;
 
     setDirty(true);
     setSaveError(null);
@@ -475,9 +493,10 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
               </Stack>
             </Section>
 
-            {/* У расписания условий не бывает: данных события, по которым
-                их проверять, попросту нет. */}
-            {!scheduled && (
+            {/* У обычного расписания условий не бывает: данных события, по
+                которым их проверять, попросту нет. У правила «каждому
+                сотруднику» данные есть — по сотруднику на событие. */}
+            {!fixedPhone && (
             <Section title={t("automations.steps.if")} hint={t("automations.steps.ifHint")}>
               <ConditionBuilder
                 event={event}
@@ -567,10 +586,10 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                           sx={{ minWidth: 200 }}
                         />
 
-                        {/* У расписания payload нет — номер вводится руками.
-                            Тем же полем, что и в карточке пациента: код
-                            страны, маска, проверка длины. */}
-                        {scheduled && (
+                        {/* У обычного расписания payload нет — номер вводится
+                            руками. Тем же полем, что и в карточке пациента:
+                            код страны, маска, проверка длины. */}
+                        {fixedPhone && (
                           <Box sx={{ minWidth: 240, flex: 1 }}>
                             <PhonePayloadInput
                               label={t("automations.action.phoneLabel")}
@@ -591,7 +610,7 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                             действительно есть из чего. У всех текущих событий
                             телефон ровно один — спрашивать «откуда взять
                             номер» бессмысленно, достаточно назвать источник. */}
-                        {!scheduled &&
+                        {!fixedPhone &&
                           recipientChoices(event, action.recipientField).length > 1 && (
                           <TextField
                             select
@@ -623,13 +642,30 @@ export const AutomationEditorDialog: React.FC<AutomationEditorDialogProps> = ({
                         )}
                       </Stack>
 
-                      {!scheduled &&
+                      {!fixedPhone &&
                         recipientChoices(event, action.recipientField).length <= 1 && (
                         <Typography variant="caption" color="text.secondary">
                           {t("automations.action.recipientFixed", {
                             name: variableLabel(event, action.recipientField),
                           })}
                         </Typography>
+                      )}
+
+                      {/* Пробный номер: владелец получает настоящий пуш с
+                          цифрами сотрудника на свой телефон, прежде чем
+                          включать рассылку на всех. */}
+                      {perEmployee && (
+                        <Box sx={{ maxWidth: 420 }}>
+                          <PhonePayloadInput
+                            label={t("automations.action.testPhoneLabel")}
+                            helperText={t("automations.action.testPhoneHint")}
+                            value={action.testRecipientPhone}
+                            onChange={(phone) =>
+                              updateAction(action.key, { testRecipientPhone: phone })
+                            }
+                            disabled={busy}
+                          />
+                        </Box>
                       )}
 
                       {/* Заголовок есть только у push: в шторке телефона он
